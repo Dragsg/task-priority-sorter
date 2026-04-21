@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  fetchBackgroundSyncStatus,
   fetchCurrentUser,
   fetchGmailStatus,
   fetchNewEmails,
@@ -41,6 +42,21 @@ function EmailList({ title, description, emails }) {
   );
 }
 
+const EMAIL_COUNT_OPTIONS = [5, 10, 20, 50, 100];
+
+function formatSyncTimestamp(value) {
+  if (!value) {
+    return "Not run yet";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return date.toLocaleString();
+}
+
 export default function Linking() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
@@ -66,6 +82,14 @@ export default function Linking() {
   const [outlookError, setOutlookError] = useState("");
   const [gmailFlash, setGmailFlash] = useState("");
   const [outlookFlash, setOutlookFlash] = useState("");
+  const [gmailRecentLimit, setGmailRecentLimit] = useState(5);
+  const [outlookRecentLimit, setOutlookRecentLimit] = useState(5);
+  const [backgroundSyncStatus, setBackgroundSyncStatus] = useState({
+    last_run_at: null,
+    last_success_at: null,
+    gmail_users_checked: 0,
+    outlook_users_checked: 0,
+  });
 
   useEffect(() => {
     async function loadUser() {
@@ -144,11 +168,34 @@ export default function Linking() {
     loadOutlookStatus();
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadBackgroundSyncStatus() {
+      try {
+        const data = await fetchBackgroundSyncStatus();
+        if (isMounted) {
+          setBackgroundSyncStatus(data);
+        }
+      } catch {
+        // Keep the page quiet if the status check fails.
+      }
+    }
+
+    loadBackgroundSyncStatus();
+    const intervalId = window.setInterval(loadBackgroundSyncStatus, 30000);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   async function handleLoadRecentEmails() {
     try {
       setGmailBusyAction("recent");
       setGmailError("");
-      const data = await fetchRecentEmails();
+      const data = await fetchRecentEmails(gmailRecentLimit);
       setGmailRecentEmails(data.messages ?? []);
       setGmailStatus((current) => ({
         ...current,
@@ -182,7 +229,7 @@ export default function Linking() {
     try {
       setOutlookBusyAction("recent");
       setOutlookError("");
-      const data = await fetchRecentOutlookEmails();
+      const data = await fetchRecentOutlookEmails(outlookRecentLimit);
       setOutlookRecentEmails(data.messages ?? []);
       setOutlookStatus((current) => ({
         ...current,
@@ -268,6 +315,25 @@ export default function Linking() {
         <p className="status-pill">{outlookStatus.linked ? "Linked" : "Not linked"}</p>
       </section>
 
+      <section className="status-card dual-status-card sync-status-card">
+        <div>
+          <h2>Background sync</h2>
+          <p className="status-copy">
+            Last run: {formatSyncTimestamp(backgroundSyncStatus.last_run_at)}
+          </p>
+          <p className="status-copy">
+            Last successful sync: {formatSyncTimestamp(backgroundSyncStatus.last_success_at)}
+          </p>
+          <p className="status-copy">
+            Checked {backgroundSyncStatus.gmail_users_checked} Gmail links and{" "}
+            {backgroundSyncStatus.outlook_users_checked} Outlook links in the latest cycle.
+          </p>
+        </div>
+        <p className="status-pill">
+          {backgroundSyncStatus.last_success_at ? "Running" : "Starting"}
+        </p>
+      </section>
+
       <section className="tasks-card action-panel gmail-panel">
         <div className="section-heading">
           <div>
@@ -280,12 +346,30 @@ export default function Linking() {
         </div>
 
         <p className="helper-text">
-          After Google sends the user back here, you can load the most recent 5
-          emails and then check for newer emails that arrive after linking.
+          After Google sends the user back here, you can load a selected number
+          of recent emails and then check for newer emails that arrive after linking.
         </p>
 
         {gmailFlash ? <p className="success-text">{gmailFlash}</p> : null}
         {gmailError ? <p className="error-text">{gmailError}</p> : null}
+
+        <div className="selector-row">
+          <label className="count-selector-label" htmlFor="gmail-recent-limit">
+            Recent email count
+          </label>
+          <select
+            className="count-selector"
+            id="gmail-recent-limit"
+            onChange={(event) => setGmailRecentLimit(Number(event.target.value))}
+            value={gmailRecentLimit}
+          >
+            {EMAIL_COUNT_OPTIONS.map((count) => (
+              <option key={count} value={count}>
+                {count}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="button-row">
           <button
@@ -294,7 +378,9 @@ export default function Linking() {
             onClick={handleLoadRecentEmails}
             type="button"
           >
-            {gmailBusyAction === "recent" ? "Loading..." : "Load last 5 emails"}
+            {gmailBusyAction === "recent"
+              ? "Loading..."
+              : `Load last ${gmailRecentLimit} emails`}
           </button>
           <button
             className="secondary-button"
@@ -325,11 +411,30 @@ export default function Linking() {
         <p className="helper-text">
           Microsoft account selection happens on the Microsoft sign-in screen.
           After linking, the backend stores the refresh token in the Outlook
-          table and can reuse it on refresh.
+          table and can reuse it on refresh. Background syncing will keep checking
+          linked inboxes every 15 minutes while the backend is running.
         </p>
 
         {outlookFlash ? <p className="success-text">{outlookFlash}</p> : null}
         {outlookError ? <p className="error-text">{outlookError}</p> : null}
+
+        <div className="selector-row">
+          <label className="count-selector-label" htmlFor="outlook-recent-limit">
+            Recent email count
+          </label>
+          <select
+            className="count-selector"
+            id="outlook-recent-limit"
+            onChange={(event) => setOutlookRecentLimit(Number(event.target.value))}
+            value={outlookRecentLimit}
+          >
+            {EMAIL_COUNT_OPTIONS.map((count) => (
+              <option key={count} value={count}>
+                {count}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="button-row">
           <button
@@ -338,7 +443,9 @@ export default function Linking() {
             onClick={handleLoadRecentOutlookEmails}
             type="button"
           >
-            {outlookBusyAction === "recent" ? "Loading..." : "Load last 5 emails"}
+            {outlookBusyAction === "recent"
+              ? "Loading..."
+              : `Load last ${outlookRecentLimit} emails`}
           </button>
           <button
             className="secondary-button outlook-secondary-button"
@@ -354,7 +461,7 @@ export default function Linking() {
       <EmailList
         description="These are the latest inbox emails loaded after the account was linked."
         emails={gmailRecentEmails}
-        title="Gmail: Last 5 emails"
+        title={`Gmail: Last ${gmailRecentLimit} emails`}
       />
 
       <EmailList
@@ -366,7 +473,7 @@ export default function Linking() {
       <EmailList
         description="These are the latest Outlook inbox emails loaded after the account was linked."
         emails={outlookRecentEmails}
-        title="Outlook: Last 5 emails"
+        title={`Outlook: Last ${outlookRecentLimit} emails`}
       />
 
       <EmailList

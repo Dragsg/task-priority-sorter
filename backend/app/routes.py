@@ -7,6 +7,7 @@ import jwt
 from flask import Blueprint, current_app, jsonify, redirect, request, session
 
 from config import Config
+from .background_sync import get_background_sync_status
 from .db import (
     create_user,
     get_gmail_link,
@@ -29,6 +30,7 @@ from .outlook_service import (
 )
 
 api = Blueprint("api", __name__)
+ALLOWED_RECENT_LIMITS = {5, 10, 20, 50, 100}
 
 
 def build_token(user_id: int) -> str:
@@ -66,6 +68,13 @@ def get_status_code(error: Exception) -> int:
     if str(error) in {"Unauthorised", "Token expired", "Invalid token"}:
         return 401
     return 400
+
+
+def get_recent_limit() -> int:
+    limit = request.args.get("limit", default=5, type=int)
+    if limit not in ALLOWED_RECENT_LIMITS:
+        raise RuntimeError("Limit must be one of 5, 10, 20, 50, or 100")
+    return limit
 
 
 @api.post("/signup")
@@ -273,7 +282,7 @@ def gmail_callback():
 def gmail_recent_messages():
     try:
         user_id = get_authenticated_user_id()
-        result = list_recent_messages(user_id, limit=5)
+        result = list_recent_messages(user_id, limit=get_recent_limit())
     except Exception as error:
         return jsonify({"error": str(error)}), get_status_code(error)
 
@@ -377,7 +386,7 @@ def outlook_callback():
 def outlook_recent_messages():
     try:
         user_id = get_authenticated_user_id()
-        result = list_recent_outlook_messages(user_id, limit=5)
+        result = list_recent_outlook_messages(user_id, limit=get_recent_limit())
     except Exception as error:
         return jsonify({"error": str(error)}), get_status_code(error)
 
@@ -393,3 +402,8 @@ def outlook_new_messages():
         return jsonify({"error": str(error)}), get_status_code(error)
 
     return jsonify(result)
+
+
+@api.get("/background-sync/status")
+def background_sync_status():
+    return jsonify(get_background_sync_status())

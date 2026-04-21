@@ -213,6 +213,23 @@ def get_gmail_link(user_id: int):
     return link
 
 
+def list_gmail_link_user_ids() -> list[int]:
+    ensure_gmail_link_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT user_id
+                FROM gmail_links
+                ORDER BY user_id
+                """
+            )
+            rows = cursor.fetchall()
+
+    return [row["user_id"] for row in rows]
+
+
 def save_gmail_link(
     user_id: int,
     email_address: str,
@@ -339,6 +356,23 @@ def get_outlook_link(user_id: int):
         logger.info("No Outlook link exists for user_id=%s", user_id)
 
     return link
+
+
+def list_outlook_link_user_ids() -> list[int]:
+    ensure_outlook_link_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT user_id
+                FROM outlook_links
+                ORDER BY user_id
+                """
+            )
+            rows = cursor.fetchall()
+
+    return [row["user_id"] for row in rows]
 
 
 def save_outlook_link(
