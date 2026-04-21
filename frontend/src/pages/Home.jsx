@@ -68,7 +68,12 @@ export default function Home() {
           <Link className="secondary-button home-link" to="/onboarding">
             Update preference
           </Link>
-          <button className="inline-button danger-button" onClick={handleLogout} type="button">
+          <button
+            className="inline-button danger-button"
+            disabled={!user}
+            onClick={handleLogout}
+            type="button"
+          >
             Log out
           </button>
         </div>

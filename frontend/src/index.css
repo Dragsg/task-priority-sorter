@@ -582,6 +582,11 @@ select {
   }
 }
 
+.disabled-link {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 @media (max-width: 640px) {
   .app-shell,
   .auth-shell,

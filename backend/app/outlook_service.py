@@ -15,6 +15,7 @@ from .db import (
 logger = logging.getLogger(__name__)
 
 MICROSOFT_GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
+OUTLOOK_INBOX_MESSAGES_PATH = "/me/mailFolders/inbox/messages"
 
 
 def normalize_expiry(expiry):
@@ -89,6 +90,7 @@ def microsoft_token_request(payload: dict) -> dict:
 
 
 def graph_get_json(url: str, access_token: str) -> dict:
+    logger.info("Outlook Graph GET %s", url)
     request = Request(
         url,
         headers={
@@ -100,7 +102,14 @@ def graph_get_json(url: str, access_token: str) -> dict:
 
     try:
         with urlopen(request) as response:
-            return json.loads(response.read().decode("utf-8"))
+            payload = json.loads(response.read().decode("utf-8"))
+            if isinstance(payload, dict):
+                logger.info(
+                    "Outlook Graph response keys=%s value_count=%s",
+                    sorted(payload.keys()),
+                    len(payload.get("value", [])) if isinstance(payload.get("value"), list) else "n/a",
+                )
+            return payload
     except HTTPError as error:
         body = error.read().decode("utf-8", errors="replace")
         logger.exception("Microsoft Graph request failed: %s", body)
@@ -144,14 +153,27 @@ def format_outlook_message(message: dict) -> dict:
 
 def fetch_outlook_messages(access_token: str, url: str) -> list[dict]:
     response = graph_get_json(url, access_token)
-    return [format_outlook_message(item) for item in response.get("value", [])]
+    messages = [format_outlook_message(item) for item in response.get("value", [])]
+
+    logger.info("Fetched %s Outlook messages", len(messages))
+    if messages:
+        logger.info(
+            "First Outlook message subject=%s receivedAt=%s from=%s",
+            messages[0]["subject"],
+            messages[0]["receivedAt"],
+            messages[0]["from"],
+        )
+    else:
+        logger.info("Outlook message fetch returned no results")
+
+    return messages
 
 
 def fetch_latest_outlook_received_at(access_token: str):
     messages = fetch_outlook_messages(
         access_token,
         build_graph_url(
-            "/me/messages",
+            OUTLOOK_INBOX_MESSAGES_PATH,
             {
                 "$top": 1,
                 "$orderby": "receivedDateTime desc",
@@ -193,9 +215,11 @@ def complete_outlook_link(user_id: int, code: str) -> str:
     )
 
     logger.info(
-        "Completed Outlook link for user_id=%s email_address=%s",
+        "Completed Outlook link for user_id=%s email_address=%s refresh_token_present=%s initial_last_received_at=%s",
         user_id,
         profile["emailAddress"],
+        bool(refresh_token),
+        last_received_at,
     )
     return profile["emailAddress"]
 
@@ -209,6 +233,13 @@ def build_outlook_access_token(user_id: int) -> str:
 
     expiry = normalize_expiry(link["token_expiry"])
     is_expired = expiry and expiry <= datetime.utcnow()
+    logger.info(
+        "Loaded Outlook link for user_id=%s email_address=%s token_expiry=%s has_refresh_token=%s",
+        user_id,
+        link["email_address"],
+        expiry,
+        bool(link["refresh_token"]),
+    )
 
     if is_expired and link["refresh_token"]:
         logger.info("Refreshing expired Outlook token for user_id=%s", user_id)
@@ -242,10 +273,15 @@ def build_outlook_access_token(user_id: int) -> str:
 
 def list_recent_outlook_messages(user_id: int, limit: int = 5) -> dict:
     access_token = build_outlook_access_token(user_id)
+    logger.info(
+        "Loading recent Outlook inbox messages for user_id=%s limit=%s",
+        user_id,
+        limit,
+    )
     messages = fetch_outlook_messages(
         access_token,
         build_graph_url(
-            "/me/messages",
+            OUTLOOK_INBOX_MESSAGES_PATH,
             {
                 "$top": limit,
                 "$orderby": "receivedDateTime desc",
@@ -258,6 +294,13 @@ def list_recent_outlook_messages(user_id: int, limit: int = 5) -> dict:
     if messages:
         latest_received_at = parse_graph_datetime(messages[0]["receivedAt"])
         update_outlook_last_received_at(user_id, latest_received_at)
+        logger.info(
+            "Updated Outlook last_received_at for user_id=%s to %s after recent fetch",
+            user_id,
+            latest_received_at,
+        )
+    else:
+        logger.info("No recent Outlook inbox messages found for user_id=%s", user_id)
 
     return {
         "messages": messages,
@@ -271,15 +314,24 @@ def list_new_outlook_messages(user_id: int) -> dict:
         raise RuntimeError("No Outlook account is linked for this user yet.")
 
     if not link["last_received_at"]:
+        logger.info(
+            "No Outlook last_received_at cursor exists for user_id=%s, returning no new messages",
+            user_id,
+        )
         return {"messages": [], "lastReceivedAt": None}
 
     access_token = build_outlook_access_token(user_id)
     last_received_at = link["last_received_at"].astimezone(timezone.utc).isoformat()
+    logger.info(
+        "Loading new Outlook inbox messages for user_id=%s after %s",
+        user_id,
+        last_received_at,
+    )
 
     messages = fetch_outlook_messages(
         access_token,
         build_graph_url(
-            "/me/messages",
+            OUTLOOK_INBOX_MESSAGES_PATH,
             {
                 "$top": 10,
                 "$orderby": "receivedDateTime desc",
@@ -293,6 +345,13 @@ def list_new_outlook_messages(user_id: int) -> dict:
     if messages:
         newest_received_at = parse_graph_datetime(messages[0]["receivedAt"])
         update_outlook_last_received_at(user_id, newest_received_at)
+        logger.info(
+            "Updated Outlook last_received_at for user_id=%s to %s after new-message fetch",
+            user_id,
+            newest_received_at,
+        )
+    else:
+        logger.info("No new Outlook inbox messages found for user_id=%s", user_id)
 
     return {
         "messages": messages,
