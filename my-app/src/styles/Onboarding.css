@@ -1,0 +1,147 @@
+.onboarding-shell {
+    min-height: 100vh;
+    padding: 28px;
+    box-sizing: border-box;
+    display: grid;
+    place-items: center;
+}
+
+.onboarding-card {
+    width: min(880px, 100%);
+    padding: 36px;
+    border-radius: 30px;
+    background: rgba(255, 252, 246, 0.84);
+    border: 1px solid rgba(83, 70, 43, 0.08);
+    box-shadow: 0 24px 60px rgba(64, 51, 26, 0.08);
+    text-align: left;
+    box-sizing: border-box;
+}
+
+.onboarding-kicker {
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #335146;
+}
+
+.onboarding-card h1 {
+    margin: 14px 0 12px;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: clamp(2.4rem, 5vw, 4rem);
+    line-height: 0.98;
+    color: #172b23;
+}
+
+.onboarding-copy,
+.onboarding-option-copy,
+.onboarding-error,
+.onboarding-submit,
+.onboarding-option-title {
+    font-family:
+        "Gill Sans", "Gill Sans MT", Calibri, "Trebuchet MS", sans-serif;
+}
+
+.onboarding-copy {
+    margin: 0 0 26px;
+    color: #59635d;
+    line-height: 1.65;
+    max-width: 54ch;
+}
+
+.onboarding-form {
+    display: grid;
+    gap: 18px;
+}
+
+.onboarding-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.onboarding-option {
+    position: relative;
+    display: grid;
+    gap: 10px;
+    padding: 22px;
+    border-radius: 22px;
+    border: 1px solid #ddd6c9;
+    background: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    transition:
+        transform 180ms ease,
+        border-color 180ms ease,
+        box-shadow 180ms ease;
+}
+
+.onboarding-option:hover {
+    transform: translateY(-1px);
+}
+
+.onboarding-option input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.onboarding-option.selected {
+    border-color: #2d6a57;
+    box-shadow: 0 18px 32px rgba(43, 90, 74, 0.14);
+    background: linear-gradient(180deg, #f9fff9, #ecf5ef);
+}
+
+.onboarding-option-title {
+    font-size: 1.18rem;
+    color: #18231d;
+    font-weight: 700;
+}
+
+.onboarding-option-copy {
+    color: #59635d;
+    line-height: 1.55;
+}
+
+.onboarding-error {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #ffe0da;
+    color: #8a3225;
+}
+
+.onboarding-submit {
+    width: fit-content;
+    min-width: 220px;
+    min-height: 52px;
+    border: 0;
+    border-radius: 999px;
+    padding: 0 24px;
+    background: #1f4d3f;
+    color: #fff7ec;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.onboarding-submit:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+@media (max-width: 760px) {
+    .onboarding-options {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .onboarding-shell {
+        padding: 16px;
+    }
+
+    .onboarding-card {
+        padding: 24px;
+        border-radius: 22px;
+    }
+}

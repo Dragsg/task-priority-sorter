@@ -1,7 +1,3 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { getCurrentUser } from "../lib/api";
-import { clearSession, getStoredUser, persistUser } from "../lib/session";
 import "../styles/Dashboard.css";
 
 const priorityTasks = [
@@ -41,36 +37,6 @@ const workflow = [
 ];
 
 export default function Home() {
-    const [user, setUser] = useState(getStoredUser());
-    const [loading, setLoading] = useState(!getStoredUser());
-    const navigate = useNavigate();
-
-    useEffect(() => {
-        const loadUser = async () => {
-            try {
-                const payload = await getCurrentUser();
-                setUser(payload.user);
-                persistUser(payload.user);
-            } catch {
-                clearSession();
-                navigate("/login", { replace: true });
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        loadUser();
-    }, [navigate]);
-
-    const handleSignOut = () => {
-        clearSession();
-        navigate("/login", { replace: true });
-    };
-
-    if (loading) {
-        return <main className="dashboard-page">Loading your dashboard...</main>;
-    }
-
     return (
         <main className="dashboard-page">
             <section className="dashboard-hero">
@@ -78,8 +44,7 @@ export default function Home() {
                     <p className="dashboard-kicker">Task Priority Sorter</p>
                     <h1>Build a calmer plan before the day gets noisy.</h1>
                     <p className="dashboard-intro">
-                        {user?.name ? `${user.name}, ` : ""}
-                        your dashboard keeps urgent work visible, lighter tasks
+                        Your dashboard keeps urgent work visible, lighter tasks
                         grouped, and the next best action easy to spot.
                     </p>
 
@@ -90,22 +55,11 @@ export default function Home() {
                         <button type="button" className="dashboard-button secondary">
                             View schedule
                         </button>
-                        <button
-                            type="button"
-                            className="dashboard-button secondary"
-                            onClick={handleSignOut}
-                        >
-                            Sign out
-                        </button>
                     </div>
                 </div>
 
                 <aside className="dashboard-spotlight">
-                    <p className="eyebrow">
-                        {user?.preference
-                            ? `${user.preference} focus lane`
-                            : "Today's focus lane"}
-                    </p>
+                    <p className="eyebrow">Today&apos;s focus lane</p>
                     <h2>Ship the important work first.</h2>
                     <div className="spotlight-grid">
                         {metrics.map((item) => (
@@ -161,9 +115,9 @@ export default function Home() {
                     <div className="note-card">
                         <p className="eyebrow">Quick note</p>
                         <p>
-                            {user?.email
-                                ? `Signed in as ${user.email}. Keep your highest-effort task inside your first 90 minutes if you can.`
-                                : "Keep your highest-effort task inside your first 90 minutes if you can."}
+                            Try keeping your highest-effort task inside your
+                            first 90 minutes. The rest of the list gets easier
+                            once that one moves.
                         </p>
                     </div>
                 </aside>

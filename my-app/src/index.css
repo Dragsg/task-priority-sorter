@@ -113,14 +113,14 @@ code {
 
 body {
     margin: 0;
+    background:
+        radial-gradient(circle at top left, #ffe1bf 0, transparent 28%),
+        linear-gradient(180deg, #f6efe5 0%, #f2f6f2 100%);
 }
 
 #root {
     margin: 0;
-    text-align: center;
-    background-color: rgb(255, 249, 243);
     min-height: 100vh;
-    /* height: 100%; */
 }
 
 h1 {

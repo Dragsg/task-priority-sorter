@@ -1,122 +1,130 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getCurrentUser, saveOnboardingPreference } from "../lib/api";
+import { clearSession, getStoredUser, persistUser } from "../lib/session";
+import "../styles/Onboarding.css";
 
-// import { authClient } from "../js/auth";
+const options = [
+    {
+        value: "School",
+        title: "School",
+        description: "Keep assignments, study blocks, and deadlines easy to prioritize.",
+    },
+    {
+        value: "Work",
+        title: "Work",
+        description: "Balance meetings, deadlines, and deeper project work with less friction.",
+    },
+    {
+        value: "Personal",
+        title: "Personal",
+        description: "Organize routines, errands, and life admin in one calmer view.",
+    },
+    {
+        value: "Unsure",
+        title: "Still figuring it out",
+        description: "Start simple now and adjust your workflow later once things click.",
+    },
+];
 
 export default function Onboarding() {
-    // const [session, setSession] = useState(null);
-    // const [user, setUser] = useState(null);
-    // const [loading, setLoading] = useState(true);
-    const [userData, setUserData] = useState(null);
+    const [userData, setUserData] = useState(getStoredUser());
     const [loading, setLoading] = useState(true);
-    const [preferences, setPreferences] = useState(null);
+    const [preference, setPreference] = useState("");
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState("");
     const navigate = useNavigate();
 
-    // useEffect(() => {
-    //     authClient.getSession().then((result) => {
-    //         if (result.data?.session && result.data?.user) {
-    //             setSession(result.data.session);
-    //             setUser(result.data.user);
-    //         }
-    //         setLoading(false);
-    //     });
-    // }, []);
-
     useEffect(() => {
-        const token = localStorage.getItem("token");
-
-        const fetchUserData = async () => {
-            await fetch("http://localhost:5000/api/user", {
-                headers: { Authorization: `Bearer ${token}` },
-            }).then(async (res) => {
-                if (res) {
-                    res = await res.json();
-                    setUserData(res);
-                    setLoading(false);
-                    console.log(res);
-                }
-            });
+        const loadUser = async () => {
+            try {
+                const payload = await getCurrentUser();
+                setUserData(payload.user);
+                setPreference(payload.user.preference ?? "");
+                persistUser(payload.user);
+            } catch {
+                clearSession();
+                navigate("/login", { replace: true });
+            } finally {
+                setLoading(false);
+            }
         };
 
-        fetchUserData();
-        // .then(setUserData);
+        loadUser();
+    }, [navigate]);
 
-        // setLoading(false);
-    }, []);
+    const handleSubmit = async (event) => {
+        event.preventDefault();
+        setError("");
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        console.log(preferences);
-        const token = localStorage.getItem("token");
-        if (preferences) {
-            await fetch("http://localhost:5000/api/onboarding", {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ preferences }),
-            });
+        if (!preference) {
+            setError("Choose the option that fits best for now.");
+            return;
         }
-        navigate("/home");
+
+        setIsSaving(true);
+        try {
+            const payload = await saveOnboardingPreference(preference);
+            persistUser(payload.user);
+            navigate("/home", { replace: true });
+        } catch (requestError) {
+            setError(requestError.message);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    if (loading) return <div>Loading...</div>;
+    if (loading) {
+        return <main className="onboarding-shell">Loading your setup...</main>;
+    }
 
     return (
-        <form onSubmit={handleSubmit}>
-            <h1>
-                {userData.email} Before you begin, let us personalise your
-                experience
-            </h1>
+        <main className="onboarding-shell">
+            <section className="onboarding-card">
+                <p className="onboarding-kicker">Personalize your workspace</p>
+                <h1>{userData?.name || "Welcome"}, what are you planning for most?</h1>
+                <p className="onboarding-copy">
+                    We use this to tune the emphasis of your dashboard. You can
+                    always change it later.
+                </p>
 
-            <h3>What do you plan to use this tool for?</h3>
+                <form className="onboarding-form" onSubmit={handleSubmit}>
+                    <div className="onboarding-options">
+                        {options.map((option) => (
+                            <label
+                                key={option.value}
+                                className={`onboarding-option ${
+                                    preference === option.value ? "selected" : ""
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="preference"
+                                    value={option.value}
+                                    checked={preference === option.value}
+                                    onChange={(event) => setPreference(event.target.value)}
+                                />
+                                <span className="onboarding-option-title">
+                                    {option.title}
+                                </span>
+                                <span className="onboarding-option-copy">
+                                    {option.description}
+                                </span>
+                            </label>
+                        ))}
+                    </div>
 
-            <label>
-                <input
-                    type="radio"
-                    id="school"
-                    name="preferences"
-                    onChange={(e) => setPreferences("School")}
-                />
-                School
-            </label>
-            <br></br>
+                    {error ? <p className="onboarding-error">{error}</p> : null}
 
-            <label>
-                <input
-                    type="radio"
-                    id="work"
-                    name="preferences"
-                    onChange={(e) => setPreferences("Work")}
-                />
-                Work
-            </label>
-            <br></br>
-
-            <label>
-                <input
-                    type="radio"
-                    id="personal"
-                    name="preferences"
-                    onChange={(e) => setPreferences("Personal")}
-                />
-                Personal
-            </label>
-            <br></br>
-
-            <label>
-                <input
-                    type="radio"
-                    id="unsure"
-                    name="preferences"
-                    onChange={(e) => setPreferences("Unsure")}
-                />
-                Unsure
-            </label>
-            <br></br>
-
-            <button type="submit">Continue</button>
-        </form>
+                    <button
+                        className="onboarding-submit"
+                        type="submit"
+                        disabled={isSaving}
+                    >
+                        {isSaving ? "Saving..." : "Continue to dashboard"}
+                    </button>
+                </form>
+            </section>
+        </main>
     );
 }

@@ -1,130 +1,189 @@
-from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
-import psycopg2
+import datetime as dt
+import os
+
 import bcrypt
 import jwt
-import datetime
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-app = Flask(__name__)
-CORS(app)
-app.config["SQLALCHEMY_DATABASE_URI"] = "postgresql://neondb_owner:npg_VC6NIsHOREy9@ep-square-voice-amr2eqzu-pooler.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-db = SQLAlchemy(app)
+from config import Config
+from models import UserDetail, db
 
-key = "key"
 
-# class User(db.Model):
-#     __tablename__ = "user"
-#     __table_args__ = {"schema": "neon_auth"}
-#     id = db.Column(db.Uuid, primary_key=True)
+PREFERENCE_OPTIONS = {"School", "Work", "Personal", "Unsure"}
 
-class User_Detail(db.Model):
-    __tablename__ = "user_details"
-    __table_args__ = {"schema": "public"}
-    user_id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String)
-    email = db.Column(db.String)
-    password = db.Column(db.String)
-    preferences = db.Column(db.String)
 
-# users = User.query.all()
-# for u in users:
-#     print(u.id)
+def create_app():
+    app = Flask(__name__)
+    app.config.from_object(Config)
 
-@app.route("/api/signup", methods=["POST"])
-def signup():
-    data = request.get_json()
-    user = User_Detail.query.filter_by(email=data["email"]).first()
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}},
+        supports_credentials=False,
+    )
+    db.init_app(app)
 
+    with app.app_context():
+        db.create_all()
+
+    register_routes(app)
+    return app
+
+
+def register_routes(app):
+    @app.route("/api/health", methods=["GET"])
+    def health_check():
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/auth/signup", methods=["POST"])
+    def signup():
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        email = normalize_email(data.get("email"))
+        password = data.get("password") or ""
+
+        if not name:
+            return error_response("Please enter your name.", 400)
+        if not email:
+            return error_response("Please enter a valid email address.", 400)
+        if len(password) < 8:
+            return error_response("Password must be at least 8 characters.", 400)
+
+        existing_user = UserDetail.query.filter_by(email=email).first()
+        if existing_user:
+            return error_response("An account with that email already exists.", 409)
+
+        password_hash = bcrypt.hashpw(
+            password.encode("utf-8"),
+            bcrypt.gensalt(),
+        ).decode("utf-8")
+
+        user = UserDetail(name=name, email=email, password=password_hash)
+        db.session.add(user)
+        db.session.commit()
+
+        token = create_token(app, user.user_id)
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "token": token,
+                    "user": serialize_user(user),
+                }
+            ),
+            201,
+        )
+
+    @app.route("/api/auth/login", methods=["POST"])
+    def login():
+        data = request.get_json(silent=True) or {}
+        email = normalize_email(data.get("email"))
+        password = data.get("password") or ""
+
+        if not email or not password:
+            return error_response("Email and password are required.", 400)
+
+        user = UserDetail.query.filter_by(email=email).first()
+        if not user or not bcrypt.checkpw(
+            password.encode("utf-8"),
+            user.password.encode("utf-8"),
+        ):
+            return error_response("Invalid email or password.", 401)
+
+        token = create_token(app, user.user_id)
+        return jsonify(
+            {
+                "success": True,
+                "token": token,
+                "user": serialize_user(user),
+            }
+        )
+
+    @app.route("/api/auth/me", methods=["GET"])
+    def current_user():
+        user, error = get_authenticated_user(app)
+        if error:
+            return error
+
+        return jsonify({"success": True, "user": serialize_user(user)})
+
+    @app.route("/api/onboarding", methods=["PUT"])
+    def save_onboarding():
+        user, error = get_authenticated_user(app)
+        if error:
+            return error
+
+        data = request.get_json(silent=True) or {}
+        preference = data.get("preference")
+
+        if preference not in PREFERENCE_OPTIONS:
+            return error_response("Please choose one of the onboarding options.", 400)
+
+        user.preferences = preference
+        db.session.commit()
+
+        return jsonify({"success": True, "user": serialize_user(user)})
+
+
+def normalize_email(value):
+    if not value or "@" not in value:
+        return ""
+    return value.strip().lower()
+
+
+def create_token(app, user_id):
+    expires_at = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+        hours=app.config["JWT_EXPIRATION_HOURS"]
+    )
+    return jwt.encode(
+        {"user_id": user_id, "exp": expires_at},
+        app.config["JWT_SECRET_KEY"],
+        algorithm="HS256",
+    )
+
+
+def get_authenticated_user(app):
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None, error_response("Authorization token is missing.", 401)
+
+    token = auth_header.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(
+            token,
+            app.config["JWT_SECRET_KEY"],
+            algorithms=["HS256"],
+        )
+    except jwt.ExpiredSignatureError:
+        return None, error_response("Your session has expired. Please log in again.", 401)
+    except jwt.InvalidTokenError:
+        return None, error_response("Invalid authorization token.", 401)
+
+    user = db.session.get(UserDetail, payload.get("user_id"))
     if not user:
-        hashed = bcrypt.hashpw(data["password"].encode("utf-8"), bcrypt.gensalt())
-        new_user = User_Detail(name=data["name"],email=data["email"], password=hashed.decode("utf-8"))
-        db.session.add(new_user)
-        db.session.commit()
+        return None, error_response("User not found.", 404)
 
-        token = jwt.encode(
-            {
-                "user_id": new_user.user_id, "exp": datetime.datetime.now() + datetime.timedelta(hours=1)
-            },
-            key,
-            algorithm="HS256"
-        )
-        return jsonify({"success": True, "token": token})
-
-    return jsonify({"success": False})
+    return user, None
 
 
-@app.route("/api/login", methods=["POST"])
-def login():
-    data = request.get_json()
-    user = User_Detail.query.filter_by(email=data["email"]).first()
-
-    print(user)
-    if user and bcrypt.checkpw(data["password"].encode("utf-8"), user.password.encode("utf-8")):
-        token = jwt.encode(
-            {
-                "user_id": user.user_id, "exp": datetime.datetime.now() + datetime.timedelta(hours=1)
-            },
-            key,
-            algorithm="HS256"
-        )
-        return jsonify({"success": True, "token": token})
-    
-    return jsonify({"success": False})
-
-@app.route("/api/user", methods=["GET"])
-def user():
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        return jsonify({"error": "Unauthorised"}), 401
-    
-
-    token = auth_header.split(" ")[1]
-    try:
-        payload = jwt.decode(token, key, algorithms=["HS256"])
-        user_id = payload["user_id"]
-        user = User_Detail.query.get(user_id)
-        return jsonify({
-            "email": user.email,
-        })
-    
-    except jwt.ExpiredSignatureError:
-        return jsonify({ "error": "Token expired" }), 401
-    
-@app.route("/api/onboarding", methods={"PUT"})
-def onboarding():
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        return jsonify({"error": "Unauthorised"}), 401
-    
-    data = request.get_json()
-    preferences = data.get("preferences")
-    
-    token = auth_header.split(" ")[1]
-    try:
-        payload = jwt.decode(token, key, algorithms=["HS256"])
-        user_id = payload["user_id"]
-        user = User_Detail.query.get(user_id)
-        
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-        
-        user.preferences = preferences
-        db.session.commit()
-
-        return jsonify({"success": True})
-    except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Token expired"}), 401
+def serialize_user(user):
+    return {
+        "user_id": user.user_id,
+        "name": user.name,
+        "email": user.email,
+        "preference": user.preferences,
+        "has_completed_onboarding": bool(user.preferences),
+    }
 
 
-@app.route("/")
-def home():
-    users = User_Detail.query.all()
-    print(users)
-    return jsonify({
-        "user_id": users[0].id,
-        # "preferences": users[0].preferences
-    })
+def error_response(message, status_code):
+    return jsonify({"success": False, "message": message}), status_code
+
+
+app = create_app()
+
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.getenv("PORT", "5000"))
+    app.run(debug=True, port=port)

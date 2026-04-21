@@ -1,0 +1,311 @@
+.dashboard-page {
+    min-height: 100vh;
+    padding: 48px 24px 56px;
+    color: #18231d;
+    box-sizing: border-box;
+}
+
+.dashboard-hero,
+.dashboard-content {
+    width: min(1180px, 100%);
+    margin: 0 auto;
+}
+
+.dashboard-hero {
+    display: grid;
+    grid-template-columns: 1.3fr 0.9fr;
+    gap: 24px;
+    align-items: stretch;
+    margin-bottom: 28px;
+}
+
+.dashboard-copy,
+.dashboard-spotlight,
+.task-panel,
+.workflow-panel {
+    border-radius: 28px;
+    box-sizing: border-box;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 20px 50px rgba(68, 55, 24, 0.08);
+}
+
+.dashboard-copy {
+    padding: 40px;
+    text-align: left;
+    background: linear-gradient(145deg, #10352b 0%, #1f4d3f 55%, #2d6a57 100%);
+    color: #f7f3ea;
+    position: relative;
+    overflow: hidden;
+}
+
+.dashboard-copy::after {
+    content: "";
+    position: absolute;
+    inset: auto -40px -60px auto;
+    width: 220px;
+    height: 220px;
+    border-radius: 999px;
+    background: rgba(255, 214, 157, 0.2);
+    filter: blur(6px);
+}
+
+.dashboard-kicker,
+.eyebrow {
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.dashboard-copy h1,
+.dashboard-copy h2,
+.dashboard-spotlight h2,
+.section-heading h2,
+.task-card h3 {
+    font-family: Georgia, "Times New Roman", serif;
+}
+
+.dashboard-copy h1 {
+    font-size: clamp(2.8rem, 5vw, 4.8rem);
+    line-height: 0.95;
+    margin: 18px 0;
+    max-width: 10ch;
+}
+
+.dashboard-intro {
+    max-width: 54ch;
+    font-size: 1.08rem;
+    line-height: 1.7;
+    margin: 0;
+    color: rgba(247, 243, 234, 0.9);
+}
+
+.dashboard-actions {
+    display: flex;
+    gap: 14px;
+    margin-top: 28px;
+    flex-wrap: wrap;
+}
+
+.dashboard-button {
+    width: auto;
+    min-width: 150px;
+    height: auto;
+    margin-top: 0;
+    border: 0;
+    border-radius: 999px;
+    padding: 14px 22px;
+    cursor: pointer;
+    font-size: 0.98rem;
+    transition:
+        transform 180ms ease,
+        box-shadow 180ms ease,
+        background-color 180ms ease;
+}
+
+.dashboard-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(18, 31, 26, 0.12);
+}
+
+.dashboard-button.primary {
+    background: #ffd697;
+    color: #193027;
+}
+
+.dashboard-button.secondary {
+    background: rgba(255, 255, 255, 0.12);
+    color: #f7f3ea;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.dashboard-spotlight {
+    padding: 32px;
+    text-align: left;
+    background: rgba(255, 252, 246, 0.76);
+    border: 1px solid rgba(88, 70, 39, 0.08);
+}
+
+.dashboard-spotlight h2 {
+    margin: 14px 0 24px;
+    font-size: 2rem;
+    line-height: 1.02;
+}
+
+.spotlight-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.metric-card {
+    padding: 18px 14px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, #fffef9 0%, #f3ead8 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.metric-card strong {
+    font-size: 2rem;
+    line-height: 1;
+}
+
+.metric-card span {
+    color: #4b514d;
+    font-size: 0.92rem;
+    line-height: 1.4;
+}
+
+.dashboard-content {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 24px;
+}
+
+.task-panel,
+.workflow-panel {
+    background: rgba(255, 252, 246, 0.74);
+    border: 1px solid rgba(88, 70, 39, 0.08);
+    padding: 28px;
+    text-align: left;
+}
+
+.section-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: start;
+    margin-bottom: 20px;
+}
+
+.section-heading h2 {
+    margin: 8px 0 0;
+    font-size: 1.9rem;
+    line-height: 1.05;
+}
+
+.badge {
+    border-radius: 999px;
+    background: #ebe4d3;
+    padding: 10px 14px;
+    color: #36413a;
+    font-size: 0.84rem;
+    white-space: nowrap;
+}
+
+.task-list {
+    display: grid;
+    gap: 16px;
+}
+
+.task-card {
+    padding: 22px;
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(242, 235, 219, 0.9));
+    border: 1px solid rgba(117, 97, 60, 0.09);
+}
+
+.task-card-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.status-pill.warm {
+    background: #ffe1c0;
+    color: #7a3b00;
+}
+
+.status-pill.cool {
+    background: #dbe9ff;
+    color: #1f4a87;
+}
+
+.status-pill.mint {
+    background: #d9f4e8;
+    color: #0f6143;
+}
+
+.task-due {
+    color: #655f53;
+    font-size: 0.92rem;
+}
+
+.task-card h3 {
+    margin: 0 0 8px;
+    font-size: 1.45rem;
+}
+
+.task-card p,
+.note-card p,
+.workflow-list li {
+    margin: 0;
+    color: #4b514d;
+    line-height: 1.6;
+}
+
+.workflow-list {
+    margin: 0;
+    padding-left: 24px;
+    display: grid;
+    gap: 14px;
+}
+
+.note-card {
+    margin-top: 28px;
+    padding: 20px;
+    border-radius: 22px;
+    background: #f1ede3;
+}
+
+.note-card .eyebrow {
+    margin-bottom: 10px;
+}
+
+@media (max-width: 920px) {
+    .dashboard-hero,
+    .dashboard-content {
+        grid-template-columns: 1fr;
+    }
+
+    .spotlight-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .dashboard-page {
+        padding: 24px 16px 40px;
+    }
+
+    .dashboard-copy,
+    .dashboard-spotlight,
+    .task-panel,
+    .workflow-panel {
+        padding: 22px;
+        border-radius: 22px;
+    }
+
+    .dashboard-copy h1 {
+        font-size: 2.8rem;
+    }
+
+    .section-heading {
+        flex-direction: column;
+    }
+}

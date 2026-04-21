@@ -1,45 +1,224 @@
-.container {
+.auth-shell {
+    min-height: 100vh;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1.15fr 0.95fr;
+    gap: 24px;
+    align-items: stretch;
+    box-sizing: border-box;
+}
+
+.auth-panel {
+    border-radius: 28px;
+    padding: 36px;
+    box-sizing: border-box;
+    text-align: left;
+    box-shadow: 0 24px 60px rgba(54, 41, 21, 0.08);
+}
+
+.auth-panel-hero {
+    background: linear-gradient(155deg, #173628 0%, #25523f 52%, #3f7761 100%);
+    color: #fff7ec;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 20px;
-    justify-content: end;
-    width: 50vh;
-    margin: auto;
-    /* padding: 5vh; */
-    padding: 50px;
+    justify-content: space-between;
 }
 
-input {
-    width: 300px;
-    height: 40px;
-    /* border-radius: 1.5vh; */
-    border-radius: 10px;
-    border: 1px solid #cccccc;
-    padding-left: 15px;
-    padding-right: 15px;
+.auth-panel-form {
+    background: rgba(255, 252, 246, 0.82);
+    border: 1px solid rgba(73, 62, 39, 0.08);
+}
+
+.auth-kicker {
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.auth-panel h1,
+.auth-panel h2 {
+    margin: 0;
+    font-family: Georgia, "Times New Roman", serif;
+    color: inherit;
+}
+
+.auth-panel-hero h1 {
+    margin-top: 18px;
+    font-size: clamp(2.8rem, 6vw, 4.9rem);
+    line-height: 0.94;
+    max-width: 9ch;
+}
+
+.auth-lead,
+.auth-form-header p,
+.auth-field span,
+.auth-field input,
+.auth-switch,
+.auth-footer {
     font-family:
         "Gill Sans", "Gill Sans MT", Calibri, "Trebuchet MS", sans-serif;
 }
 
-button {
-    margin-top: 30px;
-    width: 330px;
-    height: 40px;
-    border-radius: 10px;
-    padding-left: 15px;
-    padding-right: 15px;
-    background-color: rgb(0, 0, 0);
-    color: white;
+.auth-lead {
+    margin: 18px 0 0;
+    max-width: 50ch;
+    line-height: 1.7;
+    color: rgba(255, 247, 236, 0.88);
+}
+
+.auth-stat-row {
+    margin-top: 40px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.auth-stat-row div {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 18px;
+    display: grid;
+    gap: 6px;
+}
+
+.auth-stat-row strong {
+    font-size: 1.5rem;
+}
+
+.auth-stat-row span {
+    color: rgba(255, 247, 236, 0.88);
+    line-height: 1.45;
+}
+
+.auth-form-header {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 24px;
+}
+
+.auth-form-header h2 {
+    font-size: 2.4rem;
+    line-height: 0.98;
+    color: #172b23;
+}
+
+.auth-form-header p {
+    margin: 0;
+    color: #59635d;
+    line-height: 1.6;
+}
+
+.auth-form {
+    display: grid;
+    gap: 16px;
+}
+
+.auth-field {
+    display: grid;
+    gap: 8px;
+}
+
+.auth-field span {
+    color: #22332c;
+    font-size: 0.92rem;
+}
+
+.auth-field input {
+    width: 100%;
+    min-height: 52px;
+    border-radius: 16px;
+    border: 1px solid #d9d3c7;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 0 16px;
+    font-size: 1rem;
+    box-sizing: border-box;
+}
+
+.auth-field input:focus {
+    outline: 2px solid rgba(40, 103, 82, 0.25);
+    border-color: #2d6a57;
+}
+
+.auth-error {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #ffe0da;
+    color: #8a3225;
+}
+
+.auth-submit,
+.auth-switch-button {
     font-family:
         "Gill Sans", "Gill Sans MT", Calibri, "Trebuchet MS", sans-serif;
 }
 
-h1 {
-    padding: 100px;
+.auth-submit {
+    width: 100%;
+    min-height: 52px;
+    border: 0;
+    border-radius: 999px;
+    background: #1f4d3f;
+    color: #fff7ec;
+    cursor: pointer;
+    font-size: 1rem;
+    transition:
+        transform 180ms ease,
+        opacity 180ms ease;
 }
 
-p {
-    font-family:
-        "Gill Sans", "Gill Sans MT", Calibri, "Trebuchet MS", sans-serif;
+.auth-submit:hover {
+    transform: translateY(-1px);
+}
+
+.auth-submit:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+.auth-switch,
+.auth-footer {
+    margin: 18px 0 0;
+    color: #59635d;
+}
+
+.auth-switch-button {
+    border: 0;
+    background: transparent;
+    color: #1f4d3f;
+    padding: 0;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.auth-footer a {
+    color: #1f4d3f;
+}
+
+@media (max-width: 920px) {
+    .auth-shell {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .auth-shell {
+        padding: 16px;
+    }
+
+    .auth-panel {
+        padding: 24px;
+        border-radius: 22px;
+    }
+
+    .auth-stat-row {
+        grid-template-columns: 1fr;
+    }
+
+    .auth-form-header h2 {
+        font-size: 2rem;
+    }
 }
