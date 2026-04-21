@@ -302,7 +302,6 @@ def get_user_by_id(user_id: int):
                     user_id,
                     name,
                     email,
-                    password,
                     preferences
                 FROM public.user_details
                 WHERE user_id = %s
@@ -323,7 +322,6 @@ def create_user(name: str, email: str, password_hash: str):
                     user_id,
                     name,
                     email,
-                    password,
                     preferences
                 """,
                 (name, email, password_hash),
@@ -347,7 +345,6 @@ def update_user_preferences(user_id: int, preferences: str):
                     user_id,
                     name,
                     email,
-                    password,
                     preferences
                 """,
                 (preferences, user_id),

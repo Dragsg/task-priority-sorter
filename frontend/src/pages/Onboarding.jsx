@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchCurrentUser, saveOnboardingPreferences } from "../api";
-
-const OPTIONS = ["School", "Work", "Personal", "Unsure"];
+import {
+  clearStoredToken,
+  fetchCurrentUser,
+  saveOnboardingPreferences,
+} from "../api";
+import { PREFERENCE_OPTIONS } from "../preferences";
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -20,6 +23,7 @@ export default function Onboarding() {
           setPreferences(data.preferences);
         }
       } catch {
+        clearStoredToken();
         navigate("/", { replace: true });
       }
     }
@@ -47,35 +51,42 @@ export default function Onboarding() {
   }
 
   if (!user) {
-    return <main className="simple-shell">Loading...</main>;
+    return <main className="simple-shell">Loading your setup...</main>;
   }
 
   return (
     <main className="simple-shell">
       <section className="simple-card">
         <p className="auth-eyebrow">Onboarding</p>
-        <h1 className="simple-title">
-          {user.email}, before you begin, let us personalise your experience
-        </h1>
-        <p className="simple-copy">What do you plan to use this tool for?</p>
+        <h1 className="simple-title">Choose the focus that fits you best</h1>
+        <p className="simple-copy">
+          You&apos;re signed in as <strong>{user.email}</strong>. Pick the main context
+          you want this workspace to support first.
+        </p>
+        <p className="simple-note">
+          This sets your starting preference, and you can change it any time later.
+        </p>
 
         <form className="option-form" onSubmit={handleSubmit}>
-          {OPTIONS.map((option) => (
-            <label className="option-row" key={option}>
+          {PREFERENCE_OPTIONS.map((option) => (
+            <label className="option-row" key={option.value}>
               <input
-                checked={preferences === option}
+                checked={preferences === option.value}
                 name="preferences"
-                onChange={() => setPreferences(option)}
+                onChange={() => setPreferences(option.value)}
                 type="radio"
               />
-              <span>{option}</span>
+              <span>
+                <strong>{option.title}</strong>
+                <small>{option.description}</small>
+              </span>
             </label>
           ))}
 
           {error ? <p className="error-text auth-error">{error}</p> : null}
 
           <button className="auth-button" disabled={busy} type="submit">
-            {busy ? "Saving..." : "Continue"}
+            {busy ? "Saving..." : "Save and continue"}
           </button>
         </form>
       </section>

@@ -15,6 +15,16 @@ from .db import (
     get_user_by_id,
     update_user_preferences,
 )
+from .account_utils import (
+    normalize_email,
+    normalize_name,
+    normalize_preference,
+    serialize_user,
+    validate_email,
+    validate_name,
+    validate_password,
+    validate_preference,
+)
 from .gmail_service import (
     build_google_flow,
     complete_gmail_link,
@@ -77,12 +87,13 @@ def get_status_code(error: Exception) -> int:
 def signup():
     try:
         data = request.get_json() or {}
-        email = (data.get("email") or "").strip().lower()
+        email = normalize_email(data.get("email"))
         password = data.get("password") or ""
-        name = (data.get("name") or "").strip()
+        name = normalize_name(data.get("name"))
 
-        if not email or not password or not name:
-            return jsonify({"success": False, "error": "Missing required fields"}), 400
+        validate_email(email)
+        validate_password(password)
+        validate_name(name)
 
         existing_user = get_user_by_email(email)
         if existing_user:
@@ -94,6 +105,8 @@ def signup():
         ).decode("utf-8")
         user = create_user(name=name, email=email, password_hash=password_hash)
         token = build_token(user["user_id"])
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 422
     except Exception as error:
         return jsonify({"success": False, "error": str(error)}), get_status_code(error)
 
@@ -101,12 +114,7 @@ def signup():
         {
             "success": True,
             "token": token,
-            "user": {
-                "userId": user["user_id"],
-                "name": user["name"],
-                "email": user["email"],
-                "preferences": user["preferences"],
-            },
+            "user": serialize_user(user),
         }
     )
 
@@ -115,8 +123,12 @@ def signup():
 def login():
     try:
         data = request.get_json() or {}
-        email = (data.get("email") or "").strip().lower()
+        email = normalize_email(data.get("email"))
         password = data.get("password") or ""
+
+        validate_email(email)
+        if not password:
+            raise ValueError("Password is required.")
 
         user = get_user_by_email(email)
         if not user:
@@ -130,6 +142,8 @@ def login():
             return jsonify({"success": False, "error": "Invalid email or password"}), 401
 
         token = build_token(user["user_id"])
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 422
     except Exception as error:
         return jsonify({"success": False, "error": str(error)}), get_status_code(error)
 
@@ -137,12 +151,7 @@ def login():
         {
             "success": True,
             "token": token,
-            "user": {
-                "userId": user["user_id"],
-                "name": user["name"],
-                "email": user["email"],
-                "preferences": user["preferences"],
-            },
+            "user": serialize_user(user),
         }
     )
 
@@ -157,14 +166,7 @@ def current_user():
     except Exception as error:
         return jsonify({"error": str(error)}), get_status_code(error)
 
-    return jsonify(
-        {
-            "userId": user["user_id"],
-            "name": user["name"],
-            "email": user["email"],
-            "preferences": user["preferences"],
-        }
-    )
+    return jsonify(serialize_user(user))
 
 
 @api.put("/onboarding")
@@ -172,25 +174,21 @@ def onboarding():
     try:
         user_id = get_authenticated_user_id(required=True)
         data = request.get_json() or {}
-        preferences = (data.get("preferences") or "").strip()
-        if not preferences:
-            return jsonify({"error": "Preferences are required"}), 400
+        preferences = normalize_preference(data.get("preferences"))
+        validate_preference(preferences)
 
         user = update_user_preferences(user_id, preferences)
         if not user:
             return jsonify({"error": "User not found"}), 404
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
     except Exception as error:
         return jsonify({"error": str(error)}), get_status_code(error)
 
     return jsonify(
         {
             "success": True,
-            "user": {
-                "userId": user["user_id"],
-                "name": user["name"],
-                "email": user["email"],
-                "preferences": user["preferences"],
-            },
+            "user": serialize_user(user),
         }
     )
 

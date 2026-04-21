@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { clearStoredToken, fetchCurrentUser } from "../api";
+import { getPreferenceLabel } from "../preferences";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -26,7 +27,7 @@ export default function Home() {
   }
 
   if (!user) {
-    return <main className="simple-shell">Loading...</main>;
+    return <main className="simple-shell">Loading your dashboard...</main>;
   }
 
   return (
@@ -35,18 +36,27 @@ export default function Home() {
         <p className="auth-eyebrow">Home</p>
         <h1 className="simple-title">Hello, {user.name || user.email}</h1>
         <p className="simple-copy">
-          Logged in as <strong>{user.email}</strong>.
+          Your workspace is ready. Review your setup, adjust your preference,
+          or continue into the rest of the app.
         </p>
-        <p className="simple-copy">
-          Preference: <strong>{user.preferences || "Not set yet"}</strong>
-        </p>
+
+        <div className="summary-grid">
+          <article className="summary-card">
+            <p className="summary-label">Signed in as</p>
+            <p className="summary-value">{user.email}</p>
+          </article>
+          <article className="summary-card">
+            <p className="summary-label">Current focus</p>
+            <p className="summary-value">{getPreferenceLabel(user.preferences)}</p>
+          </article>
+        </div>
 
         <div className="home-actions">
           <Link className="auth-button home-link" to="/linking">
-            Go to linking page
+            Open workspace
           </Link>
           <Link className="secondary-button home-link" to="/onboarding">
-            Update preferences
+            Update preference
           </Link>
           <button className="inline-button danger-button" onClick={handleLogout} type="button">
             Log out

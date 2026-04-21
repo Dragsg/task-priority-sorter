@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchCurrentUser, getStoredToken, signIn, signUp } from "../api";
+import {
+  clearStoredToken,
+  fetchCurrentUser,
+  getStoredToken,
+  signIn,
+  signUp,
+} from "../api";
+
+const HIGHLIGHTS = [
+  "Create an account and get into your workspace quickly.",
+  "Save a focus preference so the app feels more tailored from the start.",
+  "Return to your dashboard without repeating setup steps.",
+];
 
 export default function Login() {
   const navigate = useNavigate();
@@ -10,6 +22,11 @@ export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const trimmedEmail = email.trim();
+  const trimmedName = name.trim();
+  const canSubmit = isSignUp
+    ? trimmedEmail && password.length >= 8 && trimmedName.length >= 2
+    : trimmedEmail && password;
 
   useEffect(() => {
     async function checkExistingSession() {
@@ -22,7 +39,7 @@ export default function Login() {
         const user = await fetchCurrentUser();
         navigate(user.preferences ? "/home" : "/onboarding", { replace: true });
       } catch {
-        localStorage.removeItem("token");
+        clearStoredToken();
       }
     }
 
@@ -54,38 +71,66 @@ export default function Login() {
         <p className="auth-eyebrow">Task Priority Sorter</p>
         <h1>{isSignUp ? "Create your account" : "Welcome back"}</h1>
         <p className="auth-subtitle">
-          Sign in first, then we can connect Gmail and Outlook from the linking
-          page.
+          {isSignUp
+            ? "Get started with a short setup so your dashboard is ready as soon as you sign in."
+            : "Sign in to review your saved preference, update your setup, and continue where you left off."}
         </p>
+
+        <div className="copy-panel">
+          <p className="panel-title">What happens next</p>
+          <ul className="feature-list">
+            {HIGHLIGHTS.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <input
             className="auth-input"
+            disabled={busy}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="Email"
+            placeholder="you@example.com"
             type="email"
             value={email}
+            autoComplete="email"
+            required
           />
           <input
             className="auth-input"
+            disabled={busy}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="Password"
+            placeholder={isSignUp ? "At least 8 characters" : "Enter your password"}
             type="password"
             value={password}
+            autoComplete={isSignUp ? "new-password" : "current-password"}
+            minLength={isSignUp ? 8 : undefined}
+            required
           />
           {isSignUp ? (
             <input
               className="auth-input"
+              disabled={busy}
               onChange={(event) => setName(event.target.value)}
               placeholder="What should we call you?"
               type="text"
               value={name}
+              autoComplete="name"
+              minLength={2}
+              maxLength={80}
+              required
             />
+          ) : null}
+
+          {isSignUp ? (
+            <p className="field-hint">
+              Use a name with at least 2 characters and a password with at least 8.
+            </p>
           ) : null}
 
           {error ? <p className="error-text auth-error">{error}</p> : null}
 
-          <button className="auth-button" disabled={busy} type="submit">
+          <button className="auth-button" disabled={busy || !canSubmit} type="submit">
             {busy ? "Please wait..." : isSignUp ? "Create account" : "Log in"}
           </button>
         </form>
@@ -94,6 +139,7 @@ export default function Login() {
           {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
           <button
             className="inline-button"
+            disabled={busy}
             onClick={() => {
               setError("");
               setIsSignUp((current) => !current);
