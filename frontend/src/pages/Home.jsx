@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { clearStoredToken, fetchCurrentUser } from "../api";
+import { getPreferenceLabel } from "../preferences";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -25,49 +26,47 @@ export default function Home() {
     navigate("/", { replace: true });
   }
 
+  if (!user) {
+    return <main className="simple-shell">Loading your dashboard...</main>;
+  }
+
   return (
     <main className="simple-shell">
+      <section className="simple-hero">
+        <p className="auth-eyebrow">Dashboard</p>
+        <h1 className="simple-title">Hello, {user.name || user.email}</h1>
+        <p className="simple-copy">
+          Your workspace is ready. Review your setup, adjust your preference,
+          or continue into the rest of the app.
+        </p>
+      </section>
+
       <section className="simple-card">
-        <p className="auth-eyebrow">Home</p>
-        <h1 className="simple-title">
-          {user ? `Hello, ${user.name || user.email}` : "Loading your workspace"}
-        </h1>
-        <p className="simple-copy">
-          {user ? (
-            <>
-              Logged in as <strong>{user.email}</strong>.
-            </>
-          ) : (
-            "Fetching your account details..."
-          )}
-        </p>
-        <p className="simple-copy">
-          Preference:{" "}
-          <strong>{user ? user.preferences || "Not set yet" : "Loading..."}</strong>
-        </p>
+        <div className="summary-grid">
+          <article className="summary-card">
+            <p className="summary-label">Signed in as</p>
+            <p className="summary-value">{user.email}</p>
+          </article>
+          <article className="summary-card">
+            <p className="summary-label">Current focus</p>
+            <p className="summary-value">{getPreferenceLabel(user.preferences)}</p>
+          </article>
+        </div>
+
+        <div className="copy-panel dashboard-note">
+          <p className="panel-title">A quiet starting point</p>
+          <p className="panel-copy">
+            Keep your setup simple here, then step into the rest of the app once
+            you&apos;re ready.
+          </p>
+        </div>
 
         <div className="home-actions">
-          <Link
-            className={`auth-button home-link${user ? "" : " disabled-link"}`}
-            onClick={(event) => {
-              if (!user) {
-                event.preventDefault();
-              }
-            }}
-            to="/linking"
-          >
-            Go to linking page
+          <Link className="auth-button home-link" to="/linking">
+            Open workspace
           </Link>
-          <Link
-            className={`secondary-button home-link${user ? "" : " disabled-link"}`}
-            onClick={(event) => {
-              if (!user) {
-                event.preventDefault();
-              }
-            }}
-            to="/onboarding"
-          >
-            Update preferences
+          <Link className="secondary-button home-link" to="/onboarding">
+            Update preference
           </Link>
           <button
             className="inline-button danger-button"

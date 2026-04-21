@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchCurrentUser, getStoredToken, signIn, signUp } from "../api";
+import {
+  clearStoredToken,
+  fetchCurrentUser,
+  getStoredToken,
+  signIn,
+  signUp,
+} from "../api";
+
+const HIGHLIGHTS = [
+  "Create an account and get into your workspace quickly.",
+  "Save a focus preference so the app feels more tailored from the start.",
+  "Return to your dashboard without repeating setup steps.",
+];
 
 export default function Login() {
   const navigate = useNavigate();
@@ -10,6 +22,11 @@ export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const trimmedEmail = email.trim();
+  const trimmedName = name.trim();
+  const canSubmit = isSignUp
+    ? trimmedEmail && password.length >= 8 && trimmedName.length >= 2
+    : trimmedEmail && password;
 
   useEffect(() => {
     async function checkExistingSession() {
@@ -22,7 +39,7 @@ export default function Login() {
         const user = await fetchCurrentUser();
         navigate(user.preferences ? "/home" : "/onboarding", { replace: true });
       } catch {
-        localStorage.removeItem("token");
+        clearStoredToken();
       }
     }
 
@@ -50,59 +67,110 @@ export default function Login() {
 
   return (
     <main className="auth-shell">
-      <section className="auth-card">
-        <p className="auth-eyebrow">Task Priority Sorter</p>
-        <h1>{isSignUp ? "Create your account" : "Welcome back"}</h1>
-        <p className="auth-subtitle">
-          Sign in first, then we can connect Gmail and Outlook from the linking
-          page.
-        </p>
+      <section className="auth-layout">
+        <div className="brand-panel">
+          <p className="auth-eyebrow">Task Priority Sorter</p>
+          <h1>{isSignUp ? "A calmer place to sort what matters" : "Welcome back"}</h1>
+          <p className="auth-subtitle">
+            {isSignUp
+              ? "Set up your account, choose your focus, and step into a workspace that feels quieter and more intentional."
+              : "Pick up where you left off, review your setup, and move back into your workspace without friction."}
+          </p>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <input
-            className="auth-input"
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="Email"
-            type="email"
-            value={email}
-          />
-          <input
-            className="auth-input"
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Password"
-            type="password"
-            value={password}
-          />
-          {isSignUp ? (
-            <input
-              className="auth-input"
-              onChange={(event) => setName(event.target.value)}
-              placeholder="What should we call you?"
-              type="text"
-              value={name}
-            />
-          ) : null}
+          <div className="copy-panel">
+            <p className="panel-title">What happens next</p>
+            <ul className="feature-list">
+              {HIGHLIGHTS.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
 
-          {error ? <p className="error-text auth-error">{error}</p> : null}
+        <section className="auth-card">
+          <div className="auth-card-header">
+            <p className="auth-section-label">{isSignUp ? "Create account" : "Sign in"}</p>
+            <p className="auth-card-copy">
+              {isSignUp
+                ? "A few details and you are in."
+                : "Use the details you signed up with."}
+            </p>
+          </div>
 
-          <button className="auth-button" disabled={busy} type="submit">
-            {busy ? "Please wait..." : isSignUp ? "Create account" : "Log in"}
-          </button>
-        </form>
+          <form className="auth-form" onSubmit={handleSubmit}>
+            <label className="field-group">
+              <span>Email</span>
+              <input
+                className="auth-input"
+                disabled={busy}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+                type="email"
+                value={email}
+                autoComplete="email"
+                required
+              />
+            </label>
+            <label className="field-group">
+              <span>Password</span>
+              <input
+                className="auth-input"
+                disabled={busy}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={isSignUp ? "At least 8 characters" : "Enter your password"}
+                type="password"
+                value={password}
+                autoComplete={isSignUp ? "new-password" : "current-password"}
+                minLength={isSignUp ? 8 : undefined}
+                required
+              />
+            </label>
+            {isSignUp ? (
+              <label className="field-group">
+                <span>Name</span>
+                <input
+                  className="auth-input"
+                  disabled={busy}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="What should we call you?"
+                  type="text"
+                  value={name}
+                  autoComplete="name"
+                  minLength={2}
+                  maxLength={80}
+                  required
+                />
+              </label>
+            ) : null}
 
-        <p className="auth-switch">
-          {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
-          <button
-            className="inline-button"
-            onClick={() => {
-              setError("");
-              setIsSignUp((current) => !current);
-            }}
-            type="button"
-          >
-            {isSignUp ? "Log in" : "Create one"}
-          </button>
-        </p>
+            {isSignUp ? (
+              <p className="field-hint">
+                Use a name with at least 2 characters and a password with at least 8.
+              </p>
+            ) : null}
+
+            {error ? <p className="error-text auth-error">{error}</p> : null}
+
+            <button className="auth-button" disabled={busy || !canSubmit} type="submit">
+              {busy ? "Please wait..." : isSignUp ? "Create account" : "Continue"}
+            </button>
+          </form>
+
+          <p className="auth-switch">
+            {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
+            <button
+              className="inline-button"
+              disabled={busy}
+              onClick={() => {
+                setError("");
+                setIsSignUp((current) => !current);
+              }}
+              type="button"
+            >
+              {isSignUp ? "Log in" : "Create one"}
+            </button>
+          </p>
+        </section>
       </section>
     </main>
   );
