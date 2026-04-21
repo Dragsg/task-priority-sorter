@@ -1,0 +1,51 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16850ac49583ec74",
+  "thread_id": "16850ac49583ec74",
+  "timestamp_iso": "2019-01-15T08:41:34+00:00",
+  "label_ids": [
+    "CATEGORY_PROMOTIONS",
+    "IMPORTANT",
+    "INBOX"
+  ],
+  "sender_id": "user_fd2a9692",
+  "sender_display": "Person_01ac2dc9",
+  "sender_email": "user_fd2a9692@redacted.test",
+  "sender_domain": "em.grammarly.com",
+  "subject": "Thank you for installing Person_01ac2dc9's Native App!",
+  "snippet": "Great to have you, Ng Ying Xuan. Before you crank out that next project, we have just a few small suggestions so that you and Person_01ac2dc9 get off to the right start: Person_01ac2dc9 Thank You for Installing",
+  "body_text": "Great to have you, Ng Ying Xuan. Before you crank out that next project, we have just a few small suggestions so that you and Person_01ac2dc9 get off to the right start:\r\n\r\nhttps://click.send.grammarly.com/?qs=1d44312a3ef00c9fb9c4720ef39fd51ff1727bbfd1170fa8c38b8eba6102a44a2cc55b8c3d47b8df047d597d0d90ebce52e7078a440da5e3f8aa1849c2ae7ff4 \r\n\r\n \r\n\r\n \r\n Thank Youfor Installing Person_01ac2dc9 for macOS.\r\n \r\n \r\n\r\n  \r\nEnsure a Better Way to Write\r\n\r\nIs Just a Click Away\r\n \r\nGreat to have you, Ng Ying Xuan. Before you crank out that next project, we have just a few small suggestions to help you and Person_01ac2dc9 get off to the right start:\r\n \r\n\r\n \r\nCOOL FEATURE:\r\nSimply drop any existing text document on the Person_01ac2dc9 icon to open and edit your text instantly.\r\n \r\n \r\n \r\n Important:\r\n To take advantage of features like these, make sure you pin Person_01ac2dc9&rsquo;s icon to your dock. This way you&rsquo;ll be able to instantly edit new or existing documents whenever inspiration strikes.\r\n\r\n \r\n \r\n \r\nWe hope you enjoy using Person_01ac2dc9 for macOS. Don&rsquo;t hesitate to \r\nhttps://click.send.grammarly.com/?qs=1d44312a3ef00c9f107382ff58deb5b0075c765d763f4265689ec3e9d9cb83bcfb0baf5996db2aa446ddc2acbfa7df099fea51fe5ea326e18ca499657ca0cc92 \r\nwrite us  if you have any questions.\r\n \r\nKeep on writing!\r\n\r\nThe Person_01ac2dc9 Team\r\n \r\n \r\n\r\n \r\n\r\nhttps://click.send.grammarly.com/?qs=1d44312a3ef00c9f51751dacf52e40436dce38695c6497146ba0bb03e3a39e77b60cdaa806d570332aecc0b69e2c78d14f[phone_e39e97f1]efcfee \r\n\r\nhttps://click.send.grammarly.com/?qs=1d44312a3ef00c9fe5c[phone_8f217acf]dd44b79db70ff9e725e612526a07ecdd53b9239d5d4212a81a75cc0cd7ce[phone_0c09fdb5]db7bb33746d070 \r\n\r\nhttps://click.send.grammarly.com/?qs=1d44312a3ef00c9f850e98ffb5d869fa1c8a03803c4ee8b4b22e[phone_95505eae]bf[phone_8f18cbb9]b133f543c48877b369f8a099d77b8ab94df66e85e \r\n\r\nhttps://click.send.grammarly.com/?qs=1d44312a3ef00c9f[phone_bd5b2be3]a01c8a0eac77f85a8ced38cc[phone_e97bc31e]b9c7d5faf36cfa79354fa6b0dd0e3b[ph",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16850ac49583ec74",
+    "history_id": "1801793",
+    "internal_date_ms": "1547541694000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_01ac2dc9 <user_fd2a9692@redacted.test>",
+  "to_raw": "<user_9a747a63@redacted.test>",
+  "cc_raw": null,
+  "bcc_raw": null
+}

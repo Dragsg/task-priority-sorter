@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16838b8e42cd1cfa",
+  "thread_id": "16838b8e42cd1cfa",
+  "timestamp_iso": "2019-01-10T17:04:26+00:00",
+  "label_ids": [
+    "CATEGORY_PROMOTIONS",
+    "INBOX"
+  ],
+  "sender_id": "user_3579aabe",
+  "sender_display": "Person_01ac2dc9",
+  "sender_email": "user_3579aabe@redacted.test",
+  "sender_domain": "send.grammarly.com",
+  "subject": "Get the Most Out of Your Free Account",
+  "snippet": "We&#39;ve made some major improvements to Person_01ac2dc9 over the past year. Person_01ac2dc9 Person_01ac2dc9 for All We&#39;ve made some major improvements to Person_01ac2dc9 over the past year. The BEST part? Now, you can",
+  "body_text": "Person_01ac2dc9 For All\r\nWe've made some major improvements to Person_01ac2dc9 over the past year.\r\n\r\n  \r\n\r\nhttps://click.send.grammarly.com/?qs=c2545f51d1a8eaa823a368669d4d6f868b0f7c6e3d84655da3a95f22fe5375d[phone_6a5f64d1]ddd6caaa96106b06155df964cccbe0b4b54bb22ef38e12fdd319372c \r\n\r\n  \r\n\r\n  \r\n\r\nhttps://click.send.grammarly.com/?qs=c2545f51d1a8eaa8c167ba291c161b579ad7971ebdfefed54141adc9551d16485d09d76e9fce66879a016d2980d11c06f9f2a693e03b9b2b5b06cadcce86960f \r\n\r\n  \r\nPerson_01ac2dc9 for All\r\n  \r\n\r\nWe&rsquo;ve made some major improvements to Person_01ac2dc9 over the past year. The BEST part? Now, you can check your writing with Person_01ac2dc9 everywhere you write&mdash;for free. Check out our new products and features below.\r\n\r\n  \r\n\r\n  \r\n\r\nPerson_01ac2dc9's Mobile Keyboard\r\n\r\n  \r\n\r\n  \r\n\r\nUse Person_01ac2dc9's keyboard for clear and \r\n effective emails, documents, and more.\r\n\r\n  \r\n\r\nhttps://click.send.grammarly.com/?qs=c2545f51d1a8eaa8f2f9f442887ac8e34629b5176980a0b515c14411e710f35a4843d5defab09583c91a413dbe8f6476af38293c36abbc7bcfef78e5dfc2cdb2 \r\n\r\nhttps://click.send.grammarly.com/?qs=c2545f51d1a8eaa859e86fb5d1aebe792facb1001557d66baf73f9c83e546b519a6dcd16d1ac66ebd91465e92bb[phone_ffa9c294]c79007eecec6043c4eeaa27ee7ac7 \r\n\r\n  \r\n\r\nhttps://click.send.grammarly.com/?qs=c2545f51d1a8eaa81fcda828dfb5a995360ae46d49691c7ab1d6fdcb21c55ecf67cca1ea141dba0934cfc0479b86f0fa0a2bffd2f3170bdfda6445cc7702a7d6 \r\n\r\n  \r\n\r\nhttps://click.send.grammarly.com/?qs=c2545f51d1a8eaa8311d9069f7853d489c466ec59eba65ea1420d4adf44163e732d12e7803d[phone_aa539265]bb9a5327d11b5cf5d7989b0690605d85313b8b22a \r\n\r\n  \r\nPerson_01ac2dc9 Native App\r\n  \r\n\r\n  \r\n\r\nhttps://click.send.grammarly.com/?qs=c2545f51d1a8eaa8311d9069f7853d489c466ec59eba65ea1420d4adf44163e732d12e7803d[phone_aa539265]bb9a5327d11b5cf5d7989b0690605d85313b8b22a \r\n\r\nFocus on your writing with the official \r\n Person_01ac2dc9 app for OS X and Windows.\r\n  \r\n\r\nhttps://click.send.grammarly.com/?qs=c2545f51d1a8eaa8311d9069f7853d489c466ec59eba65ea1420d4a",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16838b8e42cd1cfa",
+    "history_id": "1801876",
+    "internal_date_ms": "1547139866000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_01ac2dc9 <user_3579aabe@redacted.test>",
+  "to_raw": "<user_9a747a63@redacted.test>",
+  "cc_raw": null,
+  "bcc_raw": null
+}

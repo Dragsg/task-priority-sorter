@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1685ab70f33a3a5a",
+  "thread_id": "1685ab70f33a3a5a",
+  "timestamp_iso": "2019-01-17T07:29:32+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_0343c215",
+  "sender_display": "Person_2c5ee54b",
+  "sender_email": "user_0343c215@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New assignment: \"Activity: Factorisation Tree\"",
+  "snippet": "Hi NG YING XUAN, Desmond Peh posted a new assignment in 2019 S104 Maths. Activity: Factorisation Tree Dear students, Please use the following game to check on your competency for your first topic,",
+  "body_text": "Hi NG YING XUAN,\r\nDesmond Peh posted a new assignment in 2019 S104 Maths  \r\n<https://classroom.google.com/c/MjcyNDQ2NjQxMDVa>.\r\n\r\nActivity: Factorisation Tree\r\nDear students,\r\n\r\nPlease use the following game to check on your competency for your first  \r\ntopic, Prime Numbers.\r\nOPEN  \r\n<https://classroom.google.com/c/MjcyNDQ2NjQxMDVa/a/Mjc0NDA5NTMxMjNa/details>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1685ab70f33a3a5a",
+    "history_id": "1801826",
+    "internal_date_ms": "1547710172000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_2c5ee54b\" <user_0343c215@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

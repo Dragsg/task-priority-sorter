@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "168284545b4a366c",
+  "thread_id": "168284545b4a366c",
+  "timestamp_iso": "2019-01-07T12:24:14+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_52376b7d",
+  "sender_display": "Person_0ea97c6e",
+  "sender_email": "user_52376b7d@redacted.test",
+  "sender_domain": "google.com",
+  "subject": "2019 Acceptable Use Policy",
+  "snippet": "Thanks for filling out 2019 Acceptable Use Policy Here&#39;s what we got from you: 2019 Acceptable Use Policy Your email address (user_9a747a63@redacted.test) was recorded when you submitted this",
+  "body_text": "Person_0ea97c6e\r\n\r\n\r\nThanks for filling out 2019 Acceptable Use Policy\r\n\r\n\r\n\r\n\r\n\r\nHere's what we got from you:\r\n\r\n\r\n\r\n\r\n2019 Acceptable Use Policy\r\n\r\n\r\nYour email address (user_9a747a63@redacted.test) was recorded when you  \r\nsubmitted this form.\r\n\r\n\r\nAcceptable Use Policy Document: AUP2009-1 Computers are used to support and  \r\nenhance learning. Internet access allows users to share resources,  \r\ninnovations, experiences and interact with people from all over the world.  \r\nThis policy is intended to prescribe the appropriate behaviour and use of  \r\nICT resources by users in an effective, ethical and lawful manner. This  \r\npolicy applies to the use of the ICT resources owned and managed by SST, as  \r\nwell as those brought in for use by users. ICT resources include computer  \r\naccounts, servers, disk storage, software, email, public folders, network  \r\nand the Internet. All users are to comply with this Policy. General Policy  \r\n1. Users shall use the ICT resources according to the purpose for which  \r\nthey are provided, which is for the administrative, teaching and learning  \r\nactivities in SST. 2. Users shall not use engage in any activities relating  \r\nto the use of the ICT resources that will be in violation of the laws of  \r\nSingapore, in particular (but not limited to), the Computer Misuse and  \r\nCybersecurity Act (Cap 50A, available at http://statutes.agc.gov.sg/) as  \r\nmay be amended from time to time. Some examples of such illegal uses are:  \r\n(i) Downloading, distribution, sharing or storing of seditious, obscene or  \r\npornographic materials; (ii) Infringement of any copyright and intellectual  \r\nproperty right. 3. Users shall use only software that meets legal  \r\nrequirements, such as having valid licences. 4. Users shall not use, modify  \r\nor adapt ICT resources for commercial purposes or financial gains. 5. Users  \r\nshall immediately report any violations or suspected violations of laws or  \r\npolicies as well as any loopholes or potential loopholes in th",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "168284545b4a366c",
+    "history_id": "1801852",
+    "internal_date_ms": "1546863854000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_0ea97c6e <user_52376b7d@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

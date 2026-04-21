@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1684f44c50840b06",
+  "thread_id": "1684f44c50840b06",
+  "timestamp_iso": "2019-01-15T02:08:53+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_0072ec78",
+  "sender_display": "Person_fc043b4b",
+  "sender_email": "user_0072ec78@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New question: \"Why is I&E so important?\"",
+  "snippet": "Hi NG YING XUAN, Dennis Lam posted a new question in 2019 S1-04 ChangeMakers: Innovation and Entrepreneurship (CMIE). Due: Jan 15 Why is I&amp;E so important? One answer per group, do not submit until",
+  "body_text": "Hi NG YING XUAN,\r\nDennis Lam posted a new question in 2019 S1-04 ChangeMakers: Innovation and  \r\nEntrepreneurship (CMIE) <https://classroom.google.com/c/MjcyMDU2MzYwOTda>.\r\n\r\nDue: Jan 15\r\nWhy is I&E so important?\r\nOne answer per group, do not submit until I ask you to.\r\nOPEN  \r\n<https://classroom.google.com/c/MjcyMDU2MzYwOTda/sa/MjczNzMwOTc2ODNa/details>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1684f44c50840b06",
+    "history_id": "1801777",
+    "internal_date_ms": "1547518133000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_fc043b4b\" <user_0072ec78@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

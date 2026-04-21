@@ -1,0 +1,51 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1685ee3cf1377f0a",
+  "thread_id": "1685ee3cf1377f0a",
+  "timestamp_iso": "2019-01-18T02:56:54+00:00",
+  "label_ids": [
+    "IMPORTANT",
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_504eef33",
+  "sender_display": "Person_43f1b48e",
+  "sender_email": "user_504eef33@redacted.test",
+  "sender_domain": "google.com",
+  "subject": "S101-104（A）活动：写人 - Invitation to edit",
+  "snippet": "Yeo Leng Leng has invited you to edit the following spreadsheet: S101-104（A）活动：写人 这是等一下要做的活动。 Open in Sheets Yeo Leng Leng is outside your organization. Google Sheets: Create and edit spreadsheets",
+  "body_text": "I've shared an item with you:\r\n\r\nS101-104（A）活动：写人\r\nhttps://docs.google.com/spreadsheets/d/1CaCpF3-lHzaQ1fBku_Ozeu_h_XhuMcFZFehG2xrm4Pg/edit?usp=sharing&ts=5c414076\r\n\r\nIt's not an attachment -- it's stored online. To open this item, just click  \r\nthe link above.\r\n\r\n这是等一下要做的活动。",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1685ee3cf1377f0a",
+    "history_id": "1819186",
+    "internal_date_ms": "1547780214000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_43f1b48e\" <user_504eef33@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": "user_13afc0b3@redacted.test, user_cd91e174@redacted.test, user_513b9e09@redacted.test, user_c903eaf8@redacted.test, user_48e0b591@redacted.test, user_815947dd@redacted.test, user_060eabbb@redacted.test, user_b81d8084@redacted.test, user_0ec4fc68@redacted.test, user_791e9533@redacted.test, user_4f1e8a71@redacted.test, user_ca8c863a@redacted.test, user_2e388b5a@redacted.test, user_c20f5ada@redacted.test, user_0dabe3b9@redacted.test, user_2eca7aa7@redacted.test, user_0ca039fd@redacted.test, user_2a47288e@redacted.test, user_0e1ab936@redacted.test, user_7c12c0b1@redacted.test, user_c7b25e49@redacted.test, user_b55b0a72@redacted.test, user_03fab4be@redacted.test, user_a60da587@redacted.test, user_c4152290@redacted.test, user_a5564060@redacted.test, user_2794f284@redacted.test, user_[phone_53b808e7]@redacted.test",
+  "bcc_raw": null
+}

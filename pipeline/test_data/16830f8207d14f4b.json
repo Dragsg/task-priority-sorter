@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16830f8207d14f4b",
+  "thread_id": "16830f8207d14f4b",
+  "timestamp_iso": "2019-01-09T04:55:56+00:00",
+  "label_ids": [
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_364c3bf7",
+  "sender_display": "Person_8ba5d458",
+  "sender_email": "user_364c3bf7@redacted.test",
+  "sender_domain": "sst.edu.sg",
+  "subject": "Math-ters] Term 1 Week 1: Welcome",
+  "snippet": "Dear students, Happy New Year! We will be commencing our first lesson next week. Before that, I like to bring your attention to the following matters. INTRODUCTION To my new class, S1-04, I will be",
+  "body_text": "Dear students,\r\n\r\nHappy New Year! We will be commencing our first lesson next week. Before\r\nthat, I like to bring your attention to the following matters.\r\n\r\n*INTRODUCTION*\r\nTo my new class, S1-04, I will be your Math/Form Teacher. In any case,\r\n*WELCOME*!\r\n\r\n*GOOGLE CLASSROOM & ICT LESSONS*\r\nThis year, we will try our best to use Google Classroom more than usual.\r\nAnd as I have promised, we will integrate more lessons involving ICT and\r\nactivities, provided that I have *FULL COOPERATION* from the respective\r\nclasses. My belief holds - to create engaging and meaningful lessons.\r\n\r\n*PREPARATION FOR FIRST LESSON*\r\nPlease bring along writing materials and calculator for first lesson. A\r\ndiagnostic test will be conducted and if you need to clarify anything,\r\nplease feel free to email me privately. And yes, if your question pertains\r\nto getting solutions from me, you have struck jackpot! Because I will only\r\nprovide you with the solutions.... *AFTER*.\r\n\r\n*BOOKMARKS*\r\nIt will be good for you to bookmark the following links so that we do not\r\nhave to scamper around for this year.\r\n\r\n   - GoogleSite (Mathematics) : LINK\r\n   <https://sites.google.com/a/s2018.ssts.edu.sg/math/>\r\n   - Desmos : LINK <https://www.desmos.com/>\r\n   - Google Classroom : LINK <https://classroom.google.com/h> *(Your first\r\n   assignment of the year has been posted and it is due on 7 January 2019)*\r\n   - Kahoot! : LINK <https://kahoot.it/>\r\n   - Khan Academy : LINK <https://www.khanacademy.org/>\r\n\r\nAnd more to come!\r\n\r\nThank you!\r\n\r\n\r\n*Peh Pei Hsin Desmond 白培新*\r\nAcademic Staff, Mathematics Department\r\nTeacher In-Charge, Fencing\r\n\r\n\r\n\r\n\r\n\r\n\r\n*School of Science and Technology, Singapore1 Technology Drive Singapore\r\n138572Tel: (65) [phone_719f412e] (ext. 228) | Fax: (65) [phone_55758dd3]**\r\nCONFIDENTIALITY: If this email has been sent to you by mistake, please\r\nnotify the sender and delete it immediately. As it may contain confidential\r\ninformation, the retention or dissemination of its contents may be a",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16830f8207d14f4b",
+    "history_id": "1801858",
+    "internal_date_ms": "1547009756000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_8ba5d458 <user_364c3bf7@redacted.test>",
+  "to_raw": "undisclosed-recipients:;",
+  "cc_raw": null,
+  "bcc_raw": "user_9a747a63@redacted.test"
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16847601d4d13f84",
+  "thread_id": "16847601d4d13f84",
+  "timestamp_iso": "2019-01-13T13:21:13+00:00",
+  "label_ids": [
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_1ee853be",
+  "sender_display": "Person_94edb222",
+  "sender_email": "user_1ee853be@redacted.test",
+  "sender_domain": "s2017.sst.edu.sg",
+  "subject": "Badminton Tryouts",
+  "snippet": "Dear students, I am Mei Qi, the Sec 3 girls captain.The badminton team is proud to invite you to join us for training on 16 Jan Wednesday, 4.30 - 6.30 or 18 Jan Friday, 2.30 - 4.30. You can choose",
+  "body_text": "Dear students,\r\n\r\nI am Mei Qi, the Sec 3 girls captain.The badminton team is proud to invite\r\nyou to join us for training on 16 Jan Wednesday, 4.30 - 6.30 or 18 Jan\r\nFriday, 2.30 - 4.30. You can choose either one of this dates to join us and\r\nyou only need to attend one of them Through this, you will be able to\r\nexperience what an ordinary training session will be like. You are advised\r\nto attend in your S&W attire and also bring along a racket if you have it\r\nat home. However, it is fine if you don't have one as rackets and\r\nshuttlecocks will be provided.\r\nWe look forward to seeing you on Wednesday or Friday :) If there are any\r\nquestions, you are free to email me (user_1ee853be@redacted.test).\r\n\r\nRegards,\r\n*Chong Mei Qi 张美琪*,\r\nStudent of S3-05\r\n*School of Science and Technology, **Singapore*\r\n\r\n1 Technology Drive, Singapore 138572\r\nT: (65) [phone_bd2a6d4a] | F: (65) [phone_55758dd3]",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16847601d4d13f84",
+    "history_id": "1801847",
+    "internal_date_ms": "1547385673000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_94edb222 <user_1ee853be@redacted.test>",
+  "to_raw": "user_256ac1a9@redacted.test, user_[phone_53b808e7]@redacted.test, user_0e6e0721@redacted.test, user_a23e42cb@redacted.test, user_b55b0a72@redacted.test, user_6506e7cb@redacted.test, user_ffe29708@redacted.test, user_2724c856@redacted.test, user_10be5014@redacted.test, user_46f58194@redacted.test, user_9d0956ac@redacted.test, user_23fbe282@redacted.test, user_9a747a63@redacted.test, user_0ab373e3@redacted.test, user_07f268bf@redacted.test, user_0dabe3b9@redacted.test, user_2b73de8e@redacted.test, user_2e1b985e@redacted.test, user_b53e6ba3@redacted.test, user_c6d53929@redacted.test, user_b4404b40@redacted.test, user_50115e36@redacted.test, user_74d4ad7e@redacted.test, user_bfb2bfec@redacted.test, user_5db6da11@redacted.test, user_2153a913@redacted.test, user_21a12e46@redacted.test, user_a27646bb@redacted.test, user_cc8eb5c0@redacted.test, user_f2973f46@redacted.test, user_487be389@redacted.test, user_0817c70b@redacted.test, user_91042e13@redacted.test, user_fd1ac1df@redacted.test, user_48e0b591@redacted.test, user_433e6c74@redacted.test, user_3a834714@redacted.test, user_363e8cfa@redacted.test, user_e16d2a20@redacted.test, user_ca8c863a@redacted.test, user_da13f4af@redacted.test, user_24f829c9@redacted.test, user_f24b8b42@redacted.test, user_86a090c8@redacted.test, user_c20f5ada@redacted.test, user_b34797ed@redacted.test, user_32fe0fc7@redacted.test, user_d1f8d114@redacted.test, user_50634aee@redacted.test, user_be3166e6@redacted.test, user_521fab40@redacted.test, user_89c2d221@redacted.test, user_e0939b42@redacted.test, user_2f29a9ee@redacted.test, user_9afd4057@redacted.test, user_b2767a10@redacted.test, user_8c90334e@redacted.test, user_5e508b8f@redacted.test, user_7a8ff45d@redacted.test, user_68c56299@redacted.test, user_631ec5d7@redacted.test, user_5f63179e@redacted.test, user_3426735a@redacted.test, user_f741396f@redacted.test, user_c7b25e49@redacted.test, user_9542bb5f@redacted.test, user_877b6eac@redacted.test, user_a6f77b71@redacted.test, user_e29e8ea9@redacted.test, user_df1b1b02@redacted.test, user_644f3f4a@redacted.test, user_2d6e1d83@redacted.test, user_1148a9ac@redacted.test, user_96eeff60@redacted.test, user_eb672144@redacted.test, user_a6918466@redacted.test, user_2a47288e@redacted.test, user_ef66ddb9@redacted.test, user_0e865372@redacted.test, user_d0afcaff@redacted.test, user_2e388b5a@redacted.test, user_0ca039fd@redacted.test, user_db3ad269@redacted.test, user_8e009fec@redacted.test, user_040f0a3b@redacted.test, user_34ba5327@redacted.test, user_137b32fd@redacted.test, user_360d81c2@redacted.test, user_b0a45fe5@redacted.test, user_a0351f69@redacted.test, user_aa6f7730@redacted.test, user_165edf06@redacted.test, user_50382fa7@redacted.test, user_675bbeeb@redacted.test, user_bcabf930@redacted.test, user_eacc188b@redacted.test, user_1275e342@redacted.test, user_300d10aa@redacted.test, user_4f1e8a71@redacted.test, user_7794b66a@redacted.test, user_56b8397a@redacted.test, user_e30a89ba@redacted.test, user_0ec4fc68@redacted.test, user_029269e6@redacted.test, user_[phone_c51b7a99]@redacted.test, user_ad57cdad@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

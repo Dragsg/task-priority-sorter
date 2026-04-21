@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "168300b2a8de895d",
+  "thread_id": "168300b2a8de895d",
+  "timestamp_iso": "2019-01-09T00:37:44+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_72608c7b",
+  "sender_display": "Person_1b66cc62",
+  "sender_email": "user_72608c7b@redacted.test",
+  "sender_domain": "piktochart.com",
+  "subject": "Confirmation instructions",
+  "snippet": "We need a verification from you to create your Person_1b66cc62 account with this email ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌",
+  "body_text": "We need a verification from you to create your\nPerson_1b66cc62 account with this email\n\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌ ‌\n‌ ‌ ‌ ‌ ‌ ‌‌ ‌\n\nlogo ( https://click.pstmrk.it/2t/piktochart.com/X0srtgI/ldU/XwOgbMz-sN )\n\nEmail Confirmation\n\nWe just need one small favor from you - please confirm your\nemail to continue using Person_1b66cc62.\n\n7 days if you do not confirm your email.\n\n-->\n\nCONFIRM EMAIL \n( https://click.pstmrk.it/2ts/create.piktochart.com%2Fusers%2Fconfirmation%3Fconfirmation_token%3Dm4gVfZqUyHhn9zwn-i1j/YEsrtgI/ldU/kqGz5GmHni )\n\n\nIf the button does not work for you, please copy and paste this\nfollowing URL into your browser:\nhttps://click.pstmrk.it/2ts/create.piktochart.com%2Fusers%2Fconfirmation%3Fconfirmation_token%3Dm4gVfZqUyHhn9zwn-i1j/YEsrtgI/ldU/kqGz5GmHni\n\nfacebook ( https://click.pstmrk.it/2ts/www.facebook.com%2FPerson_1b66cc62/YUsrtgI/ldU/v6qMxhTz1g )\n\ntwitter ( https://click.pstmrk.it/2ts/twitter.com%2Fpiktochart/YksrtgI/ldU/73t9YRILR6 )\n\npinterest ( https://click.pstmrk.it/2ts/www.pinterest.com%2Fpiktochart%2F/Y0srtgI/ldU/02wEfFZaDE )\n\ninstagram ( https://click.pstmrk.it/2ts/www.instagram.com%2Fpiktochart%2F/ZEsrtgI/ldU/9WJ4VcgwwE )\n\nyoutube ( https://click.pstmrk.it/2ts/www.youtube.com%2Fuser%2FPerson_1b66cc62/ZUsrtgI/ldU/zLBvI3lPGJ )\n\nThis is an automatically generated email, please do not\nreply.",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "168300b2a8de895d",
+    "history_id": "1801855",
+    "internal_date_ms": "1546994264000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_1b66cc62 <user_72608c7b@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

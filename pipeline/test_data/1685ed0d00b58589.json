@@ -1,0 +1,51 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1685ed0d00b58589",
+  "thread_id": "1685ed0d00b58589",
+  "timestamp_iso": "2019-01-18T02:36:09+00:00",
+  "label_ids": [
+    "IMPORTANT",
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_be4b82b1",
+  "sender_display": "Person_edb7cafe",
+  "sender_email": "user_be4b82b1@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New announcement: \"Advisory Lesson on Friday, 18th January…\"",
+  "snippet": "Hi NG YING XUAN, Azizah bte Ahmad posted a new announcement in 2019 S1-04 Character &amp; Citizenship Education Student Development. Advisory Lesson on Friday, 18th January 2019 1. Discussion on Roles",
+  "body_text": "Hi NG YING XUAN,\r\nAzizah bte Ahmad posted a new announcement in 2019 S1-04 Character &  \r\nCitizenship Education Student Development  \r\n<https://classroom.google.com/c/Mjc0MDg0NTQ2NTVa>.\r\n\r\nAdvisory Lesson on Friday, 18th January 2019\r\n\r\n1. Discussion on Roles & Responsibilities of Class Committee members\r\n\r\n2. Nomination of Class Executive Members via Google Form\r\n\r\n3. Grouping and discussion on Class Admin Matters\r\nA. Class Decoration (Noticeboards, other areas) - 14 students\r\nB. Chinese New Year Decoration (Materials, concept) - 8 students\r\nC. Seating Arrangement - 2 students\r\nD. Duty Roster - 2 students\r\n\r\n4. Getting To Know form (Link) - to be completed before 5 p.m. Monday, 22nd  \r\nJanuary 2019\r\n\r\nThank you.\r\n\r\nLots of Love,\r\nMdm Azizah\r\nOPEN <https://classroom.google.com/c/Mjc0MDg0NTQ2NTVa/p/Mjc0Njc0Mzg1OTVa>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1685ed0d00b58589",
+    "history_id": "1801835",
+    "internal_date_ms": "1547778969000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_edb7cafe\" <user_be4b82b1@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

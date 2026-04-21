@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16832c4dfa5b11cf",
+  "thread_id": "16832c4dfa5b11cf",
+  "timestamp_iso": "2019-01-09T13:19:48+00:00",
+  "label_ids": [
+    "CATEGORY_PROMOTIONS",
+    "INBOX"
+  ],
+  "sender_id": "user_fd2a9692",
+  "sender_display": "Person_01ac2dc9",
+  "sender_email": "user_fd2a9692@redacted.test",
+  "sender_domain": "em.grammarly.com",
+  "subject": "You + Person_01ac2dc9 = Ready for Action",
+  "snippet": "Open for important information regarding your new account, including product features and opt-in settings. Open for helpful details on how to get started. Person_01ac2dc9 Write the Future Writing opens a",
+  "body_text": "Person_01ac2dc9 Weekly InsightsOpen for helpful details on how to get started. \r\n\r\n \r\n\r\nhttps://click.send.grammarly.com/?qs=6d988c2f9a6874d90dcdca188a729c48b[phone_aeefeb3a]fc6397f54c8ee73491fbb23c9a021d9da62a17b4695520c98d901338e50d46d94e5b4fa14b88683ba80ab2b \r\n\r\n \r\n \r\n\r\nhttps://click.send.grammarly.com/?qs=6d988c2f9a6874d9f4cafad46547afe91c481b075c6cd011c811fda72e202c556ea1d9ada53c9a48f49f0508378da5a6531c574c82d2e41d7153baeef4c64cfc \r\n\r\n \r\nWrite the Future\r\n \r\nWriting opens a line of communication between you and other people.And when you commit to improving your writing, you open yourself up to better conversations, remarkable accomplishments, and healthier relationships. Person_01ac2dc9 will help you succeed.\r\n \r\n \r\n\r\nhttps://click.send.grammarly.com/?qs=6d988c2f9a6874d9f4cafad46547afe91c481b075c6cd011c811fda72e202c556ea1d9ada53c9a48f49f0508378da5a6531c574c82d2e41d7153baeef4c64cfc \r\nPlanning any important writing\r\nprojects soon?\r\n\r\nhttps://click.send.grammarly.com/?qs=6d988c2f9a6874d9f4cafad46547afe91c481b075c6cd011c811fda72e202c556ea1d9ada53c9a48f49f0508378da5a6531c574c82d2e41d7153baeef4c64cfc \r\nVISIT THE ALL-NEW GRAMMARLY EDITOR\r\nhttps://click.send.grammarly.com/?qs=6d988c2f9a6874d9f4cafad46547afe91c481b075c6cd011c811fda72e202c556ea1d9ada53c9a48f49f0508378da5a6531c574c82d2e41d7153baeef4c64cfc \r\n&#062;\r\n\r\n \r\n\r\n \r\n\r\n \r\n\r\n \r\nPerson_01ac2dc9 Works Where You Work\r\n \r\nPerson_01ac2dc9 offers clear, effective, mistake-free writing across multiple devices, browsers, and apps.\r\n\r\nYou&rsquo;ve already decided on the browser extension. So, here&rsquo;s a list of other free products you can install to access Person_01ac2dc9 wherever you write:\r\n \r\n \r\nPerson_01ac2dc9&rsquo;s Mobile Keyboard\r\nAndroid and iOS\r\nhttps://click.send.grammarly.com/?qs=6d988c2f9a6874d996cd51a4be450fcfb5f746b8f75c3b42ee4699674e4b38ec5032bdc6ea73ab7bf158960d927ba457de51d67349b72c69a71be7dc71d54103 \r\nINSTALL\r\nhttps://click.send.grammarly.com/?qs=6d988c2f9a6874d996cd51a4be450fcfb5f746b8f75c3b42ee46996",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16832c4dfa5b11cf",
+    "history_id": "1801870",
+    "internal_date_ms": "1547039988000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_01ac2dc9 <user_fd2a9692@redacted.test>",
+  "to_raw": "<user_9a747a63@redacted.test>",
+  "cc_raw": null,
+  "bcc_raw": null
+}

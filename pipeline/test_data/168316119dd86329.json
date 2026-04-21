@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "168316119dd86329",
+  "thread_id": "168316119dd86329",
+  "timestamp_iso": "2019-01-09T06:51:11+00:00",
+  "label_ids": [
+    "CATEGORY_PROMOTIONS",
+    "INBOX"
+  ],
+  "sender_id": "user_515add08",
+  "sender_display": "Person_bfa9341a",
+  "sender_email": "user_515add08@redacted.test",
+  "sender_domain": "padlet.com",
+  "subject": "Beautiful!",
+  "snippet": "Hi, NG You signed up for Padlet! That&#39;s beautiful. You&#39;re beautiful. Email user_9a747a63@redacted.test Username ng_ying_xuan Change What&#39;s a padlet? In its purest form, a padlet is a",
+  "body_text": "Padlet\r\n\r\n******\r\nHi, NG\r\n******\r\n\r\n-------------------------\r\nYou signed up for Padlet!\r\n-------------------------\r\n\r\n-----------------------------------\r\nThat's beautiful. You're beautiful.\r\n-----------------------------------\r\n\r\nEmail\r\n-----\r\n\r\nuser_9a747a63@redacted.test\r\n\r\nUsername\r\n--------\r\n\r\nng_ying_xuan Change \r\n( http://email.padlet.com/c/eJxFj9FqwzAMRb_GeWtw5DiLH_IwGP2NIFtK6i12QmzTdV8_FzoGQkhHlyuJJrZkxsZP2iltDC2jloObOwR0ZgRSoLE3sh9J9DLsP3jmy-duL8NXf28D-q25TUCwIBoLIKuHBQu9VAvRqHVHw6KbbbrlfCSh3gVcaxxIG-fW7aE24VFT4px9XFMtLSbvhLqWHOa0l9OxUB933qqa3wQMTx6YfAmV8_OEF3R7zBxzpe6GceW5JD4jBv6bYzjQr_HfrjmnuM6Punj-LhjrhwlkZ9qUcmqZSpvWJk8v8S8IvmL9 )\r\n\r\n\r\nWhat's a padlet?\r\n----------------\r\n\r\nIn its purest form, a padlet is a blank page. You can dress\r\nit up or dress it down. From your hobby to your career, your\r\nclass notes to your final exam, your mood board to your runway\r\nshow, padlets help you organize your life.\r\n\r\nOur Community\r\n-------------\r\n\r\nCollaboration is what makes Padlet special. We are beloved\r\nin classrooms because every student has an equal voice. We are\r\ninstrumental to businesses because team projects are easily\r\nmanaged and improved. From distant corners of the Earth,\r\nindividuals can connect on Padlet.\r\n\r\nGet the support you need\r\n------------------------\r\n\r\nThe Padlet support center \r\n( http://email.padlet.com/c/eJxFz82KwyAQB_Cn0VvFqjF68FBY-hrBr6Rmo4aodNunXwNdFoY5_P7DDOOUN04KGNRg6SClm8WAuZ2ummgrBXGUDJpJzIQDDMf81ke9rNlc-Dd7oqjDBh8Ks8EQM9JRSCL5bMRMuGCCazpzK52Am3rUugN6A-Tea01o127zFdkcT6L3VuNUcjusB_Tr6bce-BEQfnr0LrTY3Z_3Pmhzqj7VrmtLtoac_gIddx2W9L8HHiot0yv09tN06n8Ugq8SlVIL8q6hssCqPsO_90RY3w )\r\n has a ton of resources to help you get started. Take a tour \r\n( http://email.padlet.com/c/eJxFj9FuhSAMhp8G7yQKInLBxUmW8xoGofPgBIyUnG1PP85msqRp2u9v_7ROw-LU1HgtLBdKufdJdKOde8OMVRNznAkzqG6YHBm6kL7Nie2Wlnb8GJ40GL83D92Dkwvjyhq5cOjlKKHnilsp7cLHjjW7fiAehN8Iu9fYIj2M2wGpTaH21dPbHWrFBGv_pBZTOQm_FwxzrqUFwt-esNcNkISNLx7A-RIqh9chF7QpIkSsdCvRok9x_rW6VBMO49f4b9acOq7zl6_ps5hYv8",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "168316119dd86329",
+    "history_id": "1801861",
+    "internal_date_ms": "1547016671000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_bfa9341a <user_515add08@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

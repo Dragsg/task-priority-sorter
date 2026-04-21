@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1683587a7fe0435c",
+  "thread_id": "1683587a7fe0435c",
+  "timestamp_iso": "2019-01-10T02:11:48+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_68249216",
+  "sender_display": "Person_1e75830d",
+  "sender_email": "user_68249216@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "Class invitation: \"ADMT_S104_2019\"",
+  "snippet": "Hi NG YING XUAN, Tjong Min Cui (Von) (user_85d1c13a@redacted.test) invited you to the class ADMT_S104_2019. Tjong Min Cui (Von) ADMT_S104_2019 JOIN If you accept, your contact information will be shared",
+  "body_text": "Hi NG YING XUAN,\r\nTjong Min Cui (Von) (user_85d1c13a@redacted.test) invited you to the class  \r\nADMT_S104_2019  \r\n<https://classroom.google.com/invite/accept/MjcwOTcwNjYwMzVa?role=3>.\r\nTjong Min Cui (Von)\r\nADMT_S104_2019\r\nJOIN <https://classroom.google.com/invite/accept/MjcwOTcwNjYwMzVa?role=3>\r\nIf you accept, your contact information will be shared with the class  \r\nmembers and applications they authorize to use Classroom. Learn more  \r\n<https://support.google.com/edu/classroom/answer/[id_a74034da]>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1683587a7fe0435c",
+    "history_id": "1819110",
+    "internal_date_ms": "1547086308000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_1e75830d\" <user_[phone_5bb404e5]@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

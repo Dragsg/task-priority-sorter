@@ -1,0 +1,62 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1683ab1b4961f53d",
+  "thread_id": "1683ab1b4961f53d",
+  "timestamp_iso": "2019-01-11T02:15:10+00:00",
+  "label_ids": [
+    "CATEGORY_FORUMS",
+    "INBOX"
+  ],
+  "sender_id": "user_364c3bf7",
+  "sender_display": "Person_8ba5d458",
+  "sender_email": "user_364c3bf7@redacted.test",
+  "sender_domain": "sst.edu.sg",
+  "subject": "[Math-ters] Change of Venues for Lessons",
+  "snippet": "Dear students, First of all, I apologize for the multiple invitations sent to you via Google Calendar. Kindly ignore all the invitations. To avoid any confusion, I have attached a copy of my timetable",
+  "body_text": "Dear students,\r\n\r\nFirst of all, I apologize for the multiple invitations sent to you via\r\nGoogle Calendar. Kindly ignore all the invitations.\r\n\r\nTo avoid any confusion, I have attached a copy of my timetable to with the\r\nvenues stated. Please refer to it and note down in your own timetable. This\r\nwill be applicable for Term 1 only, starting next week.\r\n\r\nPlease be punctual and I will allow a  5-minute allowance to reach the\r\nvenue(s).\r\n\r\nThank you.\r\n\r\n*Peh Pei Hsin Desmond 白培新*\r\nAcademic Staff, Mathematics Department\r\nTeacher In-Charge, Fencing\r\n\r\n\r\n\r\n\r\n\r\n\r\n*School of Science and Technology, Singapore1 Technology Drive Singapore\r\n138572Tel: (65) [phone_719f412e] (ext. 228) | Fax: (65) [phone_55758dd3]**\r\nCONFIDENTIALITY: If this email has been sent to you by mistake, please\r\nnotify the sender and delete it immediately. As it may contain confidential\r\ninformation, the retention or dissemination of its contents may be an\r\noffence under the Official Secrets Act.*",
+  "body_html_present": true,
+  "attachments_present": true,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/mixed",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "application/pdf",
+      "filename": "2019 Timetable Term1 Ver1r BY TEACHER (dragged).pdf",
+      "has_body_data": false,
+      "attachment_id_present": true
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1683ab1b4961f53d",
+    "history_id": "634767",
+    "internal_date_ms": "1547172910000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_8ba5d458 <user_364c3bf7@redacted.test>",
+  "to_raw": "undisclosed-recipients:;",
+  "cc_raw": null,
+  "bcc_raw": "user_0bebd1b0@redacted.test"
+}

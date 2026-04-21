@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16845f4883e0dc6d",
+  "thread_id": "16845e595dec1a8a",
+  "timestamp_iso": "2019-01-13T06:44:27+00:00",
+  "label_ids": [
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_da13f4af",
+  "sender_display": "Person_542e4700",
+  "sender_email": "user_da13f4af@redacted.test",
+  "sender_domain": "s2019.ssts.edu.sg",
+  "subject": "Re: Robotics @APEX trials 2019 [ 25 Jan ] :D",
+  "snippet": "Noted with thanks. On Sun, 13 Jan 2019, 2:28 pm EAN KAI LEW Student &lt;user_a3ac3d9c@redacted.test wrote: Hi! Thank you for registering for the Robotics @APEX trials, we&#39;re really excited to have",
+  "body_text": "Noted with thanks.\r\n\r\nOn Sun, 13 Jan 2019, 2:28 pm EAN KAI LEW Student <\r\nuser_a3ac3d9c@redacted.test wrote:\r\n\r\n> Hi! Thank you for registering for the Robotics @APEX trials, we're really\r\n> excited to have you guys! At the bottom is a google form, please complete\r\n> it latest by 15 January, Tuesday, 3pm.\r\n> Your trial date is on 25 Jan, Friday from 2.30pm to 6.30pm. Please wait\r\n> outside the Robotics room (Level 3 Block C) at the big staircase (below the\r\n> sec 1 classes) by 2.30pm\r\n>\r\n> Thank you !\r\n>\r\n> CLICK ME!\r\n> <https://docs.google.com/forms/d/e/1FAIpQLScYryeXvJvojZhTYJZONNCQJDOZ-tSJKOBNiY2zk0KkUekp3w/viewform?usp=sf_link>\r\n> --\r\n> Ean Kai Lew\r\n> EXCO member of Robotics @APEX\r\n> S405\r\n>",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16845f4883e0dc6d",
+    "history_id": "1801888",
+    "internal_date_ms": "1547361867000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_542e4700 <user_da13f4af@redacted.test>",
+  "to_raw": "EAN KAI LEW Student <user_a3ac3d9c@redacted.test>",
+  "cc_raw": "user_abf1b2ed@redacted.test, user_21a12e46@redacted.test, user_b55b0a72@redacted.test, user_f24b8b42@redacted.test, user_6d09e171@redacted.test, user_4ad87a97@redacted.test, user_0dabe3b9@redacted.test, user_c4152290@redacted.test, user_433e6c74@redacted.test, user_74d4ad7e@redacted.test, user_a5564060@redacted.test, user_fd1ac1df@redacted.test, user_3f36bf1d@redacted.test, user_2e3148c5@redacted.test, user_446dd4fd@redacted.test, user_0ca039fd@redacted.test, user_b34797ed@redacted.test, user_5e508b8f@redacted.test, user_9a747a63@redacted.test, user_a3d49dde@redacted.test, user_56b8397a@redacted.test, user_7ef907af@redacted.test, user_46f58194@redacted.test, user_040f0a3b@redacted.test, user_0fe98349@redacted.test, user_a60da587@redacted.test, user_815947dd@redacted.test, user_aa6f7730@redacted.test",
+  "bcc_raw": null
+}

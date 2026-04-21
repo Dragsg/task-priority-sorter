@@ -1,0 +1,105 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "168599ff77042ac0",
+  "thread_id": "16856f43a1c70fbd",
+  "timestamp_iso": "2019-01-17T02:24:42+00:00",
+  "label_ids": [
+    "IMPORTANT",
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_8120b8c1",
+  "sender_display": "Person_d946e004",
+  "sender_email": "user_8120b8c1@redacted.test",
+  "sender_domain": "googlemail.com",
+  "subject": "Delivery Status Notification (Failure)",
+  "snippet": "Address not found Your message wasn&#39;t delivered to user_2724c856@redacted.test because the address couldn&#39;t be found, or is unable to receive mail. LEARN MORE The response",
+  "body_text": "** Address not found **\r\n\r\nYour message wasn't delivered to user_2724c856@redacted.test because the address couldn't be found, or is unable to receive mail.\r\n\r\nLearn more here: https://support.google.com/mail/?p=NoSuchUser\r\n\r\nThe response was:\r\n\r\nThe email account that you tried to reach does not exist. Please try double-checking the recipient's email address for typos or unnecessary spaces. Learn more at https://support.google.com/mail/?p=NoSuchUser r1-v6sor106514ljj.2 - gsmtp",
+  "body_html_present": true,
+  "attachments_present": true,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/report",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "multipart/related",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "image/png",
+      "filename": "icon.png",
+      "has_body_data": false,
+      "attachment_id_present": true
+    },
+    {
+      "mime_type": "message/delivery-status",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "message/rfc822",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "168599ff77042ac0",
+    "history_id": "634856",
+    "internal_date_ms": "1547691882000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_d946e004 <user_8120b8c1@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}
