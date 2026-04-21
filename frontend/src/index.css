@@ -1,0 +1,230 @@
+:root {
+  color: #17202a;
+  background:
+    radial-gradient(circle at top, rgba(191, 219, 254, 0.95), transparent 32%),
+    linear-gradient(160deg, #f8fafc 0%, #e0f2fe 48%, #bfdbfe 100%);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  width: min(1040px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 56px 0 72px;
+}
+
+.hero {
+  margin-bottom: 28px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #1d4ed8;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  line-height: 0.95;
+}
+
+.subtitle {
+  width: min(680px, 100%);
+  margin: 16px 0 0;
+  color: #1e3a8a;
+  font-size: 1.1rem;
+}
+
+.status-card,
+.tasks-card,
+.emails-card {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 24px;
+  box-shadow: 0 18px 45px rgba(30, 64, 175, 0.12);
+  backdrop-filter: blur(14px);
+}
+
+.status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 24px;
+}
+
+.status-card h2,
+.tasks-card h2,
+.emails-card h2 {
+  margin: 0;
+}
+
+.status-copy {
+  margin: 10px 0 0;
+  color: #1e3a8a;
+}
+
+.status-pill {
+  margin: 0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.error-text {
+  margin: 14px 0 0;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.success-text {
+  margin: 14px 0 0;
+  color: #047857;
+  font-weight: 600;
+}
+
+.tasks-card,
+.emails-card {
+  padding: 24px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.section-heading p {
+  margin: 0;
+  color: #1d4ed8;
+}
+
+.action-panel,
+.emails-card {
+  margin-top: 24px;
+}
+
+.helper-text {
+  margin: 0;
+  color: #334155;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.primary-button,
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 0;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.primary-button {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.secondary-button {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.secondary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e3a8a;
+  font-weight: 700;
+}
+
+.email-list {
+  display: grid;
+  gap: 14px;
+}
+
+.email-card {
+  padding: 18px;
+  border-radius: 20px;
+  background: #fff;
+  border: 1px solid #bfdbfe;
+}
+
+.email-card h3 {
+  margin: 8px 0 10px;
+}
+
+.email-meta,
+.email-date,
+.empty-state {
+  margin: 0;
+  color: #475569;
+}
+
+.email-snippet {
+  margin: 0 0 12px;
+  color: #0f172a;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding-top: 32px;
+  }
+
+  .status-card,
+  .section-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .primary-button,
+  .secondary-button {
+    width: 100%;
+  }
+}
