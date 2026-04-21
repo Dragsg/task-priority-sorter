@@ -67,88 +67,110 @@ export default function Login() {
 
   return (
     <main className="auth-shell">
-      <section className="auth-card">
-        <p className="auth-eyebrow">Task Priority Sorter</p>
-        <h1>{isSignUp ? "Create your account" : "Welcome back"}</h1>
-        <p className="auth-subtitle">
-          {isSignUp
-            ? "Get started with a short setup so your dashboard is ready as soon as you sign in."
-            : "Sign in to review your saved preference, update your setup, and continue where you left off."}
-        </p>
+      <section className="auth-layout">
+        <div className="brand-panel">
+          <p className="auth-eyebrow">Task Priority Sorter</p>
+          <h1>{isSignUp ? "A calmer place to sort what matters" : "Welcome back"}</h1>
+          <p className="auth-subtitle">
+            {isSignUp
+              ? "Set up your account, choose your focus, and step into a workspace that feels quieter and more intentional."
+              : "Pick up where you left off, review your setup, and move back into your workspace without friction."}
+          </p>
 
-        <div className="copy-panel">
-          <p className="panel-title">What happens next</p>
-          <ul className="feature-list">
-            {HIGHLIGHTS.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
+          <div className="copy-panel">
+            <p className="panel-title">What happens next</p>
+            <ul className="feature-list">
+              {HIGHLIGHTS.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
         </div>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <input
-            className="auth-input"
-            disabled={busy}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
-            type="email"
-            value={email}
-            autoComplete="email"
-            required
-          />
-          <input
-            className="auth-input"
-            disabled={busy}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder={isSignUp ? "At least 8 characters" : "Enter your password"}
-            type="password"
-            value={password}
-            autoComplete={isSignUp ? "new-password" : "current-password"}
-            minLength={isSignUp ? 8 : undefined}
-            required
-          />
-          {isSignUp ? (
-            <input
-              className="auth-input"
-              disabled={busy}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="What should we call you?"
-              type="text"
-              value={name}
-              autoComplete="name"
-              minLength={2}
-              maxLength={80}
-              required
-            />
-          ) : null}
-
-          {isSignUp ? (
-            <p className="field-hint">
-              Use a name with at least 2 characters and a password with at least 8.
+        <section className="auth-card">
+          <div className="auth-card-header">
+            <p className="auth-section-label">{isSignUp ? "Create account" : "Sign in"}</p>
+            <p className="auth-card-copy">
+              {isSignUp
+                ? "A few details and you are in."
+                : "Use the details you signed up with."}
             </p>
-          ) : null}
+          </div>
 
-          {error ? <p className="error-text auth-error">{error}</p> : null}
+          <form className="auth-form" onSubmit={handleSubmit}>
+            <label className="field-group">
+              <span>Email</span>
+              <input
+                className="auth-input"
+                disabled={busy}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+                type="email"
+                value={email}
+                autoComplete="email"
+                required
+              />
+            </label>
+            <label className="field-group">
+              <span>Password</span>
+              <input
+                className="auth-input"
+                disabled={busy}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={isSignUp ? "At least 8 characters" : "Enter your password"}
+                type="password"
+                value={password}
+                autoComplete={isSignUp ? "new-password" : "current-password"}
+                minLength={isSignUp ? 8 : undefined}
+                required
+              />
+            </label>
+            {isSignUp ? (
+              <label className="field-group">
+                <span>Name</span>
+                <input
+                  className="auth-input"
+                  disabled={busy}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="What should we call you?"
+                  type="text"
+                  value={name}
+                  autoComplete="name"
+                  minLength={2}
+                  maxLength={80}
+                  required
+                />
+              </label>
+            ) : null}
 
-          <button className="auth-button" disabled={busy || !canSubmit} type="submit">
-            {busy ? "Please wait..." : isSignUp ? "Create account" : "Log in"}
-          </button>
-        </form>
+            {isSignUp ? (
+              <p className="field-hint">
+                Use a name with at least 2 characters and a password with at least 8.
+              </p>
+            ) : null}
 
-        <p className="auth-switch">
-          {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
-          <button
-            className="inline-button"
-            disabled={busy}
-            onClick={() => {
-              setError("");
-              setIsSignUp((current) => !current);
-            }}
-            type="button"
-          >
-            {isSignUp ? "Log in" : "Create one"}
-          </button>
-        </p>
+            {error ? <p className="error-text auth-error">{error}</p> : null}
+
+            <button className="auth-button" disabled={busy || !canSubmit} type="submit">
+              {busy ? "Please wait..." : isSignUp ? "Create account" : "Continue"}
+            </button>
+          </form>
+
+          <p className="auth-switch">
+            {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
+            <button
+              className="inline-button"
+              disabled={busy}
+              onClick={() => {
+                setError("");
+                setIsSignUp((current) => !current);
+              }}
+              type="button"
+            >
+              {isSignUp ? "Log in" : "Create one"}
+            </button>
+          </p>
+        </section>
       </section>
     </main>
   );

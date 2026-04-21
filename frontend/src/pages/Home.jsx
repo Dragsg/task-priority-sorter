@@ -32,14 +32,16 @@ export default function Home() {
 
   return (
     <main className="simple-shell">
-      <section className="simple-card">
-        <p className="auth-eyebrow">Home</p>
+      <section className="simple-hero">
+        <p className="auth-eyebrow">Dashboard</p>
         <h1 className="simple-title">Hello, {user.name || user.email}</h1>
         <p className="simple-copy">
           Your workspace is ready. Review your setup, adjust your preference,
           or continue into the rest of the app.
         </p>
+      </section>
 
+      <section className="simple-card">
         <div className="summary-grid">
           <article className="summary-card">
             <p className="summary-label">Signed in as</p>
@@ -49,6 +51,14 @@ export default function Home() {
             <p className="summary-label">Current focus</p>
             <p className="summary-value">{getPreferenceLabel(user.preferences)}</p>
           </article>
+        </div>
+
+        <div className="copy-panel dashboard-note">
+          <p className="panel-title">A quiet starting point</p>
+          <p className="panel-copy">
+            Keep your setup simple here, then step into the rest of the app once
+            you&apos;re ready.
+          </p>
         </div>
 
         <div className="home-actions">

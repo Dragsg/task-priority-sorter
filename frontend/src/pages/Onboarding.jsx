@@ -56,17 +56,19 @@ export default function Onboarding() {
 
   return (
     <main className="simple-shell">
-      <section className="simple-card">
+      <section className="simple-hero">
         <p className="auth-eyebrow">Onboarding</p>
-        <h1 className="simple-title">Choose the focus that fits you best</h1>
+        <h1 className="simple-title">Pick the workspace that fits your day</h1>
         <p className="simple-copy">
-          You&apos;re signed in as <strong>{user.email}</strong>. Pick the main context
+          You&apos;re signed in as <strong>{user.email}</strong>. Choose the context
           you want this workspace to support first.
         </p>
         <p className="simple-note">
-          This sets your starting preference, and you can change it any time later.
+          Think of this as your starting mode. You can update it later whenever your work changes.
         </p>
+      </section>
 
+      <section className="simple-card">
         <form className="option-form" onSubmit={handleSubmit}>
           {PREFERENCE_OPTIONS.map((option) => (
             <label className="option-row" key={option.value}>
