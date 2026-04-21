@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from email.utils import parseaddr
 import logging
 
 from google.auth.transport.requests import Request
@@ -8,7 +9,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from config import Config
-from .db import get_gmail_link, save_gmail_link, update_gmail_history
+from .db import get_gmail_link, save_gmail_link, save_messages, update_gmail_history
 
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -86,11 +87,79 @@ def build_gmail_client(user_id: int):
     return build("gmail", "v1", credentials=credentials)
 
 
-def format_message(message: dict) -> dict:
-    headers = {
+def get_header_map(message: dict) -> dict:
+    return {
         header["name"].lower(): header["value"]
         for header in message.get("payload", {}).get("headers", [])
     }
+
+
+def decode_base64url(value: str | None) -> str:
+    if not value:
+        return ""
+
+    padding = "=" * (-len(value) % 4)
+    try:
+        import base64
+
+        return base64.urlsafe_b64decode(f"{value}{padding}").decode(
+            "utf-8",
+            errors="replace",
+        )
+    except Exception:
+        return ""
+
+
+def extract_body_and_parts(payload: dict | None):
+    text_segments = []
+    mime_parts = []
+    body_html_present = False
+    attachments_present = False
+
+    def walk(part: dict):
+        nonlocal body_html_present, attachments_present
+
+        mime_type = part.get("mimeType")
+        body = part.get("body", {})
+        filename = part.get("filename") or ""
+        data = body.get("data")
+        attachment_id = body.get("attachmentId")
+
+        mime_parts.append(
+            {
+                "mimeType": mime_type,
+                "filename": filename,
+                "attachmentId": attachment_id,
+                "size": body.get("size"),
+            }
+        )
+
+        if attachment_id or filename:
+            attachments_present = True
+
+        if mime_type == "text/plain" and data:
+            text_segments.append(decode_base64url(data))
+        elif mime_type == "text/html" and data:
+            body_html_present = True
+
+        for child in part.get("parts", []) or []:
+            walk(child)
+
+    if payload:
+        walk(payload)
+
+    body_text = "\n".join(segment.strip() for segment in text_segments if segment.strip())
+    return body_text, body_html_present, attachments_present, mime_parts
+
+
+def parse_sender(raw_value: str):
+    display_name, email_address = parseaddr(raw_value or "")
+    sender_domain = email_address.split("@", 1)[1].lower() if "@" in email_address else None
+    return display_name or None, email_address or None, sender_domain
+
+
+def format_message(message: dict) -> dict:
+    headers = get_header_map(message)
 
     internal_date = message.get("internalDate")
     received_at = None
@@ -112,14 +181,58 @@ def format_message(message: dict) -> dict:
     }
 
 
+def map_gmail_message_for_storage(message: dict) -> dict:
+    headers = get_header_map(message)
+    sender_display, sender_email, sender_domain = parse_sender(headers.get("from", ""))
+    body_text, body_html_present, attachments_present, mime_parts = extract_body_and_parts(
+        message.get("payload")
+    )
+
+    internal_date = message.get("internalDate")
+    timestamp_iso = None
+    if internal_date:
+        timestamp_iso = datetime.fromtimestamp(
+            int(internal_date) / 1000,
+            tz=timezone.utc,
+        )
+
+    return {
+        "platform": "gmail",
+        "source_id": message["id"],
+        "thread_id": message.get("threadId"),
+        "timestamp_iso": timestamp_iso,
+        "label_ids": message.get("labelIds", []),
+        "sender_id": headers.get("message-id"),
+        "sender_display": sender_display,
+        "sender_email": sender_email,
+        "sender_domain": sender_domain,
+        "subject": headers.get("subject") or "(no subject)",
+        "snippet": message.get("snippet", ""),
+        "body_text": body_text,
+        "body_html_present": body_html_present,
+        "attachments_present": attachments_present,
+        "mime_parts": mime_parts,
+        "provider_metadata": {
+            "historyId": message.get("historyId"),
+            "internalDate": internal_date,
+            "sizeEstimate": message.get("sizeEstimate"),
+            "payloadMimeType": message.get("payload", {}).get("mimeType"),
+        },
+        "from_raw": headers.get("from"),
+        "to_raw": headers.get("to"),
+        "cc_raw": headers.get("cc"),
+        "bcc_raw": headers.get("bcc"),
+    }
+
+
 def get_message_detail(service, message_id: str) -> dict:
     message = (
         service.users()
         .messages()
-        .get(userId="me", id=message_id, format="metadata")
+        .get(userId="me", id=message_id, format="full")
         .execute()
     )
-    return format_message(message)
+    return message
 
 
 def list_recent_messages(user_id: int, limit: int = 5) -> dict:
@@ -131,10 +244,14 @@ def list_recent_messages(user_id: int, limit: int = 5) -> dict:
         .execute()
     )
 
-    messages = [
-        get_message_detail(service, item["id"])
-        for item in response.get("messages", [])
+    detailed_messages = [
+        get_message_detail(service, item["id"]) for item in response.get("messages", [])
     ]
+    save_messages(
+        user_id,
+        [map_gmail_message_for_storage(message) for message in detailed_messages],
+    )
+    messages = [format_message(message) for message in detailed_messages]
 
     latest_history_id = messages[0]["historyId"] if messages else None
     if latest_history_id:
@@ -184,7 +301,12 @@ def list_new_messages(user_id: int) -> dict:
                 seen_ids.add(message_id)
                 message_ids.append(message_id)
 
-    messages = [get_message_detail(service, message_id) for message_id in message_ids]
+    detailed_messages = [get_message_detail(service, message_id) for message_id in message_ids]
+    save_messages(
+        user_id,
+        [map_gmail_message_for_storage(message) for message in detailed_messages],
+    )
+    messages = [format_message(message) for message in detailed_messages]
     messages.sort(key=lambda item: item.get("receivedAt") or "", reverse=True)
 
     new_history_id = response.get("historyId") or link["history_id"]
