@@ -144,3 +144,131 @@ def update_gmail_history(user_id: int, history_id: str):
         user_id,
         history_id,
     )
+
+
+def ensure_outlook_link_table():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS outlook_links (
+                    user_id INTEGER PRIMARY KEY,
+                    email_address TEXT NOT NULL,
+                    access_token TEXT NOT NULL,
+                    refresh_token TEXT,
+                    token_expiry TIMESTAMPTZ,
+                    last_received_at TIMESTAMPTZ,
+                    linked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        connection.commit()
+
+
+def get_outlook_link(user_id: int):
+    ensure_outlook_link_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    user_id,
+                    email_address,
+                    access_token,
+                    refresh_token,
+                    token_expiry,
+                    last_received_at,
+                    linked_at,
+                    updated_at
+                FROM outlook_links
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            link = cursor.fetchone()
+
+    if link:
+        logger.info(
+            "Found saved Outlook link for user_id=%s email_address=%s",
+            user_id,
+            link["email_address"],
+        )
+    else:
+        logger.info("No Outlook link exists for user_id=%s", user_id)
+
+    return link
+
+
+def save_outlook_link(
+    user_id: int,
+    email_address: str,
+    access_token: str,
+    refresh_token: str | None,
+    token_expiry,
+    last_received_at,
+):
+    ensure_outlook_link_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO outlook_links (
+                    user_id,
+                    email_address,
+                    access_token,
+                    refresh_token,
+                    token_expiry,
+                    last_received_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    email_address = EXCLUDED.email_address,
+                    access_token = EXCLUDED.access_token,
+                    refresh_token = COALESCE(EXCLUDED.refresh_token, outlook_links.refresh_token),
+                    token_expiry = EXCLUDED.token_expiry,
+                    last_received_at = COALESCE(EXCLUDED.last_received_at, outlook_links.last_received_at),
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    user_id,
+                    email_address,
+                    access_token,
+                    refresh_token,
+                    token_expiry,
+                    last_received_at,
+                ),
+            )
+        connection.commit()
+
+    logger.info(
+        "Saved Outlook link for user_id=%s email_address=%s last_received_at=%s",
+        user_id,
+        email_address,
+        last_received_at,
+    )
+
+
+def update_outlook_last_received_at(user_id: int, last_received_at):
+    ensure_outlook_link_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE outlook_links
+                SET last_received_at = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+                """,
+                (last_received_at, user_id),
+            )
+        connection.commit()
+
+    logger.info(
+        "Updated Outlook sync cursor for user_id=%s last_received_at=%s",
+        user_id,
+        last_received_at,
+    )

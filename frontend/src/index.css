@@ -73,6 +73,10 @@ body {
   padding: 24px;
 }
 
+.dual-status-card {
+  margin-bottom: 18px;
+}
+
 .status-card h2,
 .tasks-card h2,
 .emails-card h2 {
@@ -129,6 +133,14 @@ body {
   margin-top: 24px;
 }
 
+.gmail-panel {
+  border-left: 6px solid #2563eb;
+}
+
+.outlook-panel {
+  border-left: 6px solid #0f766e;
+}
+
 .helper-text {
   margin: 0;
   color: #334155;
@@ -161,9 +173,18 @@ body {
   color: #fff;
 }
 
+.outlook-button {
+  background: #0f766e;
+}
+
 .secondary-button {
   background: #dbeafe;
   color: #1e3a8a;
+}
+
+.outlook-secondary-button {
+  background: #ccfbf1;
+  color: #115e59;
 }
 
 .secondary-button:disabled {
