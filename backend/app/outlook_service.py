@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from email.utils import parseaddr
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -8,6 +9,7 @@ from urllib.request import Request, urlopen
 from config import Config
 from .db import (
     get_outlook_link,
+    save_messages,
     save_outlook_link,
     update_outlook_last_received_at,
 )
@@ -151,17 +153,89 @@ def format_outlook_message(message: dict) -> dict:
     }
 
 
+def parse_outlook_sender(sender_payload: dict):
+    sender = sender_payload.get("emailAddress", {})
+    email_address = sender.get("address")
+    sender_domain = email_address.split("@", 1)[1].lower() if email_address and "@" in email_address else None
+    return sender.get("name") or None, email_address or None, sender_domain
+
+
+def join_recipient_values(recipients: list[dict] | None) -> str | None:
+    if not recipients:
+        return None
+
+    values = []
+    for recipient in recipients:
+        display_name, email_address = parseaddr(
+            recipient.get("emailAddress", {}).get("address") or ""
+        )
+        name = recipient.get("emailAddress", {}).get("name") or display_name
+        if name and email_address:
+            values.append(f"{name} <{email_address}>")
+        elif email_address:
+            values.append(email_address)
+        elif name:
+            values.append(name)
+
+    return ", ".join(values) if values else None
+
+
+def map_outlook_message_for_storage(message: dict) -> dict:
+    sender_display, sender_email, sender_domain = parse_outlook_sender(
+        message.get("from", {})
+    )
+    body = message.get("body", {}) or {}
+    body_content_type = (body.get("contentType") or "").lower()
+    body_content = body.get("content") or ""
+
+    return {
+        "platform": "outlook",
+        "source_id": message["id"],
+        "thread_id": message.get("conversationId"),
+        "timestamp_iso": parse_graph_datetime(message.get("receivedDateTime")),
+        "label_ids": message.get("categories", []),
+        "sender_id": message.get("internetMessageId"),
+        "sender_display": sender_display,
+        "sender_email": sender_email,
+        "sender_domain": sender_domain,
+        "subject": message.get("subject") or "(no subject)",
+        "snippet": message.get("bodyPreview") or "No preview text.",
+        "body_text": body_content if body_content_type == "text" else (message.get("bodyPreview") or ""),
+        "body_html_present": body_content_type == "html",
+        "attachments_present": bool(message.get("hasAttachments")),
+        "mime_parts": [
+            {
+                "contentType": body.get("contentType"),
+                "size": len(body_content),
+            }
+        ]
+        if body_content or body.get("contentType")
+        else [],
+        "provider_metadata": {
+            "conversationIndex": message.get("conversationIndex"),
+            "webLink": message.get("webLink"),
+            "importance": message.get("importance"),
+            "isRead": message.get("isRead"),
+        },
+        "from_raw": join_recipient_values([message.get("from", {})]),
+        "to_raw": join_recipient_values(message.get("toRecipients")),
+        "cc_raw": join_recipient_values(message.get("ccRecipients")),
+        "bcc_raw": join_recipient_values(message.get("bccRecipients")),
+    }
+
+
 def fetch_outlook_messages(access_token: str, url: str) -> list[dict]:
     response = graph_get_json(url, access_token)
-    messages = [format_outlook_message(item) for item in response.get("value", [])]
+    messages = response.get("value", [])
 
     logger.info("Fetched %s Outlook messages", len(messages))
     if messages:
+        first_message = format_outlook_message(messages[0])
         logger.info(
             "First Outlook message subject=%s receivedAt=%s from=%s",
-            messages[0]["subject"],
-            messages[0]["receivedAt"],
-            messages[0]["from"],
+            first_message["subject"],
+            first_message["receivedAt"],
+            first_message["from"],
         )
     else:
         logger.info("Outlook message fetch returned no results")
@@ -177,14 +251,14 @@ def fetch_latest_outlook_received_at(access_token: str):
             {
                 "$top": 1,
                 "$orderby": "receivedDateTime desc",
-                "$select": "id,subject,from,receivedDateTime,bodyPreview",
+                "$select": "id,conversationId,subject,from,receivedDateTime,bodyPreview,body,hasAttachments,toRecipients,ccRecipients,bccRecipients,internetMessageId,categories,conversationIndex,webLink,importance,isRead",
             },
         ),
     )
     if not messages:
         return None
 
-    return parse_graph_datetime(messages[0]["receivedAt"])
+    return parse_graph_datetime(messages[0].get("receivedDateTime"))
 
 
 def complete_outlook_link(user_id: int, code: str) -> str:
@@ -285,14 +359,19 @@ def list_recent_outlook_messages(user_id: int, limit: int = 5) -> dict:
             {
                 "$top": limit,
                 "$orderby": "receivedDateTime desc",
-                "$select": "id,subject,from,receivedDateTime,bodyPreview",
+                "$select": "id,conversationId,subject,from,receivedDateTime,bodyPreview,body,hasAttachments,toRecipients,ccRecipients,bccRecipients,internetMessageId,categories,conversationIndex,webLink,importance,isRead",
             },
         ),
     )
+    save_messages(
+        user_id,
+        [map_outlook_message_for_storage(message) for message in messages],
+    )
+    formatted_messages = [format_outlook_message(message) for message in messages]
 
     latest_received_at = None
-    if messages:
-        latest_received_at = parse_graph_datetime(messages[0]["receivedAt"])
+    if formatted_messages:
+        latest_received_at = parse_graph_datetime(formatted_messages[0]["receivedAt"])
         update_outlook_last_received_at(user_id, latest_received_at)
         logger.info(
             "Updated Outlook last_received_at for user_id=%s to %s after recent fetch",
@@ -303,8 +382,8 @@ def list_recent_outlook_messages(user_id: int, limit: int = 5) -> dict:
         logger.info("No recent Outlook inbox messages found for user_id=%s", user_id)
 
     return {
-        "messages": messages,
-        "lastReceivedAt": messages[0]["receivedAt"] if messages else None,
+        "messages": formatted_messages,
+        "lastReceivedAt": formatted_messages[0]["receivedAt"] if formatted_messages else None,
     }
 
 
@@ -335,15 +414,20 @@ def list_new_outlook_messages(user_id: int) -> dict:
             {
                 "$top": 10,
                 "$orderby": "receivedDateTime desc",
-                "$select": "id,subject,from,receivedDateTime,bodyPreview",
+                "$select": "id,conversationId,subject,from,receivedDateTime,bodyPreview,body,hasAttachments,toRecipients,ccRecipients,bccRecipients,internetMessageId,categories,conversationIndex,webLink,importance,isRead",
                 "$filter": f"receivedDateTime gt {last_received_at}",
             },
         ),
     )
+    save_messages(
+        user_id,
+        [map_outlook_message_for_storage(message) for message in messages],
+    )
+    formatted_messages = [format_outlook_message(message) for message in messages]
 
     newest_received_at = None
-    if messages:
-        newest_received_at = parse_graph_datetime(messages[0]["receivedAt"])
+    if formatted_messages:
+        newest_received_at = parse_graph_datetime(formatted_messages[0]["receivedAt"])
         update_outlook_last_received_at(user_id, newest_received_at)
         logger.info(
             "Updated Outlook last_received_at for user_id=%s to %s after new-message fetch",
@@ -354,6 +438,6 @@ def list_new_outlook_messages(user_id: int) -> dict:
         logger.info("No new Outlook inbox messages found for user_id=%s", user_id)
 
     return {
-        "messages": messages,
-        "lastReceivedAt": messages[0]["receivedAt"] if messages else None,
+        "messages": formatted_messages,
+        "lastReceivedAt": formatted_messages[0]["receivedAt"] if formatted_messages else None,
     }

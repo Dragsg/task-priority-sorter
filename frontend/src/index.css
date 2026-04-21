@@ -147,6 +147,10 @@ select {
   margin-bottom: 16px;
 }
 
+.sync-status-card {
+  align-items: flex-start;
+}
+
 .status-card h2,
 .tasks-card h2,
 .emails-card h2 {
@@ -206,6 +210,29 @@ select {
 .gmail-panel,
 .outlook-panel {
   border-left: 1px solid var(--border-soft);
+}
+
+.selector-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.count-selector-label {
+  color: #334155;
+  font-weight: 700;
+}
+
+.count-selector {
+  min-height: 42px;
+  min-width: 100px;
+  padding: 0 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
 }
 
 .button-row {
@@ -596,6 +623,11 @@ select {
 
   .status-card,
   .section-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .selector-row {
     flex-direction: column;
     align-items: flex-start;
   }

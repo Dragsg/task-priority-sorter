@@ -84,8 +84,8 @@ export async function fetchGmailStatus() {
   return readJson(response);
 }
 
-export async function fetchRecentEmails() {
-  const response = await fetch(`${API_BASE_URL}/gmail/messages/recent`, {
+export async function fetchRecentEmails(limit = 5) {
+  const response = await fetch(`${API_BASE_URL}/gmail/messages/recent?limit=${limit}`, {
     headers: getAuthHeaders(),
   });
   return readJson(response);
@@ -105,8 +105,8 @@ export async function fetchOutlookStatus() {
   return readJson(response);
 }
 
-export async function fetchRecentOutlookEmails() {
-  const response = await fetch(`${API_BASE_URL}/outlook/messages/recent`, {
+export async function fetchRecentOutlookEmails(limit = 5) {
+  const response = await fetch(`${API_BASE_URL}/outlook/messages/recent?limit=${limit}`, {
     headers: getAuthHeaders(),
   });
   return readJson(response);
@@ -114,6 +114,13 @@ export async function fetchRecentOutlookEmails() {
 
 export async function fetchNewOutlookEmails() {
   const response = await fetch(`${API_BASE_URL}/outlook/messages/new`, {
+    headers: getAuthHeaders(),
+  });
+  return readJson(response);
+}
+
+export async function fetchBackgroundSyncStatus() {
+  const response = await fetch(`${API_BASE_URL}/background-sync/status`, {
     headers: getAuthHeaders(),
   });
   return readJson(response);
