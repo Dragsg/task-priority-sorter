@@ -1,10 +1,20 @@
+from datetime import datetime, timedelta, timezone
+from secrets import token_urlsafe
 from urllib.parse import urlencode
 
+import bcrypt
+import jwt
 from flask import Blueprint, current_app, jsonify, redirect, request, session
 
-from secrets import token_urlsafe
-
-from .db import get_gmail_link, get_outlook_link
+from config import Config
+from .db import (
+    create_user,
+    get_gmail_link,
+    get_outlook_link,
+    get_user_by_email,
+    get_user_by_id,
+    update_user_preferences,
+)
 from .gmail_service import (
     build_google_flow,
     complete_gmail_link,
@@ -23,29 +33,189 @@ api = Blueprint("api", __name__)
 PLACEHOLDER_USER_ID = 1
 
 
+def build_token(user_id: int) -> str:
+    return jwt.encode(
+        {
+            "user_id": user_id,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=12),
+        },
+        Config.SECRET_KEY,
+        algorithm="HS256",
+    )
+
+
+def get_authenticated_user_id(required: bool = False):
+    auth_header = request.headers.get("Authorization", "")
+
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1]
+        try:
+            payload = jwt.decode(token, Config.SECRET_KEY, algorithms=["HS256"])
+            return int(payload["user_id"])
+        except jwt.ExpiredSignatureError as error:
+            raise RuntimeError("Token expired") from error
+        except jwt.InvalidTokenError as error:
+            raise RuntimeError("Invalid token") from error
+
+    user_id = request.args.get("user_id", type=int)
+    if user_id is not None:
+        return user_id
+
+    if required:
+        raise RuntimeError("Unauthorised")
+
+    return PLACEHOLDER_USER_ID
+
+
+def get_status_code(error: Exception) -> int:
+    if str(error) in {"Unauthorised", "Token expired", "Invalid token"}:
+        return 401
+    return 400
+
+
+@api.post("/signup")
+def signup():
+    try:
+        data = request.get_json() or {}
+        email = (data.get("email") or "").strip().lower()
+        password = data.get("password") or ""
+        name = (data.get("name") or "").strip()
+
+        if not email or not password or not name:
+            return jsonify({"success": False, "error": "Missing required fields"}), 400
+
+        existing_user = get_user_by_email(email)
+        if existing_user:
+            return jsonify({"success": False, "error": "Email already exists"}), 409
+
+        password_hash = bcrypt.hashpw(
+            password.encode("utf-8"),
+            bcrypt.gensalt(),
+        ).decode("utf-8")
+        user = create_user(name=name, email=email, password_hash=password_hash)
+        token = build_token(user["user_id"])
+    except Exception as error:
+        return jsonify({"success": False, "error": str(error)}), get_status_code(error)
+
+    return jsonify(
+        {
+            "success": True,
+            "token": token,
+            "user": {
+                "userId": user["user_id"],
+                "name": user["name"],
+                "email": user["email"],
+                "preferences": user["preferences"],
+            },
+        }
+    )
+
+
+@api.post("/login")
+def login():
+    try:
+        data = request.get_json() or {}
+        email = (data.get("email") or "").strip().lower()
+        password = data.get("password") or ""
+
+        user = get_user_by_email(email)
+        if not user:
+            return jsonify({"success": False, "error": "Invalid email or password"}), 401
+
+        is_valid_password = bcrypt.checkpw(
+            password.encode("utf-8"),
+            user["password"].encode("utf-8"),
+        )
+        if not is_valid_password:
+            return jsonify({"success": False, "error": "Invalid email or password"}), 401
+
+        token = build_token(user["user_id"])
+    except Exception as error:
+        return jsonify({"success": False, "error": str(error)}), get_status_code(error)
+
+    return jsonify(
+        {
+            "success": True,
+            "token": token,
+            "user": {
+                "userId": user["user_id"],
+                "name": user["name"],
+                "email": user["email"],
+                "preferences": user["preferences"],
+            },
+        }
+    )
+
+
+@api.get("/user")
+def current_user():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        user = get_user_by_id(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(
+        {
+            "userId": user["user_id"],
+            "name": user["name"],
+            "email": user["email"],
+            "preferences": user["preferences"],
+        }
+    )
+
+
+@api.put("/onboarding")
+def onboarding():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        data = request.get_json() or {}
+        preferences = (data.get("preferences") or "").strip()
+        if not preferences:
+            return jsonify({"error": "Preferences are required"}), 400
+
+        user = update_user_preferences(user_id, preferences)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(
+        {
+            "success": True,
+            "user": {
+                "userId": user["user_id"],
+                "name": user["name"],
+                "email": user["email"],
+                "preferences": user["preferences"],
+            },
+        }
+    )
+
+
 @api.get("/gmail/status")
 def gmail_status():
     try:
-        link = get_gmail_link(PLACEHOLDER_USER_ID)
+        user_id = get_authenticated_user_id()
+        link = get_gmail_link(user_id)
     except Exception as error:
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": str(error)}), get_status_code(error)
 
     if not link:
-        current_app.logger.info(
-            "No Gmail link exists for placeholder user_id=%s",
-            PLACEHOLDER_USER_ID,
-        )
-        return jsonify({"linked": False, "userId": PLACEHOLDER_USER_ID})
+        current_app.logger.info("No Gmail link exists for user_id=%s", user_id)
+        return jsonify({"linked": False, "userId": user_id})
 
     current_app.logger.info(
-        "Returning linked Gmail status for placeholder user_id=%s email_address=%s",
-        PLACEHOLDER_USER_ID,
+        "Returning linked Gmail status for user_id=%s email_address=%s",
+        user_id,
         link["email_address"],
     )
     return jsonify(
         {
             "linked": True,
-            "userId": PLACEHOLDER_USER_ID,
+            "userId": user_id,
             "emailAddress": link["email_address"],
             "linkedAt": link["linked_at"].isoformat() if link["linked_at"] else None,
             "historyId": link["history_id"],
@@ -56,6 +226,7 @@ def gmail_status():
 @api.get("/gmail/link")
 def gmail_link():
     try:
+        user_id = get_authenticated_user_id()
         flow = build_google_flow()
         authorization_url, state = flow.authorization_url(
             access_type="offline",
@@ -64,6 +235,7 @@ def gmail_link():
         )
         session["gmail_oauth_state"] = state
         session["gmail_code_verifier"] = flow.code_verifier
+        session["gmail_oauth_user_id"] = user_id
         return redirect(authorization_url)
     except Exception as error:
         query = urlencode({"gmail": "error", "reason": str(error)})
@@ -84,12 +256,14 @@ def gmail_callback():
         return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
 
     try:
+        user_id = session.get("gmail_oauth_user_id", PLACEHOLDER_USER_ID)
         flow = build_google_flow()
         flow.code_verifier = saved_code_verifier
         flow.fetch_token(authorization_response=request.url)
-        email_address = complete_gmail_link(PLACEHOLDER_USER_ID, flow)
+        email_address = complete_gmail_link(user_id, flow)
         session.pop("gmail_oauth_state", None)
         session.pop("gmail_code_verifier", None)
+        session.pop("gmail_oauth_user_id", None)
     except Exception as error:
         query = urlencode({"gmail": "error", "reason": str(error)})
         return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
@@ -101,9 +275,10 @@ def gmail_callback():
 @api.get("/gmail/messages/recent")
 def gmail_recent_messages():
     try:
-        result = list_recent_messages(PLACEHOLDER_USER_ID, limit=5)
+        user_id = get_authenticated_user_id()
+        result = list_recent_messages(user_id, limit=5)
     except Exception as error:
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": str(error)}), get_status_code(error)
 
     return jsonify(result)
 
@@ -111,9 +286,10 @@ def gmail_recent_messages():
 @api.get("/gmail/messages/new")
 def gmail_new_messages():
     try:
-        result = list_new_messages(PLACEHOLDER_USER_ID)
+        user_id = get_authenticated_user_id()
+        result = list_new_messages(user_id)
     except Exception as error:
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": str(error)}), get_status_code(error)
 
     return jsonify(result)
 
@@ -121,26 +297,24 @@ def gmail_new_messages():
 @api.get("/outlook/status")
 def outlook_status():
     try:
-        link = get_outlook_link(PLACEHOLDER_USER_ID)
+        user_id = get_authenticated_user_id()
+        link = get_outlook_link(user_id)
     except Exception as error:
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": str(error)}), get_status_code(error)
 
     if not link:
-        current_app.logger.info(
-            "No Outlook link exists for placeholder user_id=%s",
-            PLACEHOLDER_USER_ID,
-        )
-        return jsonify({"linked": False, "userId": PLACEHOLDER_USER_ID})
+        current_app.logger.info("No Outlook link exists for user_id=%s", user_id)
+        return jsonify({"linked": False, "userId": user_id})
 
     current_app.logger.info(
-        "Returning linked Outlook status for placeholder user_id=%s email_address=%s",
-        PLACEHOLDER_USER_ID,
+        "Returning linked Outlook status for user_id=%s email_address=%s",
+        user_id,
         link["email_address"],
     )
     return jsonify(
         {
             "linked": True,
-            "userId": PLACEHOLDER_USER_ID,
+            "userId": user_id,
             "emailAddress": link["email_address"],
             "linkedAt": link["linked_at"].isoformat() if link["linked_at"] else None,
             "lastReceivedAt": (
@@ -155,8 +329,10 @@ def outlook_status():
 @api.get("/outlook/link")
 def outlook_link():
     try:
+        user_id = get_authenticated_user_id()
         state = token_urlsafe(24)
         session["outlook_oauth_state"] = state
+        session["outlook_oauth_user_id"] = user_id
         authorization_url = build_microsoft_authorize_url(state)
         return redirect(authorization_url)
     except Exception as error:
@@ -182,12 +358,14 @@ def outlook_callback():
         return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
 
     try:
+        user_id = session.get("outlook_oauth_user_id", PLACEHOLDER_USER_ID)
         code = request.args.get("code")
         if not code:
             raise RuntimeError("Microsoft did not return an authorization code.")
 
-        email_address = complete_outlook_link(PLACEHOLDER_USER_ID, code)
+        email_address = complete_outlook_link(user_id, code)
         session.pop("outlook_oauth_state", None)
+        session.pop("outlook_oauth_user_id", None)
     except Exception as error:
         query = urlencode({"outlook": "error", "reason": str(error)})
         return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
@@ -199,9 +377,10 @@ def outlook_callback():
 @api.get("/outlook/messages/recent")
 def outlook_recent_messages():
     try:
-        result = list_recent_outlook_messages(PLACEHOLDER_USER_ID, limit=5)
+        user_id = get_authenticated_user_id()
+        result = list_recent_outlook_messages(user_id, limit=5)
     except Exception as error:
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": str(error)}), get_status_code(error)
 
     return jsonify(result)
 
@@ -209,8 +388,9 @@ def outlook_recent_messages():
 @api.get("/outlook/messages/new")
 def outlook_new_messages():
     try:
-        result = list_new_outlook_messages(PLACEHOLDER_USER_ID)
+        user_id = get_authenticated_user_id()
+        result = list_new_outlook_messages(user_id)
     except Exception as error:
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": str(error)}), get_status_code(error)
 
     return jsonify(result)
