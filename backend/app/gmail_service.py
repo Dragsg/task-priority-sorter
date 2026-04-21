@@ -13,6 +13,16 @@ GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
+def normalize_expiry(expiry):
+    if not expiry:
+        return None
+
+    if expiry.tzinfo is None:
+        return expiry
+
+    return expiry.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def build_google_flow() -> Flow:
     if not Config.GOOGLE_CLIENT_ID or not Config.GOOGLE_CLIENT_SECRET:
         raise RuntimeError(
@@ -40,11 +50,7 @@ def build_credentials(user_id: int) -> Credentials:
     if not link:
         raise RuntimeError("No Gmail account is linked for this user yet.")
 
-    expiry = None
-    if link["token_expiry"]:
-        expiry = link["token_expiry"]
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
+    expiry = normalize_expiry(link["token_expiry"])
 
     credentials = Credentials(
         token=link["access_token"],
@@ -63,7 +69,7 @@ def build_credentials(user_id: int) -> Credentials:
             email_address=link["email_address"],
             access_token=credentials.token,
             refresh_token=credentials.refresh_token,
-            token_expiry=credentials.expiry,
+            token_expiry=normalize_expiry(credentials.expiry),
             history_id=link["history_id"],
         )
 
@@ -208,7 +214,7 @@ def complete_gmail_link(user_id: int, flow: Flow):
         email_address=profile["emailAddress"],
         access_token=credentials.token,
         refresh_token=credentials.refresh_token,
-        token_expiry=credentials.expiry,
+        token_expiry=normalize_expiry(credentials.expiry),
         history_id=latest_history_id,
     )
 
