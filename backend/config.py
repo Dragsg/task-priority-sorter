@@ -26,3 +26,17 @@ class Config:
     GMAIL_SCOPES = [
         "https://www.googleapis.com/auth/gmail.readonly",
     ]
+    MICROSOFT_CLIENT_ID = os.getenv("MICROSOFT_CLIENT_ID", "")
+    MICROSOFT_CLIENT_SECRET = os.getenv("MICROSOFT_CLIENT_SECRET", "")
+    MICROSOFT_TENANT_ID = os.getenv("MICROSOFT_TENANT_ID", "common")
+    MICROSOFT_REDIRECT_URI = os.getenv(
+        "MICROSOFT_REDIRECT_URI",
+        "http://localhost:5000/api/outlook/callback",
+    )
+    MICROSOFT_SCOPES = [
+        "openid",
+        "profile",
+        "offline_access",
+        "User.Read",
+        "Mail.Read",
+    ]
