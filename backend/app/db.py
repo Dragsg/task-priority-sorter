@@ -1,9 +1,12 @@
+import logging
 from contextlib import contextmanager
 
 import psycopg
 from psycopg.rows import dict_row
 
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 
 @contextmanager
@@ -56,7 +59,18 @@ def get_gmail_link(user_id: int):
                 """,
                 (user_id,),
             )
-            return cursor.fetchone()
+            link = cursor.fetchone()
+
+    if link:
+        logger.info(
+            "Found saved Gmail link for user_id=%s email_address=%s",
+            user_id,
+            link["email_address"],
+        )
+    else:
+        logger.info("No Gmail link exists for user_id=%s", user_id)
+
+    return link
 
 
 def save_gmail_link(
@@ -101,6 +115,13 @@ def save_gmail_link(
             )
         connection.commit()
 
+    logger.info(
+        "Saved Gmail link for user_id=%s email_address=%s history_id=%s",
+        user_id,
+        email_address,
+        history_id,
+    )
+
 
 def update_gmail_history(user_id: int, history_id: str):
     ensure_gmail_link_table()
@@ -117,3 +138,9 @@ def update_gmail_history(user_id: int, history_id: str):
                 (history_id, user_id),
             )
         connection.commit()
+
+    logger.info(
+        "Updated Gmail history for user_id=%s history_id=%s",
+        user_id,
+        history_id,
+    )

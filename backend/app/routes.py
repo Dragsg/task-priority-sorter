@@ -23,8 +23,17 @@ def gmail_status():
         return jsonify({"error": str(error)}), 400
 
     if not link:
+        current_app.logger.info(
+            "No Gmail link exists for placeholder user_id=%s",
+            PLACEHOLDER_USER_ID,
+        )
         return jsonify({"linked": False, "userId": PLACEHOLDER_USER_ID})
 
+    current_app.logger.info(
+        "Returning linked Gmail status for placeholder user_id=%s email_address=%s",
+        PLACEHOLDER_USER_ID,
+        link["email_address"],
+    )
     return jsonify(
         {
             "linked": True,

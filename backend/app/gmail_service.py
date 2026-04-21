@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -11,6 +12,7 @@ from .db import get_gmail_link, save_gmail_link, update_gmail_history
 
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+logger = logging.getLogger(__name__)
 
 
 def normalize_expiry(expiry):
@@ -48,6 +50,7 @@ def build_credentials(user_id: int) -> Credentials:
     link = get_gmail_link(user_id)
 
     if not link:
+        logger.info("No saved Gmail link available for user_id=%s", user_id)
         raise RuntimeError("No Gmail account is linked for this user yet.")
 
     expiry = normalize_expiry(link["token_expiry"])
@@ -63,6 +66,7 @@ def build_credentials(user_id: int) -> Credentials:
     )
 
     if credentials.expired and credentials.refresh_token:
+        logger.info("Refreshing expired Gmail token for user_id=%s", user_id)
         credentials.refresh(Request())
         save_gmail_link(
             user_id=user_id,
@@ -72,6 +76,7 @@ def build_credentials(user_id: int) -> Credentials:
             token_expiry=normalize_expiry(credentials.expiry),
             history_id=link["history_id"],
         )
+        logger.info("Refreshed Gmail token for user_id=%s", user_id)
 
     return credentials
 
@@ -216,6 +221,12 @@ def complete_gmail_link(user_id: int, flow: Flow):
         refresh_token=credentials.refresh_token,
         token_expiry=normalize_expiry(credentials.expiry),
         history_id=latest_history_id,
+    )
+
+    logger.info(
+        "Completed Gmail link for user_id=%s email_address=%s",
+        user_id,
+        profile["emailAddress"],
     )
 
     return profile["emailAddress"]
