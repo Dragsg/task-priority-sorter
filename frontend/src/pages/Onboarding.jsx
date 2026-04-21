@@ -46,24 +46,25 @@ export default function Onboarding() {
     }
   }
 
-  if (!user) {
-    return <main className="simple-shell">Loading...</main>;
-  }
-
   return (
     <main className="simple-shell">
       <section className="simple-card">
         <p className="auth-eyebrow">Onboarding</p>
         <h1 className="simple-title">
-          {user.email}, before you begin, let us personalise your experience
+          {user
+            ? `${user.email}, before you begin, let us personalise your experience`
+            : "Before you begin, let us personalise your experience"}
         </h1>
-        <p className="simple-copy">What do you plan to use this tool for?</p>
+        <p className="simple-copy">
+          {user ? "What do you plan to use this tool for?" : "Loading your account details..."}
+        </p>
 
         <form className="option-form" onSubmit={handleSubmit}>
           {OPTIONS.map((option) => (
             <label className="option-row" key={option}>
               <input
                 checked={preferences === option}
+                disabled={!user}
                 name="preferences"
                 onChange={() => setPreferences(option)}
                 type="radio"
@@ -74,7 +75,7 @@ export default function Onboarding() {
 
           {error ? <p className="error-text auth-error">{error}</p> : null}
 
-          <button className="auth-button" disabled={busy} type="submit">
+          <button className="auth-button" disabled={busy || !user} type="submit">
             {busy ? "Saving..." : "Continue"}
           </button>
         </form>

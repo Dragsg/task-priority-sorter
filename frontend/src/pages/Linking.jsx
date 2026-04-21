@@ -234,8 +234,8 @@ export default function Linking() {
         <p className="eyebrow">Email Linking</p>
         <h1>Connect Gmail and Outlook inboxes</h1>
         <p className="subtitle">
-          Signed in as <code>{user?.email ?? "loading..."}</code>. Your linking
-          page now lives at <code>/linking</code> so the login flow can own the
+          Signed in as <code>{user?.email ?? "..."}</code>. Your linking page
+          now lives at <code>/linking</code> so the login flow can own the
           default route.
         </p>
       </section>

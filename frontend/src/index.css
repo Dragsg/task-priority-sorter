@@ -356,6 +356,11 @@ body {
   color: #b91c1c;
 }
 
+.disabled-link {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 @media (max-width: 640px) {
   .app-shell {
     padding-top: 32px;
