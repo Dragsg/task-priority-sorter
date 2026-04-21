@@ -25,30 +25,56 @@ export default function Home() {
     navigate("/", { replace: true });
   }
 
-  if (!user) {
-    return <main className="simple-shell">Loading...</main>;
-  }
-
   return (
     <main className="simple-shell">
       <section className="simple-card">
         <p className="auth-eyebrow">Home</p>
-        <h1 className="simple-title">Hello, {user.name || user.email}</h1>
+        <h1 className="simple-title">
+          {user ? `Hello, ${user.name || user.email}` : "Loading your workspace"}
+        </h1>
         <p className="simple-copy">
-          Logged in as <strong>{user.email}</strong>.
+          {user ? (
+            <>
+              Logged in as <strong>{user.email}</strong>.
+            </>
+          ) : (
+            "Fetching your account details..."
+          )}
         </p>
         <p className="simple-copy">
-          Preference: <strong>{user.preferences || "Not set yet"}</strong>
+          Preference:{" "}
+          <strong>{user ? user.preferences || "Not set yet" : "Loading..."}</strong>
         </p>
 
         <div className="home-actions">
-          <Link className="auth-button home-link" to="/linking">
+          <Link
+            className={`auth-button home-link${user ? "" : " disabled-link"}`}
+            onClick={(event) => {
+              if (!user) {
+                event.preventDefault();
+              }
+            }}
+            to="/linking"
+          >
             Go to linking page
           </Link>
-          <Link className="secondary-button home-link" to="/onboarding">
+          <Link
+            className={`secondary-button home-link${user ? "" : " disabled-link"}`}
+            onClick={(event) => {
+              if (!user) {
+                event.preventDefault();
+              }
+            }}
+            to="/onboarding"
+          >
             Update preferences
           </Link>
-          <button className="inline-button danger-button" onClick={handleLogout} type="button">
+          <button
+            className="inline-button danger-button"
+            disabled={!user}
+            onClick={handleLogout}
+            type="button"
+          >
             Log out
           </button>
         </div>

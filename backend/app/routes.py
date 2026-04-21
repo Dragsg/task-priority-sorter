@@ -30,8 +30,6 @@ from .outlook_service import (
 
 api = Blueprint("api", __name__)
 
-PLACEHOLDER_USER_ID = 1
-
 
 def build_token(user_id: int) -> str:
     return jwt.encode(
@@ -61,10 +59,7 @@ def get_authenticated_user_id(required: bool = False):
     if user_id is not None:
         return user_id
 
-    if required:
-        raise RuntimeError("Unauthorised")
-
-    return PLACEHOLDER_USER_ID
+    raise RuntimeError("Unauthorised")
 
 
 def get_status_code(error: Exception) -> int:
@@ -256,7 +251,9 @@ def gmail_callback():
         return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
 
     try:
-        user_id = session.get("gmail_oauth_user_id", PLACEHOLDER_USER_ID)
+        user_id = session.get("gmail_oauth_user_id")
+        if user_id is None:
+            raise RuntimeError("Unauthorised")
         flow = build_google_flow()
         flow.code_verifier = saved_code_verifier
         flow.fetch_token(authorization_response=request.url)
@@ -358,7 +355,9 @@ def outlook_callback():
         return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
 
     try:
-        user_id = session.get("outlook_oauth_user_id", PLACEHOLDER_USER_ID)
+        user_id = session.get("outlook_oauth_user_id")
+        if user_id is None:
+            raise RuntimeError("Unauthorised")
         code = request.args.get("code")
         if not code:
             raise RuntimeError("Microsoft did not return an authorization code.")
