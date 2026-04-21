@@ -272,3 +272,92 @@ def update_outlook_last_received_at(user_id: int, last_received_at):
         user_id,
         last_received_at,
     )
+
+
+def get_user_by_email(email: str):
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    user_id,
+                    name,
+                    email,
+                    password,
+                    preferences
+                FROM public.user_details
+                WHERE email = %s
+                """,
+                (email,),
+            )
+            return cursor.fetchone()
+
+
+def get_user_by_id(user_id: int):
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    user_id,
+                    name,
+                    email,
+                    password,
+                    preferences
+                FROM public.user_details
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            return cursor.fetchone()
+
+
+def create_user(name: str, email: str, password_hash: str):
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO public.user_details (name, email, password)
+                VALUES (%s, %s, %s)
+                RETURNING
+                    user_id,
+                    name,
+                    email,
+                    password,
+                    preferences
+                """,
+                (name, email, password_hash),
+            )
+            user = cursor.fetchone()
+        connection.commit()
+
+    logger.info("Created user_details row for user_id=%s email=%s", user["user_id"], email)
+    return user
+
+
+def update_user_preferences(user_id: int, preferences: str):
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE public.user_details
+                SET preferences = %s
+                WHERE user_id = %s
+                RETURNING
+                    user_id,
+                    name,
+                    email,
+                    password,
+                    preferences
+                """,
+                (preferences, user_id),
+            )
+            user = cursor.fetchone()
+        connection.commit()
+
+    logger.info(
+        "Updated onboarding preferences for user_id=%s preferences=%s",
+        user_id,
+        preferences,
+    )
+    return user
