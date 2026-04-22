@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field, model_validator
 from pipeline.config import PipelineSettings
 from pipeline.models import (
     BehaviorProfile,
-    CanonicalTask,
     EntityAlias,
     FeedbackAction,
     FeedbackDirection,
@@ -102,30 +101,30 @@ class PipelineApiService:
         action: FeedbackAction,
         direction: FeedbackDirection | None = None,
     ) -> tuple[FeedbackEvent, BehaviorProfile]:
-        task_card = self.repository.get_current_task_card(user_id, canonical_task_id)
-        canonical_task = self.repository.get_current_canonical_task(user_id, canonical_task_id)
-        if task_card is None or canonical_task is None:
+        feedback_context = self.repository.get_feedback_update_context(user_id, canonical_task_id)
+        if feedback_context is None:
             raise LookupError(f"No current task found for canonical_task_id={canonical_task_id!r}")
 
-        profile = self.repository.get_behavior_profile(user_id) or self.pipeline.profile_service.create_default_profile(user_id)
-        sender_hash = self._sender_hash_for_task(profile, canonical_task)
+        task_context = feedback_context.task
+        profile = feedback_context.profile or self.pipeline.profile_service.create_default_profile(user_id)
+        sender_hash = self._sender_hash_for_task(profile, task_context.sender_ids)
         event = FeedbackEvent(
             user_id=user_id,
             canonical_task_id=canonical_task_id,
             action=action,
             direction=direction,
-            task_type=canonical_task.task_type,
-            entity_key=canonical_task.topic_entity.entity_key,
-            entity_name=canonical_task.topic_entity.entity_name,
-            entity_type=canonical_task.topic_entity.entity_type,
+            task_type=task_context.task_type,
+            entity_key=task_context.entity_key,
+            entity_name=task_context.entity_name,
+            entity_type=task_context.entity_type,
             sender_hash=sender_hash,
-            deadline_hours=task_card.deadline_hours,
+            deadline_hours=task_context.deadline_hours,
         )
-        updated = self.pipeline.apply_feedback(event)
+        updated = self.pipeline.apply_feedback_to_profile(profile, event)
         return event, updated
 
-    def _sender_hash_for_task(self, profile: BehaviorProfile, task: CanonicalTask) -> str | None:
-        for sender_id in task.sender_ids:
+    def _sender_hash_for_task(self, profile: BehaviorProfile, sender_ids: list[str]) -> str | None:
+        for sender_id in sender_ids:
             if sender_id:
                 return self.pipeline.profile_service.hash_identity(user_salt=profile.user_salt, identifier=sender_id)
         return None

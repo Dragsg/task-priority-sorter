@@ -91,6 +91,16 @@ class CurrentTaskCardRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now_naive)
 
 
+class DismissedTaskRecord(Base):
+    __tablename__ = "dismissed_tasks"
+    __table_args__ = (UniqueConstraint("user_id", "canonical_task_id", name="uq_dismissed_task"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(255), index=True)
+    canonical_task_id: Mapped[str] = mapped_column(String(64), index=True)
+    removed_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now_naive)
+
+
 class FeedbackEventRecord(Base):
     __tablename__ = "feedback_events"
 

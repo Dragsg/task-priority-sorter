@@ -37,3 +37,82 @@ def test_extracts_non_academic_entity_from_welfare_message():
 
     assert signal.topic_entity.entity_type in {EntityType.CCA, EntityType.TOPIC}
     assert "welfare" in signal.topic_entity.entity_name.lower() or "pack" in signal.topic_entity.entity_name.lower()
+
+
+def test_informational_storage_alert_is_not_marked_as_actionable_task():
+    extractor = SignalExtractor()
+    message = RawMessage(
+        user_id="user-1",
+        platform=Platform.GMAIL,
+        source_id="msg-3",
+        subject="Usage reached your limit",
+        snippet="Your storage is almost full. Review your plan options.",
+        body_text="Your storage usage reached the limit for this account.",
+        sender_display="Drive Team",
+        sender_email="no-reply@drive.example.com",
+        sender_domain="drive.example.com",
+    )
+
+    signal = extractor.extract(message)
+
+    assert signal.has_task is False
+
+
+def test_manual_task_metadata_overrides_extraction_with_structured_fields():
+    extractor = SignalExtractor()
+    message = RawMessage(
+        user_id="user-1",
+        platform=Platform.MANUAL,
+        source_id="manual-1",
+        subject="Submit reflection",
+        snippet="Write and submit the reflection note.",
+        body_text="Write and submit the reflection note.",
+        provider_metadata={
+            "extra": {
+                "manual_task": {
+                    "task_type": "submission",
+                    "entity_name": "CS2103T",
+                    "entity_type": "module",
+                    "deadline_iso": "2026-04-22T23:59:00",
+                }
+            }
+        },
+    )
+
+    signal = extractor.extract(message)
+
+    assert signal.has_task is True
+    assert signal.task_type == TaskType.SUBMISSION
+    assert signal.topic_entity.entity_name == "CS2103T"
+    assert signal.topic_entity.entity_type == EntityType.MODULE
+    assert signal.deadline_at is not None
+
+
+def test_body_excerpt_prefers_complete_actionable_lines_over_raw_snippet_cutoff():
+    extractor = SignalExtractor()
+    message = RawMessage(
+        user_id="user-1",
+        platform=Platform.GMAIL,
+        source_id="msg-4",
+        subject='New assignment: "What is my understanding of collaboration?"',
+        snippet="Hi NG YING XUAN, Dennis Lam posted a new assignment in 2019 S1-04 ChangeMakers. Due: Jan 20 Level 1: What is my underst",
+        body_text=(
+            "Hi NG YING XUAN,\n"
+            "Dennis Lam posted a new assignment in 2019 S1-04 ChangeMakers: Innovation and Entrepreneurship.\n"
+            "Due: Jan 20\n"
+            "Homework for Week 2. Please complete INDIVIDUALLY and submit your answers by next Monday morning 8.30am.\n"
+            "OPEN\n"
+            "https://classroom.google.com/example\n"
+            "If you don't want to receive emails from Classroom, you can unsubscribe.\n"
+        ),
+        sender_display="Dennis Lam",
+        sender_email="dennis@classroom.google.com",
+        sender_domain="classroom.google.com",
+    )
+
+    signal = extractor.extract(message)
+
+    assert signal.body_excerpt is not None
+    assert "submit your answers by next Monday morning 8.30am" in signal.body_excerpt
+    assert "unsubscribe" not in signal.body_excerpt.lower()
+    assert "http" not in signal.body_excerpt.lower()

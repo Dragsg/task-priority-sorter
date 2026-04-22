@@ -64,7 +64,8 @@ def test_pipeline_runs_over_real_gmail_fixture_corpus():
     pipeline = PriorityPipeline(repository, settings=PipelineSettings())
     bundle = pipeline.run_for_user("fixture-user")
 
-    assert len(bundle.signals) == len(messages)
+    assert 0 < len(bundle.signals) <= len(messages)
     assert len(bundle.task_cards) > 0
     assert all(card.entity_name for card in bundle.task_cards)
+    assert all(card.task_title for card in bundle.task_cards)
     assert all(card.canonical_task_id for card in bundle.task_cards)

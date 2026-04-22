@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 from uuid import uuid5, NAMESPACE_URL
 
 from pipeline.config import PipelineSettings
@@ -75,12 +74,17 @@ class TaskDeduplicator:
 
     def _merge_cluster(self, cluster: list[TaskSignal], *, run_id: str) -> CanonicalTask:
         first = cluster[0]
+        representative = self._select_representative_signal(cluster)
         deadline_values = [signal.deadline_hours for signal in cluster if signal.deadline_hours is not None]
-        subject_counter = Counter(signal.subject for signal in cluster if signal.subject)
         sender_roles = list({signal.sender_role for signal in cluster})
         sender_ids = list({signal.sender_id for signal in cluster if signal.sender_id})
         platforms_seen = list({platform for signal in cluster for platform in signal.platforms_seen})
-        canonical_id_seed = f"{first.user_id}:{first.topic_entity.entity_key}:{first.task_type.value}:{subject_counter.most_common(1)[0][0] if subject_counter else ''}"
+        representative_subject = representative.subject
+        representative_snippet = representative.snippet
+        representative_body_excerpt = representative.body_excerpt
+        canonical_id_seed = (
+            f"{first.user_id}:{first.topic_entity.entity_key}:{first.task_type.value}:{representative_subject or ''}"
+        )
         canonical_task_id = uuid5(NAMESPACE_URL, canonical_id_seed).hex
 
         return CanonicalTask(
@@ -96,5 +100,24 @@ class TaskDeduplicator:
             sender_roles=sorted(sender_roles, key=lambda item: item.value),
             sender_ids=sender_ids,
             urgency_word_count=max(signal.urgency_word_count for signal in cluster),
-            representative_subject=subject_counter.most_common(1)[0][0] if subject_counter else None,
+            representative_source_id=representative.source_id,
+            representative_subject=representative_subject,
+            representative_snippet=representative_snippet,
+            representative_body_excerpt=representative_body_excerpt,
+            representative_sender_display=representative.sender_display,
+            representative_timestamp=representative.timestamp,
         )
+
+    def _select_representative_signal(self, cluster: list[TaskSignal]) -> TaskSignal:
+        def score(signal: TaskSignal) -> tuple[int, int, int, int]:
+            subject = (signal.subject or "").strip()
+            snippet = (signal.snippet or "").strip()
+            body = (signal.body_excerpt or "").strip()
+            return (
+                1 if subject and subject.lower() != "(no subject)" else 0,
+                1 if snippet else 0,
+                1 if body else 0,
+                signal.urgency_word_count + (1 if signal.deadline_hours is not None else 0),
+            )
+
+        return max(cluster, key=score)

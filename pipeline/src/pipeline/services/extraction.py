@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from datetime import datetime
 from typing import Any
@@ -44,9 +45,106 @@ SUBMISSION_HINTS = {"assignment", "submission", "project", "quiz", "lab", "deliv
 MEETING_HINTS = {"meeting", "zoom", "call", "interview", "briefing", "sync"}
 READING_HINTS = {"read", "reading", "article", "notes", "slides", "chapter"}
 ADMIN_HINTS = {"register", "verify", "form", "payment", "invoice", "confirmation"}
+COMMERCIAL_DOMAINS = {
+    "shopee.com",
+    "lazada.com",
+    "grab.com",
+    "foodpanda.com",
+    "netflix.com",
+    "spotify.com",
+    "amazon.com",
+    "booking.com",
+    "linkedin.com",
+    "facebook.com",
+    "instagram.com",
+    "tiktok.com",
+    "openai.com",
+    "anthropic.com",
+}
+IRRELEVANT_SUBJECT_PATTERNS = {
+    "security alert",
+    "usage reached",
+    "storage is almost full",
+    "storage usage",
+    "newsletter",
+    "promotion",
+    "offer",
+    "sale",
+    "shipped",
+    "delivered",
+    "order confirmation",
+    "receipt",
+    "statement",
+    "invoice",
+    "payment received",
+    "subscription",
+    "verify your email",
+    "welcome to",
+    "thanks for signing up",
+}
 MODULE_PATTERN = re.compile(r"\b[A-Z]{2,3}\d{4}[A-Z]?\b")
 CCA_KEYWORDS = {"cca", "welfare", "club", "society", "hall", "rag", "flag", "committee"}
 DEADLINE_RELATIVE_TERMS = {"today", "tomorrow", "tmr", "tonight", "next"}
+PREVIEW_SKIP_PHRASES = {
+    "if you don't want to receive emails",
+    "unsubscribe",
+    "google inc.",
+    "mountain view",
+    "view in browser",
+    "reply directly to this email",
+    "do not reply to this email",
+    "this message was sent",
+    "with regards",
+    "best regards",
+    "head of department",
+    "academic staff",
+    "teacher in-charge",
+    "special projects",
+    "apple distinguished educator",
+    "google certified innovator",
+    "school of science and technology",
+    "confidentiality:",
+    "technology drive",
+    "website",
+    "facebook",
+    "twitter",
+    "1600 amphitheatre pkwy",
+    "amphitheatre parkway",
+    "mountain view, ca",
+    "mountain view ca",
+}
+PREVIEW_ACTION_HINTS = {
+    "assignment",
+    "question",
+    "quiz",
+    "project",
+    "homework",
+    "submit",
+    "submission",
+    "complete",
+    "review",
+    "collect",
+    "attend",
+    "register",
+    "training",
+    "trial",
+    "interview",
+    "deadline",
+    "due",
+    "before",
+    "by ",
+    "invited you",
+    "class invitation",
+    "join",
+    "meeting",
+    "lesson",
+    "password",
+    "login",
+    "log in",
+    "account",
+    "user id",
+    "update your email",
+}
 MONTH_OR_WEEKDAY_PATTERN = re.compile(
     r"\b("
     r"jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|"
@@ -79,14 +177,20 @@ class SignalExtractor:
         timestamp = self._parse_timestamp(message.timestamp_iso)
         lowercase_text = text.lower()
         doc = self._nlp(text) if self._nlp is not None else None
+        manual_metadata = self._manual_metadata(message)
 
         task_verbs = self._extract_task_verbs(lowercase_text)
         urgency_terms = self._extract_urgency_terms(lowercase_text)
-        deadline_at = self._extract_deadline(text, reference_time=timestamp)
-        topic_entity = self._extract_topic_entity(text, message, doc)
+        deadline_at = self._manual_deadline(manual_metadata) or self._extract_deadline(text, reference_time=timestamp)
+        topic_entity = self._manual_topic_entity(manual_metadata) or self._extract_topic_entity(text, message, doc)
         deadline_hours = self._deadline_hours(deadline_at, reference_time=timestamp)
-        task_type = self._classify_task_type(lowercase_text, task_verbs, topic_entity)
-        has_task = bool(task_verbs or urgency_terms or deadline_at or task_type != TaskType.ADMIN)
+        task_type = self._manual_task_type(manual_metadata) or self._classify_task_type(lowercase_text, task_verbs, topic_entity)
+        has_task = True if manual_metadata else not self._should_discard_message(message, lowercase_text, deadline_at=deadline_at) and bool(
+            task_verbs
+            or urgency_terms
+            or deadline_at
+            or task_type in {TaskType.SUBMISSION, TaskType.MEETING, TaskType.READING, TaskType.ADMIN}
+        )
 
         return TaskSignal(
             user_id=message.user_id,
@@ -94,10 +198,11 @@ class SignalExtractor:
             platform=message.platform,
             timestamp=timestamp,
             sender_id=message.sender_id or message.sender_email,
+            sender_display=message.sender_display or message.sender_email or message.from_raw,
             sender_role=self._classify_sender(message),
             subject=message.subject,
             snippet=message.snippet,
-            body_excerpt=message.body_text[:280] if message.body_text else None,
+            body_excerpt=self._build_body_excerpt(message),
             task_type=task_type,
             has_task=has_task,
             task_verbs_found=task_verbs,
@@ -111,6 +216,196 @@ class SignalExtractor:
 
     def _build_text(self, message: RawMessage) -> str:
         return "\n".join(part for part in [message.subject, message.snippet, message.body_text] if part)
+
+    def _build_body_excerpt(self, message: RawMessage) -> str | None:
+        body_lines = self._extract_preview_lines(message.body_text)
+        if body_lines:
+            relevant_indices = [index for index, line in enumerate(body_lines) if self._preview_line_score(line) >= 3]
+            start_index = relevant_indices[0] if relevant_indices else 0
+            if start_index > 0 and body_lines[start_index].lower().startswith(
+                ("due", "please", "submit", "complete", "attend", "join", "bring", "register", "before", "by")
+            ):
+                start_index -= 1
+
+            preview_parts: list[str] = []
+            for line in body_lines[start_index:]:
+                candidate = " ".join(preview_parts + [line]).strip()
+                if len(candidate) > 360 and preview_parts:
+                    break
+                preview_parts.append(line)
+                if len(preview_parts) >= 3:
+                    break
+                if len(candidate) >= 220 and self._preview_has_enough_detail(candidate):
+                    break
+
+            preview_text = " ".join(preview_parts).strip()
+            cleaned_preview = self._clean_preview_fragment(preview_text, limit=360)
+            if cleaned_preview:
+                if not cleaned_preview.endswith((".", "!", "?", "...")) and self._preview_has_enough_detail(cleaned_preview):
+                    cleaned_preview = f"{cleaned_preview}."
+                return cleaned_preview
+
+        return self._clean_preview_fragment(message.snippet, limit=280)
+
+    def _extract_preview_lines(self, text: str | None) -> list[str]:
+        if not text:
+            return []
+
+        cleaned_lines: list[str] = []
+        current_parts: list[str] = []
+        for raw_line in text.splitlines():
+            if not raw_line.strip():
+                if current_parts:
+                    cleaned_lines.append(" ".join(current_parts).strip())
+                    current_parts = []
+                continue
+            line = self._clean_preview_line(raw_line)
+            if not line:
+                continue
+            lower_line = line.lower()
+            if lower_line in {"open", "join", "view details"}:
+                if current_parts:
+                    cleaned_lines.append(" ".join(current_parts).strip())
+                    current_parts = []
+                continue
+            if any(phrase in lower_line for phrase in PREVIEW_SKIP_PHRASES):
+                if current_parts:
+                    cleaned_lines.append(" ".join(current_parts).strip())
+                    current_parts = []
+                continue
+            current_parts.append(self._strip_greeting_prefix(line))
+
+        if current_parts:
+            cleaned_lines.append(" ".join(current_parts).strip())
+
+        cleaned_lines = [re.sub(r"\s+", " ", line).strip() for line in cleaned_lines if line.strip()]
+
+        if len(cleaned_lines) > 1 and re.match(r"^(hi|dear)\b", cleaned_lines[0], re.IGNORECASE) and len(cleaned_lines[0].split()) <= 4:
+            cleaned_lines = cleaned_lines[1:]
+
+        return cleaned_lines
+
+    def _strip_greeting_prefix(self, value: str) -> str:
+        return re.sub(r"^(hi|dear)\s+[^,]{0,80},\s*", "", value, flags=re.IGNORECASE)
+
+    def _clean_preview_line(self, value: str | None) -> str | None:
+        if not value:
+            return None
+        cleaned = html.unescape(value)
+        if cleaned.lstrip().startswith("[image:"):
+            return None
+        cleaned = re.sub(r"<https?://[^>]+>", " ", cleaned)
+        cleaned = re.sub(r"https?://\S+", " ", cleaned)
+        cleaned = re.sub(r"[_*`~]+", " ", cleaned)
+        cleaned = re.sub(r"\[[^\]]+\]", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" \n\r\t-•|")
+        if not cleaned or len(cleaned) < 3:
+            return None
+        if cleaned.isupper() and len(cleaned.split()) <= 2:
+            return None
+        return cleaned
+
+    def _preview_line_score(self, text: str) -> int:
+        lowered = text.lower()
+        score = 0
+        if any(hint in lowered for hint in PREVIEW_ACTION_HINTS):
+            score += 4
+        if any(token in lowered for token in {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"}):
+            score += 1
+        if re.search(r"\b\d{1,2}(?::\d{2})?\s?(?:am|pm)?\b", lowered):
+            score += 1
+        if len(text.split()) >= 6:
+            score += 1
+        if any(phrase in lowered for phrase in PREVIEW_SKIP_PHRASES):
+            score -= 5
+        return score
+
+    def _preview_has_enough_detail(self, text: str) -> bool:
+        lowered = text.lower()
+        return any(hint in lowered for hint in PREVIEW_ACTION_HINTS) and len(text.split()) >= 8
+
+    def _clean_preview_fragment(self, value: str | None, *, limit: int) -> str | None:
+        if not value:
+            return None
+        cleaned = html.unescape(value)
+        cleaned = re.sub(r"[\u034f\u200b-\u200f\u202a-\u202e]", "", cleaned)
+        cleaned = re.sub(r"<https?://[^>]+>", " ", cleaned)
+        cleaned = re.sub(r"https?://\S+", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" \n\r\t-•|")
+        if not cleaned:
+            return None
+        if len(cleaned) <= limit:
+            return cleaned
+
+        window = cleaned[:limit].rstrip()
+        punctuation_boundary = max(window.rfind("."), window.rfind("!"), window.rfind("?"))
+        if punctuation_boundary >= int(limit * 0.55):
+            return window[: punctuation_boundary + 1].rstrip()
+
+        word_boundary = window.rfind(" ")
+        if word_boundary >= int(limit * 0.55):
+            return window[:word_boundary].rstrip(" ,;:-") + "..."
+        return window + "..."
+
+    def _manual_metadata(self, message: RawMessage) -> dict[str, Any] | None:
+        extra = getattr(message.provider_metadata, "extra", {}) or {}
+        manual = extra.get("manual_task")
+        return manual if isinstance(manual, dict) else None
+
+    def _manual_deadline(self, metadata: dict[str, Any] | None) -> datetime | None:
+        if not metadata:
+            return None
+        deadline_value = metadata.get("deadline_iso")
+        if not deadline_value:
+            return None
+        try:
+            return datetime.fromisoformat(str(deadline_value).replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    def _manual_task_type(self, metadata: dict[str, Any] | None) -> TaskType | None:
+        if not metadata:
+            return None
+        value = metadata.get("task_type")
+        try:
+            return TaskType(value) if value else None
+        except ValueError:
+            return None
+
+    def _manual_topic_entity(self, metadata: dict[str, Any] | None) -> TopicEntity | None:
+        if not metadata:
+            return None
+        entity_name = (metadata.get("entity_name") or "").strip()
+        entity_type_value = metadata.get("entity_type")
+        if not entity_name:
+            return None
+        try:
+            entity_type = EntityType(entity_type_value) if entity_type_value else EntityType.TOPIC
+        except ValueError:
+            entity_type = EntityType.TOPIC
+        return TopicEntity(
+            entity_name=entity_name,
+            entity_type=entity_type,
+            entity_key=normalize_entity_name(entity_name),
+        )
+
+    def _should_discard_message(
+        self,
+        message: RawMessage,
+        lowercase_text: str,
+        *,
+        deadline_at: datetime | None,
+    ) -> bool:
+        if deadline_at is not None:
+            return False
+
+        sender_domain = (message.sender_domain or "").lower()
+        subject = (message.subject or "").lower()
+
+        if any(domain in sender_domain for domain in COMMERCIAL_DOMAINS):
+            return True
+
+        return any(pattern in subject or pattern in lowercase_text for pattern in IRRELEVANT_SUBJECT_PATTERNS)
 
     def _extract_task_verbs(self, text: str) -> list[str]:
         tokens = re.findall(r"[a-z]+", text)

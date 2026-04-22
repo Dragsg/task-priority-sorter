@@ -158,6 +158,49 @@ def save_messages(user_id: int, messages: list):
     )
 
 
+def list_stored_messages(user_id: int, limit: int | None = None) -> list[dict]:
+    ensure_stored_emails_table()
+
+    query = """
+        SELECT
+            user_id,
+            platform,
+            source_id,
+            thread_id,
+            timestamp_iso,
+            label_ids,
+            sender_id,
+            sender_display,
+            sender_email,
+            sender_domain,
+            subject,
+            snippet,
+            body_text,
+            body_html_present,
+            attachments_present,
+            mime_parts,
+            provider_metadata,
+            from_raw,
+            to_raw,
+            cc_raw,
+            bcc_raw
+        FROM stored_emails
+        WHERE user_id = %s
+        ORDER BY COALESCE(timestamp_iso, created_at) DESC, id DESC
+    """
+    params: list[object] = [user_id]
+    if limit is not None:
+        query += " LIMIT %s"
+        params.append(limit)
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+    return rows
+
+
 def ensure_gmail_link_table():
     with get_connection() as connection:
         with connection.cursor() as cursor:

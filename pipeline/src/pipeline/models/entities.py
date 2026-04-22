@@ -70,6 +70,7 @@ class TaskSignal(BaseModel):
     platform: Platform
     timestamp: datetime | None = None
     sender_id: str | None = None
+    sender_display: str | None = None
     sender_role: SenderRole = SenderRole.UNKNOWN
     subject: str | None = None
     snippet: str | None = None
@@ -106,7 +107,12 @@ class CanonicalTask(BaseModel):
     sender_roles: list[SenderRole] = Field(default_factory=list)
     sender_ids: list[str] = Field(default_factory=list)
     urgency_word_count: int = 0
+    representative_source_id: str | None = None
     representative_subject: str | None = None
+    representative_snippet: str | None = None
+    representative_body_excerpt: str | None = None
+    representative_sender_display: str | None = None
+    representative_timestamp: datetime | None = None
 
 
 class EntityWeight(BaseModel):
@@ -203,6 +209,12 @@ class PrioritizedTaskCard(BaseModel):
     profile_adjustment_made: bool = False
     adjustment_reason: str | None = None
     evidence_source_ids: list[str] = Field(default_factory=list)
+    task_title: str | None = None
+    task_description: str | None = None
+    source_subject: str | None = None
+    source_snippet: str | None = None
+    source_sender: str | None = None
+    source_timestamp_iso: str | None = None
     entity_name: str | None = None
     entity_type: EntityType | None = None
     score_reasons: list[str] = Field(default_factory=list)

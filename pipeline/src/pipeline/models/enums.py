@@ -5,6 +5,7 @@ class Platform(str, Enum):
     GMAIL = "gmail"
     OUTLOOK = "outlook"
     TEAMS = "teams"
+    MANUAL = "manual"
 
 
 class TaskType(str, Enum):

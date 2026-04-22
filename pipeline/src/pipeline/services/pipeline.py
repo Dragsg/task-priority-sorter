@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pipeline.config import PipelineSettings
 from pipeline.models import BehaviorProfile, FeedbackEvent, OnboardingContext
+from pipeline.models.enums import EntityType, TaskType
 from pipeline.services.aliasing import EntityAliasResolver
 from pipeline.services.dedup import TaskDeduplicator
 from pipeline.services.extraction import SignalExtractor
@@ -56,6 +57,8 @@ class PriorityPipeline:
                         "topic_entity": self.alias_resolver.resolve(signal.topic_entity, aliases),
                     }
                 )
+                if not signal.has_task:
+                    continue
                 signals.append(signal)
 
             canonical_tasks = [self.scorer.score(task) for task in self.deduplicator.deduplicate(signals, run_id=run_id)]
@@ -106,8 +109,32 @@ class PriorityPipeline:
 
     def apply_feedback(self, event: FeedbackEvent) -> BehaviorProfile:
         profile = self.repository.get_behavior_profile(event.user_id) or self.profile_service.create_default_profile(event.user_id)
+        return self.apply_feedback_to_profile(profile, event)
+
+    def apply_feedback_to_profile(self, profile: BehaviorProfile, event: FeedbackEvent) -> BehaviorProfile:
         updated = self.profile_service.update_from_feedback(profile, event)
-        self.repository.save_feedback_event(event)
+        self.repository.save_feedback_profile_update(event, updated)
+        return updated
+
+    def register_manual_task(
+        self,
+        *,
+        user_id: str,
+        task_type: TaskType,
+        entity_key: str,
+        entity_name: str,
+        entity_type: EntityType,
+        deadline_hours: float | None,
+    ) -> BehaviorProfile:
+        profile = self.repository.get_behavior_profile(user_id) or self.profile_service.create_default_profile(user_id)
+        updated = self.profile_service.update_from_manual_task(
+            profile,
+            task_type=task_type,
+            entity_key=entity_key,
+            entity_name=entity_name,
+            entity_type=entity_type,
+            deadline_hours=deadline_hours,
+        )
         self.repository.save_behavior_profile(updated)
         return updated
 

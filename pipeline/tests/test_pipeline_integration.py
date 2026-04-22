@@ -90,6 +90,10 @@ def test_end_to_end_pipeline_and_feedback_cycle():
     assert len(bundle.canonical_tasks) == 1
     assert len(bundle.task_cards) == 1
     assert bundle.task_cards[0].entity_name == "CS2103T"
+    assert bundle.task_cards[0].task_title == "CS2103T project due tonight"
+    assert bundle.task_cards[0].task_description is not None
+    assert bundle.task_cards[0].source_subject == "CS2103T project due tonight"
+    assert bundle.task_cards[0].source_snippet is not None
     assert repository.current_cards[bundle.task_cards[0].canonical_task_id].task_id == bundle.task_cards[0].task_id
 
     updated_profile = pipeline.apply_feedback(
@@ -107,3 +111,35 @@ def test_end_to_end_pipeline_and_feedback_cycle():
 
     assert updated_profile.profile_version > 3
     assert updated_profile.entity_weights["cs2103t"].priority_multiplier >= 1.5
+
+
+def test_dismissed_task_card_stays_hidden_from_current_queue():
+    repository = InMemoryPipelineRepository()
+    settings = PipelineSettings(profile_confidence_threshold=0.65)
+    pipeline = PriorityPipeline(repository, settings=settings)
+
+    repository.upsert_raw_messages(
+        [
+            RawMessage(
+                user_id="user-2",
+                platform=Platform.GMAIL,
+                source_id="msg-3",
+                subject="Collect welfare pack tomorrow",
+                snippet="Please collect your welfare pack tomorrow at 3pm.",
+                body_text="Please collect your welfare pack tomorrow at 3pm from deck 9.",
+                sender_display="Computing Club",
+                sender_email="welfare@club.org",
+                sender_domain="club.org",
+            )
+        ]
+    )
+
+    first_bundle = pipeline.run_for_user("user-2")
+    canonical_task_id = first_bundle.task_cards[0].canonical_task_id
+
+    assert repository.dismiss_task_card("user-2", canonical_task_id) is True
+    assert repository.get_current_task_cards("user-2") == []
+
+    pipeline.run_for_user("user-2")
+
+    assert repository.get_current_task_cards("user-2") == []

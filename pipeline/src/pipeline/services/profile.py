@@ -58,6 +58,49 @@ class ProfileService:
         updated.confidence = self._current_confidence(updated)
         return updated
 
+    def update_from_manual_task(
+        self,
+        profile: BehaviorProfile,
+        *,
+        task_type: TaskType,
+        entity_key: str,
+        entity_name: str,
+        entity_type: EntityType,
+        deadline_hours: float | None,
+        occurred_at: datetime | None = None,
+    ) -> BehaviorProfile:
+        updated = profile.model_copy(deep=True)
+        updated.profile_version += 1
+        occurred = occurred_at or datetime.now()
+
+        if deadline_hours is not None:
+            current = updated.task_type_start_leads.get(task_type)
+            updated.task_type_start_leads[task_type] = self.update_metric_ewma(current, deadline_hours)
+            updated.action_hours.append(occurred.hour)
+            updated.action_hours = updated.action_hours[-50:]
+            self._recompute_action_patterns(updated)
+
+        entry = updated.entity_weights.get(entity_key)
+        if entry is None:
+            entry = EntityWeight(
+                entity_name=entity_name,
+                entity_key=entity_key,
+                entity_type=entity_type,
+                defer_rate=0.2,
+                priority_multiplier=1.3,
+            )
+
+        entry.observation_count += 1
+        entry.defer_rate = self.update_metric_ewma(entry.defer_rate, 0.0)
+
+        if deadline_hours is not None:
+            entry.avg_start_lead_hours = self.update_metric_ewma(entry.avg_start_lead_hours, deadline_hours)
+
+        multiplier = 1.5 - (entry.defer_rate if entry.defer_rate is not None else 0.2)
+        entry.priority_multiplier = round(min(1.8, max(0.4, multiplier)), 2)
+        updated.entity_weights[entity_key] = entry
+        return updated
+
     def can_personalize(
         self,
         profile: BehaviorProfile,

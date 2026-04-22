@@ -38,7 +38,7 @@ Rules:
 - If the user appears to be inside their usual start buffer, escalating one tier is reasonable.
 - If an entity is often deferred, mention the risk in the rationale, but do not lower the tier unless the structured context clearly supports it.
 - Timetable context can affect action timing and rationale, but must not directly change the priority tier.
-- Keep the rationale to 1-2 sentences and cite specific signals.
+- Keep the rationale compact and specific. Prefer 1 short sentence, use 2 only when needed.
 - Return only valid JSON matching the provided schema.
 """
 
@@ -80,7 +80,7 @@ FEW_SHOT_EXAMPLES = [
         "output": {
             "priority_tier": "CRITICAL",
             "action_window": "NOW",
-            "rationale": "CS2103T is due in 8 hours and has been repeated across Gmail and Teams. Personalization is strong here: the user usually starts this type of work about 10 hours ahead, so they are already inside their normal buffer.",
+            "rationale": "Due in 8 hours and repeated across Gmail and Teams; the user usually starts this kind of work about 10 hours ahead, so this is already inside their normal buffer.",
             "confidence": 0.93,
             "profile_adjustment_made": True,
             "adjustment_reason": "Escalated from HIGH because can_personalize is true and the remaining time is below the user's typical start lead for this task.",
@@ -123,7 +123,7 @@ FEW_SHOT_EXAMPLES = [
         "output": {
             "priority_tier": "MEDIUM",
             "action_window": "TODAY",
-            "rationale": "Keep this at MEDIUM because the deadline is still about 48 hours away and there is no strong start-buffer signal for escalation. The defer rate for this entity is high, so surfacing it today helps reduce the risk of last-minute slippage.",
+            "rationale": "Keep this at MEDIUM: the deadline is still about 48 hours away, but the high defer rate makes it worth surfacing today.",
             "confidence": 0.82,
             "profile_adjustment_made": False,
             "adjustment_reason": "High defer history was noted in the rationale, but the tier was preserved because the remaining time and evidence did not justify escalation.",
@@ -172,7 +172,7 @@ FEW_SHOT_EXAMPLES = [
         "output": {
             "priority_tier": "MEDIUM",
             "action_window": "TODAY",
-            "rationale": "Keep the pre-scored MEDIUM tier because can_personalize is false and there is no reliable entity or sender history yet. The calendar shows the student is busy this afternoon, so TODAY is appropriate rather than NOW.",
+            "rationale": "Keep the pre-scored MEDIUM tier because there is not enough reliable history to personalize yet; the calendar says TODAY is a better fit than NOW.",
             "confidence": 0.78,
             "profile_adjustment_made": False,
             "adjustment_reason": "No profile-based adjustment was made because profile confidence and observation counts are too low.",
@@ -402,14 +402,33 @@ class PriorityReasoner:
     def _build_rationale(self, *, task: dict[str, Any], user: dict[str, Any], action_window: ActionWindow) -> str:
         deadline_hours = task.get("deadline_hours")
         reasons = task.get("score_reasons") or []
-        base = f"{task['entity_name']} is pre-scored {task['pre_scored_tier']}"
+        fragments: list[str] = []
+
         if deadline_hours is not None:
-            base = f"{task['entity_name']} is due in {round(deadline_hours, 1)} hours and pre-scored {task['pre_scored_tier']}"
+            fragments.append(f"Due in {round(deadline_hours)} hours.")
+        else:
+            fragments.append(f"Kept at {task['pre_scored_tier']}.")
+
         if reasons:
-            base += f" because of {', '.join(reasons[:2])}"
+            fragments.append(f"Signals: {', '.join(reasons[:2])}.")
+
         if user.get("can_personalize") and user.get("task_type_start_lead_hours") is not None:
-            base += f". Your recent behavior suggests you typically start this kind of task about {round(user['task_type_start_lead_hours'], 1)} hours ahead"
-        return f"{base}. Recommended action window: {action_window.value}."
+            fragments.append(
+                f"This is close to the user's usual start buffer of {round(user['task_type_start_lead_hours'], 1)} hours."
+            )
+        elif not user.get("can_personalize"):
+            fragments.append("The base tier was kept because there is not enough reliable profile history yet.")
+
+        if action_window == ActionWindow.NOW:
+            fragments.append("Best handled now.")
+        elif action_window == ActionWindow.TODAY:
+            fragments.append("Best handled later today.")
+        elif action_window == ActionWindow.THIS_WEEK:
+            fragments.append("Best scheduled this week.")
+        else:
+            fragments.append("Can be deferred for now.")
+
+        return " ".join(fragments[:4])
 
     def _raise_tier(self, tier: PriorityTier) -> PriorityTier:
         if tier == PriorityTier.LOW:
