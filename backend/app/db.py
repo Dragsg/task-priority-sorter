@@ -201,6 +201,37 @@ def list_stored_messages(user_id: int, limit: int | None = None) -> list[dict]:
     return rows
 
 
+def list_task_card_payloads(user_id: int) -> list[dict]:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    task_id,
+                    user_id,
+                    payload,
+                    created_at
+                FROM task_cards
+                WHERE user_id = %s
+                ORDER BY created_at DESC, id DESC
+                """,
+                (str(user_id),),
+            )
+            rows = cursor.fetchall()
+
+    payloads = []
+    for row in rows:
+        payload = dict(row.get("payload") or {})
+        payload.setdefault("task_id", row["task_id"])
+        payload.setdefault("user_id", row["user_id"])
+        payload["created_at"] = (
+            row["created_at"].isoformat() if row.get("created_at") else None
+        )
+        payloads.append(payload)
+
+    return payloads
+
+
 def ensure_gmail_link_table():
     with get_connection() as connection:
         with connection.cursor() as cursor:

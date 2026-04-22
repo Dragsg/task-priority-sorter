@@ -58,6 +58,50 @@ class TaskRoutesTestCase(unittest.TestCase):
         self.assertEqual(payload["items"][0]["canonical_task_id"], "canon-1")
         self.assertEqual(payload["profile"]["profile_version"], 5)
 
+    @patch("app.routes.get_task_statistics_snapshot")
+    @patch("app.routes.get_user_by_id")
+    def test_statistics_route_returns_snapshot_payload(
+        self,
+        get_user_by_id,
+        get_task_statistics_snapshot,
+    ):
+        get_user_by_id.return_value = {
+            "user_id": 7,
+            "name": "Avery",
+            "email": "avery@example.com",
+            "preferences": "School",
+        }
+        get_task_statistics_snapshot.return_value = {
+            "summary": {
+                "totalTaskCards": 3,
+                "criticalTasks": 1,
+                "highPriorityTasks": 1,
+                "dueWithin24Hours": 2,
+                "averageConfidence": 0.66,
+                "profileConfidence": 0.58,
+            },
+            "distributions": {
+                "priorityTiers": [{"label": "HIGH", "count": 1}],
+                "actionWindows": [{"label": "TODAY", "count": 2}],
+                "platformMix": [{"label": "gmail", "count": 3}],
+            },
+            "nearestDeadlines": [{"task_id": "task-1"}],
+            "strongestSignals": [{"task_id": "task-2"}],
+            "profile": {"profile_version": 9},
+        }
+
+        response = self.client.get("/api/statistics", headers=self.headers)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["user"]["userId"], 7)
+        self.assertEqual(payload["summary"]["totalTaskCards"], 3)
+        self.assertEqual(payload["distributions"]["platformMix"][0]["label"], "gmail")
+        self.assertEqual(payload["nearestDeadlines"][0]["task_id"], "task-1")
+        self.assertEqual(payload["strongestSignals"][0]["task_id"], "task-2")
+        self.assertEqual(payload["profile"]["profile_version"], 9)
+        get_task_statistics_snapshot.assert_called_once_with(7)
+
     @patch("app.routes.run_prioritization_for_user")
     def test_task_sync_route_returns_pipeline_summary(self, run_prioritization_for_user):
         run_prioritization_for_user.return_value = {

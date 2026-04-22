@@ -869,6 +869,9 @@ export default function Home() {
         </div>
 
         <div className="home-actions">
+          <Link className="auth-button home-link" to="/statistics">
+            Open statistics
+          </Link>
           <button
             className="auth-button home-link"
             disabled={isSyncing}

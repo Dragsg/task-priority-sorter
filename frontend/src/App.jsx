@@ -4,6 +4,7 @@ import Home from "./pages/Home";
 import Linking from "./pages/Linking";
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
+import Statistics from "./pages/Statistics";
 
 function ProtectedRoute({ children }) {
   const token = getStoredToken();
@@ -43,6 +44,14 @@ export default function App() {
             </ProtectedRoute>
           }
           path="/linking"
+        />
+        <Route
+          element={
+            <ProtectedRoute>
+              <Statistics />
+            </ProtectedRoute>
+          }
+          path="/statistics"
         />
         <Route element={<Navigate replace to="/" />} path="*" />
       </Routes>

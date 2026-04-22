@@ -20,6 +20,7 @@ from .pipeline_bridge import (
     create_manual_task,
     get_pipeline_recompute_status,
     get_profile_snapshot,
+    get_task_statistics_snapshot,
     list_prioritized_tasks,
     remove_prioritized_task,
     run_prioritization_for_user,
@@ -481,6 +482,27 @@ def dashboard_bootstrap():
             "user": serialize_user(user),
             "items": items,
             "profile": profile,
+        }
+    )
+
+
+@api.get("/statistics")
+def statistics_snapshot():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        user = get_user_by_id(user_id)
+        if user is None:
+            raise LookupError("User not found")
+        statistics = get_task_statistics_snapshot(user_id)
+    except LookupError as error:
+        return jsonify({"error": str(error)}), 404
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(
+        {
+            "user": serialize_user(user),
+            **statistics,
         }
     )
 

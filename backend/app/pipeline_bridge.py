@@ -13,7 +13,13 @@ from uuid import uuid4
 from dotenv import load_dotenv
 
 from config import Config
-from .db import get_gmail_link, get_outlook_link, get_user_by_id, list_stored_messages, save_messages
+from .db import (
+    get_gmail_link,
+    get_outlook_link,
+    get_user_by_id,
+    list_stored_messages,
+    save_messages,
+)
 from .gmail_service import list_new_messages, list_recent_messages
 from .outlook_service import list_new_outlook_messages, list_recent_outlook_messages
 
@@ -268,6 +274,76 @@ def get_profile_snapshot(user_id: int) -> dict:
     return payload
 
 
+def get_task_statistics_snapshot(user_id: int) -> dict:
+    task_cards = list_prioritized_tasks(user_id)
+    profile = get_profile_snapshot(user_id)
+
+    total_task_cards = len(task_cards)
+    critical_tasks = sum(
+        1 for task in task_cards if task.get("priority_tier") == "CRITICAL"
+    )
+    high_priority_tasks = sum(
+        1 for task in task_cards if task.get("priority_tier") == "HIGH"
+    )
+    due_within_24h = sum(
+        1
+        for task in task_cards
+        if isinstance(task.get("deadline_hours"), (int, float))
+        and task["deadline_hours"] <= 24
+    )
+    confidence_values = [
+        float(task["confidence"])
+        for task in task_cards
+        if isinstance(task.get("confidence"), (int, float))
+    ]
+    average_confidence = (
+        sum(confidence_values) / len(confidence_values) if confidence_values else 0.0
+    )
+
+    priority_distribution = _build_distribution_rows(
+        task_cards,
+        lambda task: task.get("priority_tier"),
+    )
+    action_window_distribution = _build_distribution_rows(
+        task_cards,
+        lambda task: task.get("action_window"),
+    )
+    platform_distribution = _build_platform_distribution(task_cards)
+
+    nearest_deadlines = sorted(
+        [
+            task
+            for task in task_cards
+            if isinstance(task.get("deadline_hours"), (int, float))
+        ],
+        key=lambda task: task["deadline_hours"],
+    )[:4]
+    strongest_signals = sorted(
+        task_cards,
+        key=lambda task: float(task.get("confidence") or 0),
+        reverse=True,
+    )[:4]
+
+    return {
+        "summary": {
+            "totalTaskCards": total_task_cards,
+            "criticalTasks": critical_tasks,
+            "highPriorityTasks": high_priority_tasks,
+            "dueWithin24Hours": due_within_24h,
+            "averageConfidence": average_confidence,
+            "profileConfidence": float(profile.get("confidence") or 0),
+        },
+        "distributions": {
+            "priorityTiers": priority_distribution,
+            "actionWindows": action_window_distribution,
+            "platformMix": platform_distribution,
+        },
+        "nearestDeadlines": nearest_deadlines,
+        "strongestSignals": strongest_signals,
+        "profile": profile,
+    }
+
+
 def refresh_linked_email_sources(user_id: int, *, recent_limit: int = 20) -> dict:
     summary = {
         "gmail": {"linked": False, "mode": None, "fetchedCount": 0, "error": None},
@@ -305,6 +381,44 @@ def refresh_linked_email_sources(user_id: int, *, recent_limit: int = 20) -> dic
             summary["outlook"]["error"] = str(exc)
 
     return summary
+
+
+def _build_distribution_rows(items: list[dict], get_label) -> list[dict]:
+    counts: dict[str, int] = {}
+    for item in items:
+        label = get_label(item)
+        if not label:
+            continue
+        counts[str(label)] = counts.get(str(label), 0) + 1
+
+    return [
+        {"label": label, "count": count}
+        for label, count in sorted(
+            counts.items(),
+            key=lambda entry: (-entry[1], entry[0]),
+        )
+    ]
+
+
+def _build_platform_distribution(task_cards: list[dict]) -> list[dict]:
+    counts: dict[str, int] = {}
+    for task in task_cards:
+        platforms = task.get("platforms_seen")
+        if isinstance(platforms, list) and platforms:
+            for platform in platforms:
+                if not platform:
+                    continue
+                counts[str(platform)] = counts.get(str(platform), 0) + 1
+        else:
+            counts["email"] = counts.get("email", 0) + 1
+
+    return [
+        {"label": label, "count": count}
+        for label, count in sorted(
+            counts.items(),
+            key=lambda entry: (-entry[1], entry[0]),
+        )
+    ]
 
 
 def run_prioritization_for_user(user_id: int, limit: int | None = None) -> dict:
