@@ -221,7 +221,7 @@ def onboarding_context():
         user = get_user_by_id(user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
-        context = get_onboarding_context_snapshot(user_id)
+        context = get_onboarding_context_snapshot(user_id, user=user)
     except Exception as error:
         return jsonify({"error": str(error)}), get_status_code(error)
 

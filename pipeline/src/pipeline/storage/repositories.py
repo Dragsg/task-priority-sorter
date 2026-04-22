@@ -157,31 +157,47 @@ def _payload_for_task(
     }
 
 
-def _get_removed_tags(payload: dict[str, Any] | None) -> list[str]:
+def _get_tag_override_state(payload: dict[str, Any] | None) -> dict[str, list[str]]:
     if not isinstance(payload, dict):
-        return []
+        return {"added": [], "removed": [], "generated": []}
     overrides = payload.get("tag_overrides")
     if not isinstance(overrides, dict):
-        return []
-    return dedupe_tags(overrides.get("removed") or [])
+        return {"added": [], "removed": [], "generated": []}
+    return {
+        "added": dedupe_tags(overrides.get("added") or []),
+        "removed": dedupe_tags(overrides.get("removed") or []),
+        "generated": dedupe_tags(overrides.get("generated") or []),
+    }
 
 
-def _set_removed_tags(payload: dict[str, Any], removed_tags: list[str]) -> dict[str, Any]:
+def _set_tag_override_state(
+    payload: dict[str, Any],
+    *,
+    added_tags: list[str],
+    removed_tags: list[str],
+    generated_tags: list[str],
+) -> dict[str, Any]:
     updated = dict(payload or {})
-    if removed_tags:
-        overrides = dict(updated.get("tag_overrides") or {})
-        overrides["removed"] = dedupe_tags(removed_tags)
-        updated["tag_overrides"] = overrides
+    if added_tags or removed_tags or generated_tags:
+        updated["tag_overrides"] = {
+            "added": dedupe_tags(added_tags),
+            "removed": dedupe_tags(removed_tags),
+            "generated": dedupe_tags(generated_tags),
+        }
     else:
         updated.pop("tag_overrides", None)
     return updated
 
 
-def _apply_removed_tag_overrides(tags: list[str], payload: dict[str, Any] | None) -> list[str]:
-    removed = set(_get_removed_tags(payload))
-    if not removed:
-        return dedupe_tags(tags)
-    return [tag for tag in dedupe_tags(tags) if tag not in removed]
+def _apply_tag_overrides(generated_tags: list[str], payload: dict[str, Any] | None) -> list[str]:
+    overrides = _get_tag_override_state(payload)
+    removed = set(overrides["removed"])
+    effective = [
+        tag
+        for tag in dedupe_tags([*generated_tags, *overrides["added"]])
+        if tag not in removed
+    ]
+    return effective
 
 
 def _parse_payload_card(payload: dict[str, Any]) -> PrioritizedTaskCard | None:
@@ -945,8 +961,9 @@ def _merge_sql_task_row(
     effective_priority = PriorityTier(row.effective_priority_tier) if preserve_priority and row.effective_priority_tier else task_card.effective_priority_tier
     applied_priority_delta = row.applied_priority_delta if preserve_priority else task_card.applied_priority_delta
     status = existing_status if row.status else task_card.status
-    removed_tags = _get_removed_tags(row.payload or {})
-    persisted_tags = _apply_removed_tag_overrides(task_card.tags, row.payload or {})
+    overrides = _get_tag_override_state(row.payload or {})
+    generated_tags = dedupe_tags(task_card.tags)
+    persisted_tags = _apply_tag_overrides(generated_tags, row.payload or {})
 
     persisted_card = task_card.model_copy(
         update={
@@ -969,9 +986,11 @@ def _merge_sql_task_row(
     row.applied_priority_delta = applied_priority_delta
     row.confidence = persisted_card.confidence
     row.tags = persisted_tags
-    row.payload = _set_removed_tags(
+    row.payload = _set_tag_override_state(
         _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision),
-        removed_tags,
+        added_tags=overrides["added"],
+        removed_tags=overrides["removed"],
+        generated_tags=generated_tags,
     )
     row.decision_history = row.decision_history or []
     row.accepted_at = row.accepted_at
@@ -999,8 +1018,9 @@ def _merge_memory_task_row(
     applied_priority_delta = existing["applied_priority_delta"] if preserve_priority and existing else task_card.applied_priority_delta
     status = existing_status if existing else task_card.status
     existing_payload = existing.get("payload", {}) if existing else {}
-    removed_tags = _get_removed_tags(existing_payload)
-    persisted_tags = _apply_removed_tag_overrides(task_card.tags, existing_payload)
+    overrides = _get_tag_override_state(existing_payload)
+    generated_tags = dedupe_tags(task_card.tags)
+    persisted_tags = _apply_tag_overrides(generated_tags, existing_payload)
 
     persisted_card = task_card.model_copy(
         update={
@@ -1026,9 +1046,11 @@ def _merge_memory_task_row(
         "applied_priority_delta": applied_priority_delta,
         "confidence": persisted_card.confidence,
         "tags": persisted_tags,
-        "payload": _set_removed_tags(
+        "payload": _set_tag_override_state(
             _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision),
-            removed_tags,
+            added_tags=overrides["added"],
+            removed_tags=overrides["removed"],
+            generated_tags=generated_tags,
         ),
         "decision_history": list(existing.get("decision_history", [])) if existing else [],
         "accepted_at": existing.get("accepted_at") if existing else None,
@@ -1083,7 +1105,7 @@ def _apply_action_to_sql_row(
 
     row.status = after_status.value
     row.tags = dedupe_tags(row.tags or card.tags)
-    removed_tags = _get_removed_tags(row.payload or {})
+    overrides = _get_tag_override_state(row.payload or {})
     updated_card = card.model_copy(
         update={
             "status": after_status,
@@ -1093,9 +1115,11 @@ def _apply_action_to_sql_row(
             "tags": row.tags,
         }
     )
-    row.payload = _set_removed_tags(
+    row.payload = _set_tag_override_state(
         _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload)),
-        removed_tags,
+        added_tags=overrides["added"],
+        removed_tags=overrides["removed"],
+        generated_tags=overrides["generated"] or dedupe_tags(row.tags),
     )
     history = list(row.decision_history or [])
     history.append(
@@ -1123,14 +1147,18 @@ def _replace_tags_in_sql_row(
         raise ValueError("Task payload is incomplete.")
 
     desired_tags = dedupe_tags(tags)
-    visible_tags = dedupe_tags(row.tags or card.tags)
-    removed_tags = [tag for tag in dedupe_tags([*_get_removed_tags(row.payload or {}), *visible_tags]) if tag not in desired_tags]
+    overrides = _get_tag_override_state(row.payload or {})
+    generated_tags = overrides["generated"] or dedupe_tags(row.tags or card.tags)
+    added_tags = [tag for tag in desired_tags if tag not in generated_tags]
+    removed_tags = [tag for tag in generated_tags if tag not in desired_tags]
 
     row.tags = desired_tags
     updated_card = card.model_copy(update={"tags": desired_tags})
-    row.payload = _set_removed_tags(
+    row.payload = _set_tag_override_state(
         _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload)),
-        removed_tags,
+        added_tags=added_tags,
+        removed_tags=removed_tags,
+        generated_tags=generated_tags,
     )
     row.confidence = updated_card.confidence
 
@@ -1178,7 +1206,7 @@ def _apply_action_to_memory_row(
 
     row["status"] = after_status.value
     row["tags"] = dedupe_tags(row["tags"] or card.tags)
-    removed_tags = _get_removed_tags(row.get("payload", {}))
+    overrides = _get_tag_override_state(row.get("payload", {}))
     updated_card = card.model_copy(
         update={
             "status": after_status,
@@ -1188,9 +1216,11 @@ def _apply_action_to_memory_row(
             "tags": row["tags"],
         }
     )
-    row["payload"] = _set_removed_tags(
+    row["payload"] = _set_tag_override_state(
         _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"])),
-        removed_tags,
+        added_tags=overrides["added"],
+        removed_tags=overrides["removed"],
+        generated_tags=overrides["generated"] or dedupe_tags(row["tags"]),
     )
     history = list(row.get("decision_history", []))
     history.append(
@@ -1219,14 +1249,18 @@ def _replace_tags_in_memory_row(
         raise ValueError("Task payload is incomplete.")
 
     desired_tags = dedupe_tags(tags)
-    visible_tags = dedupe_tags(row["tags"] or card.tags)
-    removed_tags = [tag for tag in dedupe_tags([*_get_removed_tags(row.get("payload", {})), *visible_tags]) if tag not in desired_tags]
+    overrides = _get_tag_override_state(row.get("payload", {}))
+    generated_tags = overrides["generated"] or dedupe_tags(row["tags"] or card.tags)
+    added_tags = [tag for tag in desired_tags if tag not in generated_tags]
+    removed_tags = [tag for tag in generated_tags if tag not in desired_tags]
 
     row["tags"] = desired_tags
     updated_card = card.model_copy(update={"tags": desired_tags})
-    row["payload"] = _set_removed_tags(
+    row["payload"] = _set_tag_override_state(
         _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"])),
-        removed_tags,
+        added_tags=added_tags,
+        removed_tags=removed_tags,
+        generated_tags=generated_tags,
     )
     row["confidence"] = updated_card.confidence
     row["updated_at"] = utc_now_naive()

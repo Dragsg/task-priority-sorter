@@ -243,16 +243,17 @@ def sync_onboarding_context(user_id: int, preferences: str | None = None) -> dic
     return updated.model_dump(mode="json")
 
 
-def get_onboarding_context_snapshot(user_id: int) -> dict:
+def get_onboarding_context_snapshot(user_id: int, *, user: dict | None = None) -> dict:
     repository = get_pipeline_repository()
     pipeline_user_id = str(user_id)
     context = repository.get_onboarding_context(pipeline_user_id) or OnboardingContext(user_id=pipeline_user_id)
-    user = get_user_by_id(user_id)
+    user = user or get_user_by_id(user_id)
     if user and user.get("preferences"):
         static_preferences = dict(context.static_preferences)
-        static_preferences["focus_preference"] = user["preferences"]
-        context = context.model_copy(update={"static_preferences": static_preferences})
-        repository.save_onboarding_context(context)
+        if static_preferences.get("focus_preference") != user["preferences"]:
+            static_preferences["focus_preference"] = user["preferences"]
+            context = context.model_copy(update={"static_preferences": static_preferences})
+            repository.save_onboarding_context(context)
     return context.model_dump(mode="json")
 
 
@@ -340,6 +341,8 @@ def update_prioritized_task_tags(
     updated_card = repository.replace_task_tags(str(user_id), canonical_task_id, tags=normalized_tags)
     if updated_card is None:
         raise LookupError("Task card not found for this user.")
+    if normalized_tags:
+        repository.upsert_custom_tags(str(user_id), normalized_tags)
 
     items = [card.model_dump(mode="json") for card in repository.get_current_task_cards(str(user_id))]
     _set_cached_value(_TASK_CACHE, user_id, items)
@@ -348,6 +351,7 @@ def update_prioritized_task_tags(
         "canonicalTaskId": canonical_task_id,
         "task": updated_card.model_dump(mode="json"),
         "items": items,
+        "availableTags": get_available_tags(user_id),
     }
 
 

@@ -181,3 +181,35 @@ def test_removed_task_tag_stays_removed_after_rerun():
 
     assert current_card is not None
     assert removed_tag not in current_card.tags
+
+
+def test_added_task_tag_stays_after_rerun():
+    repository = InMemoryPipelineRepository()
+    settings = PipelineSettings(profile_confidence_threshold=0.65)
+    pipeline = PriorityPipeline(repository, settings=settings)
+
+    repository.upsert_raw_messages(
+        [
+            RawMessage(
+                user_id="user-4",
+                platform=Platform.GMAIL,
+                source_id="msg-5",
+                subject="Career fair announcement",
+                snippet="Join the campus career fair next week.",
+                body_text="Join the campus career fair next week and register if interested.",
+                sender_display="Careers Office",
+                sender_email="careers@school.edu",
+                sender_domain="school.edu",
+            )
+        ]
+    )
+
+    first_bundle = pipeline.run_for_user("user-4")
+    card = first_bundle.task_cards[0]
+
+    repository.replace_task_tags("user-4", card.canonical_task_id, tags=[*card.tags, "custom_focus"])
+    pipeline.run_for_user("user-4")
+    current_card = repository.get_current_task_card("user-4", card.canonical_task_id)
+
+    assert current_card is not None
+    assert "custom_focus" in current_card.tags

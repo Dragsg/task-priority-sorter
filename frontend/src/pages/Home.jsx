@@ -46,6 +46,24 @@ function dedupeManualTags(values) {
   return ordered;
 }
 
+function buildTagSuggestions(availableTags, selectedTags, inputValue, limit = 8) {
+  const selected = new Set((selectedTags || []).map((tag) => normalizeManualTag(tag)));
+  const query = normalizeManualTag(inputValue);
+  return (availableTags || [])
+    .map((tag) => normalizeManualTag(tag))
+    .filter((tag) => tag && !selected.has(tag))
+    .filter((tag) => !query || tag.includes(query))
+    .sort((left, right) => {
+      const leftStarts = query && left.startsWith(query) ? 0 : 1;
+      const rightStarts = query && right.startsWith(query) ? 0 : 1;
+      if (leftStarts !== rightStarts) {
+        return leftStarts - rightStarts;
+      }
+      return left.localeCompare(right);
+    })
+    .slice(0, limit);
+}
+
 function getDashboardCacheKey(userId) {
   return `task-priority-dashboard:v${DASHBOARD_CACHE_VERSION}:${userId}`;
 }
@@ -288,33 +306,152 @@ function getVisibleTaskTags(task) {
   });
 }
 
-function TaskTags({ task, isBusy = false, onRemoveTag }) {
+function TaskTags({ task, isBusy = false, availableTags = [], onChangeTags }) {
   const tags = getVisibleTaskTags(task);
-  if (!tags.length) {
+  const [tagInput, setTagInput] = useState("");
+  const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const suggestions = useMemo(
+    () => buildTagSuggestions(availableTags, tags, tagInput),
+    [availableTags, tags, tagInput]
+  );
+
+  useEffect(() => {
+    setTagInput("");
+  }, [task.canonical_task_id, task.tags]);
+
+  function commitTag(rawValue) {
+    const normalized = normalizeManualTag(rawValue);
+    if (!normalized) {
+      setTagInput("");
+      return;
+    }
+    setTagInput("");
+    setIsComposerOpen(false);
+    onChangeTags?.(task.canonical_task_id, dedupeManualTags([...tags, normalized]), {
+      type: "add",
+      tag: normalized,
+    });
+  }
+
+  function removeTag(tagToRemove) {
+    onChangeTags?.(
+      task.canonical_task_id,
+      tags.filter((tag) => tag !== tagToRemove),
+      { type: "remove", tag: tagToRemove }
+    );
+  }
+
+  function handleInputChange(event) {
+    const nextValue = event.target.value;
+    const segments = nextValue.split(",");
+    if (segments.length > 1) {
+      const completedTags = dedupeManualTags(segments.slice(0, -1));
+      const nextTags = dedupeManualTags([...tags, ...completedTags]);
+      const lastAdded = completedTags[completedTags.length - 1];
+      setTagInput(segments[segments.length - 1]);
+      if (nextTags.length !== tags.length) {
+        onChangeTags?.(task.canonical_task_id, nextTags, {
+          type: "add",
+          tag: lastAdded ?? null,
+        });
+      }
+      return;
+    }
+    setTagInput(nextValue);
+  }
+
+  function handleInputKeyDown(event) {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      commitTag(tagInput);
+      return;
+    }
+
+    if (event.key === "Backspace" && !tagInput && tags.length) {
+      event.preventDefault();
+      removeTag(tags[tags.length - 1]);
+    }
+  }
+
+  if (!tags.length && !onChangeTags) {
     return null;
   }
 
   return (
     <div className="task-tag-block">
-      <span className="task-tag-label">Tags</span>
-      <div className="task-tag-list">
-        {tags.map((tag) => (
-          <span className="task-tag-chip task-tag-chip-editable" key={tag}>
-            <span className="task-tag-chip-text">{tag.replace(/_/g, " ")}</span>
-            {onRemoveTag ? (
-              <button
-                aria-label={`Remove ${tag} tag`}
-                className="task-tag-chip-remove"
-                disabled={isBusy}
-                onClick={() => onRemoveTag(tag)}
-                type="button"
-              >
-                ×
-              </button>
-            ) : null}
-          </span>
-        ))}
+      <div className="task-tag-header">
+        <span className="task-tag-label">Tags</span>
+        {onChangeTags ? (
+          <button
+            className="task-tag-inline-action"
+            disabled={isBusy}
+            onClick={() => setIsComposerOpen((current) => !current)}
+            type="button"
+          >
+            {isComposerOpen ? "Close" : "Add tag"}
+          </button>
+        ) : null}
       </div>
+      {tags.length ? (
+        <div className="task-tag-list">
+          {tags.map((tag) => (
+            <span className="task-tag-chip task-tag-chip-editable" key={tag}>
+              <span className="task-tag-chip-text">{tag.replace(/_/g, " ")}</span>
+              {onChangeTags ? (
+                <button
+                  aria-label={`Remove ${tag} tag`}
+                  className="task-tag-chip-remove"
+                  disabled={isBusy}
+                  onClick={() => removeTag(tag)}
+                  type="button"
+                >
+                  ×
+                </button>
+              ) : null}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="task-tag-empty">No tags yet.</p>
+      )}
+      {isComposerOpen ? (
+          <div className="task-tag-editor">
+            <div className="manual-tag-input-shell task-tag-input-shell">
+              <input
+                autoFocus
+                className="manual-tag-input"
+                disabled={isBusy}
+                onBlur={() => {
+                commitTag(tagInput);
+                setIsComposerOpen(false);
+              }}
+              onChange={handleInputChange}
+              onKeyDown={handleInputKeyDown}
+              placeholder="Type a tag and press Enter"
+              type="text"
+              value={tagInput}
+            />
+          </div>
+          {suggestions.length ? (
+            <div className="task-tag-autocomplete">
+              <div className="task-tag-suggestions">
+                {suggestions.map((tag) => (
+                  <button
+                    className="task-tag-suggestion"
+                    disabled={isBusy}
+                    key={tag}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => commitTag(tag)}
+                    type="button"
+                  >
+                    {tag.replace(/_/g, " ")}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -434,7 +571,7 @@ function TaskActions({
   );
 }
 
-function TaskCard({ task, feedbackState, isBusy, onFeedback, onRemoveTag, index = 0 }) {
+function TaskCard({ task, feedbackState, isBusy, onFeedback, onChangeTags, availableTags, index = 0 }) {
   return (
     <article className={`task-card task-card-queue task-card-tier-${task.priority_tier.toLowerCase()}`}>
       <div className="task-card-top task-card-top-queue">
@@ -458,8 +595,9 @@ function TaskCard({ task, feedbackState, isBusy, onFeedback, onRemoveTag, index 
         {buildQueueSummary(task)}
       </p>
       <TaskTags
+        availableTags={availableTags}
         isBusy={isBusy}
-        onRemoveTag={onRemoveTag ? (tag) => onRemoveTag(task.canonical_task_id, tag) : null}
+        onChangeTags={onChangeTags}
         task={task}
       />
       <div className="task-meta task-meta-compact">
@@ -487,7 +625,8 @@ function QueueCard({
   feedbackState,
   isBusy,
   onFeedback,
-  onRemoveTag,
+  onChangeTags,
+  availableTags,
   index,
 }) {
   return (
@@ -496,7 +635,8 @@ function QueueCard({
       index={index}
       isBusy={isBusy}
       onFeedback={onFeedback}
-      onRemoveTag={onRemoveTag}
+      onChangeTags={onChangeTags}
+      availableTags={availableTags}
       task={task}
     />
   );
@@ -748,25 +888,35 @@ export default function Home() {
     ]);
   }
 
-  async function handleRemoveTaskTag(canonicalTaskId, tagToRemove) {
+  async function handleTaskTagChange(canonicalTaskId, nextTags, changeMeta = null) {
     const selectedTask = tasks.find((task) => task.canonical_task_id === canonicalTaskId);
     if (!selectedTask) {
       return;
     }
 
-    const nextTags = getVisibleTaskTags(selectedTask).filter((tag) => tag !== tagToRemove);
+    const sanitizedTags = dedupeManualTags(nextTags);
+    const currentTags = getVisibleTaskTags(selectedTask);
+    if (JSON.stringify(sanitizedTags) === JSON.stringify(currentTags)) {
+      return;
+    }
     setTaskError("");
-    setTaskStatus("Saving your tag correction.");
+    setTaskStatus("Saving your tag changes.");
     setTaskTagUpdateStates((current) => ({
       ...current,
-      [canonicalTaskId]: tagToRemove,
+      [canonicalTaskId]: changeMeta ?? true,
     }));
-    applyLocalTagUpdate(canonicalTaskId, nextTags);
+    applyLocalTagUpdate(canonicalTaskId, sanitizedTags);
 
     try {
-      const result = await updateTaskTags(canonicalTaskId, nextTags);
+      const result = await updateTaskTags(canonicalTaskId, sanitizedTags);
       updateTaskListFromResponse(result);
-      setTaskStatus(`Removed tag "${tagToRemove.replace(/_/g, " ")}".`);
+      if (changeMeta?.type === "remove" && changeMeta?.tag) {
+        setTaskStatus(`Removed tag "${changeMeta.tag.replace(/_/g, " ")}".`);
+      } else if (changeMeta?.type === "add" && changeMeta?.tag) {
+        setTaskStatus(`Added tag "${changeMeta.tag.replace(/_/g, " ")}".`);
+      } else {
+        setTaskStatus("Updated task tags.");
+      }
     } catch (error) {
       setTaskError(error.message);
       try {
@@ -887,23 +1037,10 @@ export default function Home() {
     }
   }
 
-  const filteredAvailableTags = useMemo(() => {
-    const selected = new Set(manualTask.tags);
-    const query = normalizeManualTag(manualTask.tagInput);
-    return availableTags
-      .map((tag) => normalizeManualTag(tag))
-      .filter((tag) => tag && !selected.has(tag))
-      .filter((tag) => !query || tag.includes(query))
-      .sort((left, right) => {
-        const leftStarts = query && left.startsWith(query) ? 0 : 1;
-        const rightStarts = query && right.startsWith(query) ? 0 : 1;
-        if (leftStarts !== rightStarts) {
-          return leftStarts - rightStarts;
-        }
-        return left.localeCompare(right);
-      })
-      .slice(0, query ? 8 : 12);
-  }, [availableTags, manualTask.tagInput, manualTask.tags]);
+  const filteredAvailableTags = useMemo(
+    () => buildTagSuggestions(availableTags, manualTask.tags, manualTask.tagInput, manualTask.tagInput ? 8 : 12),
+    [availableTags, manualTask.tagInput, manualTask.tags]
+  );
 
   if (!user) {
     return <main className="simple-shell">Loading your dashboard...</main>;
@@ -1116,12 +1253,13 @@ export default function Home() {
             <div className="task-card-list">
               {tasks.map((task, index) => (
                 <QueueCard
+                  availableTags={availableTags}
                   feedbackState={taskFeedbackStates[task.canonical_task_id]}
                   index={index}
                   isBusy={Boolean(taskTagUpdateStates[task.canonical_task_id])}
                   key={task.canonical_task_id}
                   onFeedback={handleFeedback}
-                  onRemoveTag={handleRemoveTaskTag}
+                  onChangeTags={handleTaskTagChange}
                   task={task}
                 />
               ))}

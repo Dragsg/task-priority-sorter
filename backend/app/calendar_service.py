@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 _MERGE_GAP = timedelta(minutes=15)
 _MAX_WINDOWS = 60
 _LOOKAHEAD_DAYS = 21
+_SUMMARY_REFERENCE_DAYS = 180
 _MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
 _WEEKDAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -36,7 +37,13 @@ def parse_calendar_context(
         from dateutil.rrule import rruleset, rrulestr
         from icalendar import Calendar
     except ImportError as exc:  # pragma: no cover - dependency managed by requirements
-        raise RuntimeError("Calendar parsing requires the icalendar and python-dateutil packages.") from exc
+        missing_package = exc.name or "calendar parser dependency"
+        raise RuntimeError(
+            "Calendar parsing dependency is missing: "
+            f"{missing_package}. Install the backend requirements with the same "
+            "Python interpreter that runs Flask, for example "
+            "`python -m pip install -r backend/requirements.txt`, then restart the backend."
+        ) from exc
 
     user_tz = ZoneInfo(timezone_name or "Asia/Singapore")
     calendar = Calendar.from_ical(BytesIO(file_bytes).read())
@@ -45,6 +52,7 @@ def parse_calendar_context(
     horizon_end = now + timedelta(days=lookahead_days)
 
     windows: list[tuple[datetime, datetime, str | None]] = []
+    recurring_reference_windows: list[tuple[datetime, datetime, str | None]] = []
     for component in calendar.walk():
         if component.name != "VEVENT":
             continue
@@ -75,7 +83,28 @@ def parse_calendar_context(
         ):
             windows.append((occurrence_start, occurrence_end, summary))
 
+        if component.get("RRULE"):
+            recurring_reference_end = max(
+                horizon_end,
+                dtstart + timedelta(days=_SUMMARY_REFERENCE_DAYS),
+            )
+            for occurrence_start, occurrence_end in _expand_event_occurrences(
+                component=component,
+                dtstart=dtstart,
+                duration=duration,
+                window_start=dtstart,
+                window_end=recurring_reference_end,
+                rruleset_factory=rruleset,
+                rrulestr_fn=rrulestr,
+                calendar_timezone=calendar_timezone,
+                user_tz=user_tz,
+            ):
+                recurring_reference_windows.append((occurrence_start, occurrence_end, summary))
+
     merged = _merge_windows(sorted(windows, key=lambda item: item[0]))
+    recurring_reference = _merge_windows(
+        sorted(recurring_reference_windows, key=lambda item: item[0])
+    )
     normalized_windows = [
         {
             "start_iso": start.isoformat(),
@@ -85,8 +114,13 @@ def parse_calendar_context(
         for start, end, label in merged[:_MAX_WINDOWS]
     ]
 
-    recurring_notes = _derive_recurring_notes(merged)
-    timetable_summary = _build_timetable_summary(merged, lookahead_days=lookahead_days)
+    summary_windows = recurring_reference or merged
+    recurring_notes = _derive_recurring_notes(summary_windows)
+    timetable_summary = _build_timetable_summary(
+        summary_windows,
+        lookahead_days=lookahead_days,
+        uses_recurring_reference=bool(recurring_reference),
+    )
 
     return {
         "busy_windows": normalized_windows,
@@ -216,7 +250,12 @@ def _derive_recurring_notes(windows: list[tuple[datetime, datetime, str | None]]
     return notes
 
 
-def _build_timetable_summary(windows: list[tuple[datetime, datetime, str | None]], *, lookahead_days: int) -> str | None:
+def _build_timetable_summary(
+    windows: list[tuple[datetime, datetime, str | None]],
+    *,
+    lookahead_days: int,
+    uses_recurring_reference: bool = False,
+) -> str | None:
     if not windows:
         return f"No busy calendar windows detected in the next {lookahead_days} days."
 
@@ -234,6 +273,9 @@ def _build_timetable_summary(windows: list[tuple[datetime, datetime, str | None]
             daypart_minutes["evening"] += minutes
 
     busiest_days = [weekday for weekday, _minutes in weekday_minutes.most_common(2)]
+    busiest_days = sorted(busiest_days)
     calmest_daypart = min(("morning", "afternoon", "evening"), key=lambda key: daypart_minutes.get(key, 0))
     busiest_label = " and ".join(_WEEKDAY_NAMES[index] for index in busiest_days)
+    if uses_recurring_reference:
+        return f"Regular schedule is busiest on {busiest_label}; {calmest_daypart}s are usually the most open."
     return f"Busiest on {busiest_label}; {calmest_daypart}s look the most open."

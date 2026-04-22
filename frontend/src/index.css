@@ -1331,6 +1331,13 @@ select {
   margin: 14px 0 12px;
 }
 
+.task-tag-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .task-tag-label {
   color: var(--ink-muted);
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
@@ -1340,10 +1347,82 @@ select {
   text-transform: uppercase;
 }
 
+.task-tag-inline-action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.task-tag-inline-action:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.task-tag-empty {
+  margin: 0;
+  color: var(--ink-muted);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.88rem;
+}
+
 .task-tag-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.task-tag-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.task-tag-input-shell {
+  min-height: 48px;
+  padding: 8px 12px;
+}
+
+.task-tag-autocomplete {
+  padding: 10px 12px;
+  border: 1px solid rgba(111, 88, 67, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 251, 244, 0.94);
+}
+
+.task-tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.task-tag-suggestion {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px dashed rgba(111, 88, 67, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 248, 239, 0.9);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.task-tag-suggestion:hover {
+  border-color: rgba(111, 88, 67, 0.34);
+  background: rgba(255, 251, 245, 0.98);
+}
+
+.task-tag-suggestion:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .task-tag-chip {
