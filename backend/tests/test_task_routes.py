@@ -24,6 +24,7 @@ class TaskRoutesTestCase(unittest.TestCase):
                 "rationale": "Submission due soon",
                 "confidence": 0.72,
                 "needs_user_review": False,
+                "tags": ["assignment", "deadline"],
             }
         ]
 
@@ -31,6 +32,7 @@ class TaskRoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["items"][0]["canonical_task_id"], "canon-1")
+        self.assertEqual(response.get_json()["items"][0]["tags"], ["assignment", "deadline"])
         list_prioritized_tasks.assert_called_once_with(7)
 
     @patch("app.routes.get_available_tags")
@@ -224,6 +226,30 @@ class TaskRoutesTestCase(unittest.TestCase):
             "canon-1",
             action="WRONG_PRIORITY",
             direction="too_low",
+        )
+
+    @patch("app.routes.update_prioritized_task_tags")
+    def test_task_tag_update_route_returns_payload(self, update_prioritized_task_tags):
+        update_prioritized_task_tags.return_value = {
+            "success": True,
+            "canonicalTaskId": "canon-1",
+            "task": {"canonical_task_id": "canon-1", "tags": ["deadline"]},
+            "items": [{"canonical_task_id": "canon-1", "tags": ["deadline"]}],
+        }
+
+        response = self.client.patch(
+            "/api/tasks/canon-1/tags",
+            json={"tags": ["deadline"]},
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["success"])
+        self.assertEqual(response.get_json()["task"]["tags"], ["deadline"])
+        update_prioritized_task_tags.assert_called_once_with(
+            7,
+            "canon-1",
+            tags=["deadline"],
         )
 
     @patch("app.routes.get_pipeline_recompute_status")

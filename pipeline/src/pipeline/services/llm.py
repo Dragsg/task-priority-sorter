@@ -18,7 +18,7 @@ from pipeline.models import (
 )
 from pipeline.models.enums import TaskType
 from pipeline.utils.env import load_dotenv_value
-from pipeline.utils.tags import filter_allowed_tags, infer_tags_from_text, merge_tag_catalog
+from pipeline.utils.tags import filter_allowed_tags, merge_tag_catalog, synthesize_task_tags
 from pipeline.utils.time import current_hour_for_timezone
 
 try:
@@ -258,6 +258,7 @@ class PriorityReasoner:
                 "entity_type": task.topic_entity.entity_type.value,
                 "subject": task.representative_subject,
                 "preview": task.representative_body_excerpt or task.representative_snippet,
+                "sender_display": task.representative_sender_display,
                 "platforms_seen": [platform.value for platform in task.platforms_seen],
                 "signal_count": task.signal_count,
                 "pre_scored_tier": task.priority_tier.value if task.priority_tier else PriorityTier.LOW.value,
@@ -451,20 +452,19 @@ class PriorityReasoner:
         rationale = self._build_rationale(task=task, user=user, action_window=action_window)
         confidence = 0.75 if user["can_personalize"] else max(0.45, user.get("profile_confidence", 0.0))
 
-        task_text = " ".join(
-            [
-                task.get("subject") or "",
-                task.get("preview") or "",
-                task.get("entity_name") or "",
-                " ".join(task.get("score_reasons") or []),
-                task.get("type") or "",
-            ]
-        )
-        tags = infer_tags_from_text(
-            text=task_text,
+        tags = synthesize_task_tags(
             task_type=TaskType(task["type"]) if task.get("type") else None,
-            available_tags=calendar.get("available_tags", []),
+            text_parts=[
+                task.get("subject"),
+                task.get("preview"),
+                task.get("sender_display"),
+                task.get("entity_name"),
+                task.get("type"),
+            ],
+            score_reasons=task.get("score_reasons") or [],
             manual_tags=task.get("manual_tags", []),
+            llm_tags=[],
+            available_tags=calendar.get("available_tags", []),
             max_count=3,
         )
 

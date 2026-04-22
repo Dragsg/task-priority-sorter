@@ -98,6 +98,7 @@ class PriorityPipeline:
                         task=task,
                         llm_output=llm_output,
                         profile_version=profile.profile_version,
+                        available_tags=custom_tags,
                     )
                 )
 

@@ -327,6 +327,30 @@ def remove_prioritized_task(user_id: int, canonical_task_id: str) -> dict:
     return {"success": True, "canonicalTaskId": canonical_task_id, "action": action.value}
 
 
+def update_prioritized_task_tags(
+    user_id: int,
+    canonical_task_id: str,
+    *,
+    tags: list[str] | None = None,
+) -> dict:
+    repository = get_pipeline_repository()
+    if tags is not None and not isinstance(tags, list):
+        raise ValueError("tags must be a list.")
+    normalized_tags = dedupe_tags(tags or [])
+    updated_card = repository.replace_task_tags(str(user_id), canonical_task_id, tags=normalized_tags)
+    if updated_card is None:
+        raise LookupError("Task card not found for this user.")
+
+    items = [card.model_dump(mode="json") for card in repository.get_current_task_cards(str(user_id))]
+    _set_cached_value(_TASK_CACHE, user_id, items)
+    return {
+        "success": True,
+        "canonicalTaskId": canonical_task_id,
+        "task": updated_card.model_dump(mode="json"),
+        "items": items,
+    }
+
+
 def get_profile_snapshot(user_id: int) -> dict:
     cached = _get_cached_value(_PROFILE_CACHE, user_id)
     if cached is not None:

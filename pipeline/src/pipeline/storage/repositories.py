@@ -157,6 +157,33 @@ def _payload_for_task(
     }
 
 
+def _get_removed_tags(payload: dict[str, Any] | None) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    overrides = payload.get("tag_overrides")
+    if not isinstance(overrides, dict):
+        return []
+    return dedupe_tags(overrides.get("removed") or [])
+
+
+def _set_removed_tags(payload: dict[str, Any], removed_tags: list[str]) -> dict[str, Any]:
+    updated = dict(payload or {})
+    if removed_tags:
+        overrides = dict(updated.get("tag_overrides") or {})
+        overrides["removed"] = dedupe_tags(removed_tags)
+        updated["tag_overrides"] = overrides
+    else:
+        updated.pop("tag_overrides", None)
+    return updated
+
+
+def _apply_removed_tag_overrides(tags: list[str], payload: dict[str, Any] | None) -> list[str]:
+    removed = set(_get_removed_tags(payload))
+    if not removed:
+        return dedupe_tags(tags)
+    return [tag for tag in dedupe_tags(tags) if tag not in removed]
+
+
 def _parse_payload_card(payload: dict[str, Any]) -> PrioritizedTaskCard | None:
     task_card_payload = payload.get("task_card") if isinstance(payload, dict) else None
     if not isinstance(task_card_payload, dict):
@@ -307,6 +334,14 @@ class PipelineRepository(Protocol):
 
     def get_feedback_update_context(self, user_id: str, canonical_task_id: str) -> FeedbackUpdateContext | None: ...
 
+    def replace_task_tags(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        tags: list[str],
+    ) -> PrioritizedTaskCard | None: ...
+
     def apply_task_action(
         self,
         user_id: str,
@@ -437,6 +472,21 @@ class InMemoryPipelineRepository:
         if task is None:
             return None
         return FeedbackUpdateContext(task=task, profile=self.get_behavior_profile(user_id))
+
+    def replace_task_tags(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        tags: list[str],
+    ) -> PrioritizedTaskCard | None:
+        row = self.task_rows.get((user_id, canonical_task_id))
+        if row is None:
+            return None
+        updated = _replace_tags_in_memory_row(row, tags=tags)
+        self.task_rows[(user_id, canonical_task_id)] = updated
+        self._refresh_current_cards(user_id)
+        return _row_to_card_from_memory(updated)
 
     def apply_task_action(
         self,
@@ -672,6 +722,23 @@ class SqlAlchemyPipelineRepository:
             profile = None if user_state is None or user_state.profile_payload is None else BehaviorProfile.model_validate(user_state.profile_payload)
             return FeedbackUpdateContext(task=_feedback_context_from_row(row), profile=profile)
 
+    def replace_task_tags(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        tags: list[str],
+    ) -> PrioritizedTaskCard | None:
+        with Session(self.engine) as session:
+            row = self._get_task_row(session, user_id, canonical_task_id)
+            if row is None:
+                return None
+            _replace_tags_in_sql_row(row, tags=tags)
+            row.updated_at = utc_now_naive()
+            session.commit()
+            session.refresh(row)
+            return self._hydrate_card(row)
+
     def apply_task_action(
         self,
         user_id: str,
@@ -878,6 +945,8 @@ def _merge_sql_task_row(
     effective_priority = PriorityTier(row.effective_priority_tier) if preserve_priority and row.effective_priority_tier else task_card.effective_priority_tier
     applied_priority_delta = row.applied_priority_delta if preserve_priority else task_card.applied_priority_delta
     status = existing_status if row.status else task_card.status
+    removed_tags = _get_removed_tags(row.payload or {})
+    persisted_tags = _apply_removed_tag_overrides(task_card.tags, row.payload or {})
 
     persisted_card = task_card.model_copy(
         update={
@@ -886,6 +955,7 @@ def _merge_sql_task_row(
             "suggested_priority_tier": suggested_priority,
             "effective_priority_tier": effective_priority,
             "applied_priority_delta": applied_priority_delta,
+            "tags": persisted_tags,
         }
     )
 
@@ -898,8 +968,11 @@ def _merge_sql_task_row(
     row.effective_priority_tier = effective_priority.value
     row.applied_priority_delta = applied_priority_delta
     row.confidence = persisted_card.confidence
-    row.tags = dedupe_tags(persisted_card.tags)
-    row.payload = _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision)
+    row.tags = persisted_tags
+    row.payload = _set_removed_tags(
+        _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision),
+        removed_tags,
+    )
     row.decision_history = row.decision_history or []
     row.accepted_at = row.accepted_at
     row.rejected_at = row.rejected_at
@@ -925,6 +998,9 @@ def _merge_memory_task_row(
     effective_priority = PriorityTier(existing["effective_priority_tier"]) if preserve_priority and existing else task_card.effective_priority_tier
     applied_priority_delta = existing["applied_priority_delta"] if preserve_priority and existing else task_card.applied_priority_delta
     status = existing_status if existing else task_card.status
+    existing_payload = existing.get("payload", {}) if existing else {}
+    removed_tags = _get_removed_tags(existing_payload)
+    persisted_tags = _apply_removed_tag_overrides(task_card.tags, existing_payload)
 
     persisted_card = task_card.model_copy(
         update={
@@ -933,6 +1009,7 @@ def _merge_memory_task_row(
             "suggested_priority_tier": suggested_priority,
             "effective_priority_tier": effective_priority,
             "applied_priority_delta": applied_priority_delta,
+            "tags": persisted_tags,
         }
     )
 
@@ -948,8 +1025,11 @@ def _merge_memory_task_row(
         "effective_priority_tier": effective_priority.value,
         "applied_priority_delta": applied_priority_delta,
         "confidence": persisted_card.confidence,
-        "tags": dedupe_tags(persisted_card.tags),
-        "payload": _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision),
+        "tags": persisted_tags,
+        "payload": _set_removed_tags(
+            _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision),
+            removed_tags,
+        ),
         "decision_history": list(existing.get("decision_history", [])) if existing else [],
         "accepted_at": existing.get("accepted_at") if existing else None,
         "rejected_at": existing.get("rejected_at") if existing else None,
@@ -1003,6 +1083,7 @@ def _apply_action_to_sql_row(
 
     row.status = after_status.value
     row.tags = dedupe_tags(row.tags or card.tags)
+    removed_tags = _get_removed_tags(row.payload or {})
     updated_card = card.model_copy(
         update={
             "status": after_status,
@@ -1012,7 +1093,10 @@ def _apply_action_to_sql_row(
             "tags": row.tags,
         }
     )
-    row.payload = _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload))
+    row.payload = _set_removed_tags(
+        _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload)),
+        removed_tags,
+    )
     history = list(row.decision_history or [])
     history.append(
         TaskDecision(
@@ -1025,6 +1109,29 @@ def _apply_action_to_sql_row(
         ).model_dump(mode="json")
     )
     row.decision_history = history
+    row.confidence = updated_card.confidence
+
+
+def _replace_tags_in_sql_row(
+    row: PipelineTaskRecord,
+    *,
+    tags: list[str],
+) -> None:
+    card = _row_to_card(row)
+    task = _row_to_task(row)
+    if card is None or task is None:
+        raise ValueError("Task payload is incomplete.")
+
+    desired_tags = dedupe_tags(tags)
+    visible_tags = dedupe_tags(row.tags or card.tags)
+    removed_tags = [tag for tag in dedupe_tags([*_get_removed_tags(row.payload or {}), *visible_tags]) if tag not in desired_tags]
+
+    row.tags = desired_tags
+    updated_card = card.model_copy(update={"tags": desired_tags})
+    row.payload = _set_removed_tags(
+        _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload)),
+        removed_tags,
+    )
     row.confidence = updated_card.confidence
 
 
@@ -1071,6 +1178,7 @@ def _apply_action_to_memory_row(
 
     row["status"] = after_status.value
     row["tags"] = dedupe_tags(row["tags"] or card.tags)
+    removed_tags = _get_removed_tags(row.get("payload", {}))
     updated_card = card.model_copy(
         update={
             "status": after_status,
@@ -1080,7 +1188,10 @@ def _apply_action_to_memory_row(
             "tags": row["tags"],
         }
     )
-    row["payload"] = _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"]))
+    row["payload"] = _set_removed_tags(
+        _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"])),
+        removed_tags,
+    )
     history = list(row.get("decision_history", []))
     history.append(
         TaskDecision(
@@ -1093,6 +1204,31 @@ def _apply_action_to_memory_row(
         ).model_dump(mode="json")
     )
     row["decision_history"] = history
+    row["updated_at"] = utc_now_naive()
+    return row
+
+
+def _replace_tags_in_memory_row(
+    row: dict[str, Any],
+    *,
+    tags: list[str],
+) -> dict[str, Any]:
+    card = _row_to_card_from_memory(row)
+    task = _parse_payload_task(row["payload"])
+    if card is None or task is None:
+        raise ValueError("Task payload is incomplete.")
+
+    desired_tags = dedupe_tags(tags)
+    visible_tags = dedupe_tags(row["tags"] or card.tags)
+    removed_tags = [tag for tag in dedupe_tags([*_get_removed_tags(row.get("payload", {})), *visible_tags]) if tag not in desired_tags]
+
+    row["tags"] = desired_tags
+    updated_card = card.model_copy(update={"tags": desired_tags})
+    row["payload"] = _set_removed_tags(
+        _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"])),
+        removed_tags,
+    )
+    row["confidence"] = updated_card.confidence
     row["updated_at"] = utc_now_naive()
     return row
 

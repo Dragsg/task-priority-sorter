@@ -265,6 +265,14 @@ export async function submitTaskFeedback(canonicalTaskId, { action, direction } 
   });
 }
 
+export async function updateTaskTags(canonicalTaskId, tags = []) {
+  return sendJson(`/tasks/${canonicalTaskId}/tags`, {
+    method: "PATCH",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ tags }),
+  });
+}
+
 export async function removePrioritizedTask(canonicalTaskId) {
   return sendJson(`/tasks/${canonicalTaskId}`, {
     method: "DELETE",

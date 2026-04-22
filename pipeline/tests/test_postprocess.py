@@ -1,6 +1,6 @@
 from pipeline.config import PipelineSettings
-from pipeline.models import CanonicalTask, TopicEntity
-from pipeline.models.enums import EntityType, Platform, PriorityTier, SenderRole, TaskType
+from pipeline.models import CanonicalTask, StructuredLlmOutput, TopicEntity
+from pipeline.models.enums import ActionWindow, EntityType, Platform, PriorityTier, SenderRole, TaskType
 from pipeline.services.postprocess import PostProcessor
 
 
@@ -88,3 +88,32 @@ def test_best_preview_prefers_complete_body_excerpt_over_truncated_snippet():
     assert preview == task.representative_body_excerpt
     assert description is not None
     assert "submit your answers by next Monday morning 8.30am" in description
+
+
+def test_build_task_card_infers_tags_even_when_llm_returns_none_and_confidence_is_low():
+    processor = PostProcessor(PipelineSettings())
+    task = make_task(
+        task_type=TaskType.ADMIN,
+        representative_subject="Lab registration closes Friday",
+        representative_snippet="Register for the chemistry lab before Friday noon.",
+        representative_body_excerpt="The chemistry lab registration closes before Friday noon.",
+        score_reasons=["deadline under 24 hours"],
+    )
+    llm_output = StructuredLlmOutput(
+        priority_tier=PriorityTier.HIGH,
+        action_window=ActionWindow.TODAY,
+        rationale="Due soon.",
+        confidence=0.2,
+        profile_adjustment_made=False,
+        adjustment_reason=None,
+        tags=[],
+    )
+
+    card = processor.build_task_card(
+        run_id="run-1",
+        task=task,
+        llm_output=llm_output,
+        profile_version=1,
+    )
+
+    assert card.tags == ["admin", "deadline", "lab"]

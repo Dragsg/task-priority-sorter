@@ -10,6 +10,7 @@ import {
   getStoredUserId,
   submitTaskFeedback,
   syncPrioritizedTasks,
+  updateTaskTags,
 } from "../api";
 import PageNav from "../components/PageNav";
 import { getPreferenceLabel } from "../preferences";
@@ -21,8 +22,29 @@ const TASK_TYPE_OPTIONS = [
   { value: "admin", label: "Admin" },
   { value: "social", label: "Social" },
 ];
-const DASHBOARD_CACHE_VERSION = 1;
+const DASHBOARD_CACHE_VERSION = 3;
 const PRIORITY_TIERS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+
+function normalizeManualTag(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function dedupeManualTags(values) {
+  const seen = new Set();
+  const ordered = [];
+  values.forEach((value) => {
+    const normalized = normalizeManualTag(value);
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    ordered.push(normalized);
+  });
+  return ordered;
+}
 
 function getDashboardCacheKey(userId) {
   return `task-priority-dashboard:v${DASHBOARD_CACHE_VERSION}:${userId}`;
@@ -247,6 +269,56 @@ function buildQueueSummary(task) {
   );
 }
 
+function getVisibleTaskTags(task) {
+  if (!Array.isArray(task?.tags)) {
+    return [];
+  }
+
+  const seen = new Set();
+  return task.tags.filter((tag) => {
+    if (typeof tag !== "string") {
+      return false;
+    }
+    const normalized = tag.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) {
+      return false;
+    }
+    seen.add(normalized);
+    return true;
+  });
+}
+
+function TaskTags({ task, isBusy = false, onRemoveTag }) {
+  const tags = getVisibleTaskTags(task);
+  if (!tags.length) {
+    return null;
+  }
+
+  return (
+    <div className="task-tag-block">
+      <span className="task-tag-label">Tags</span>
+      <div className="task-tag-list">
+        {tags.map((tag) => (
+          <span className="task-tag-chip task-tag-chip-editable" key={tag}>
+            <span className="task-tag-chip-text">{tag.replace(/_/g, " ")}</span>
+            {onRemoveTag ? (
+              <button
+                aria-label={`Remove ${tag} tag`}
+                className="task-tag-chip-remove"
+                disabled={isBusy}
+                onClick={() => onRemoveTag(tag)}
+                type="button"
+              >
+                ×
+              </button>
+            ) : null}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TaskSource({ task, compact = false }) {
   const sender = cleanPreviewText(task.source_sender);
   const subject = cleanPreviewText(task.source_subject);
@@ -362,7 +434,7 @@ function TaskActions({
   );
 }
 
-function TaskCard({ task, feedbackState, isBusy, onFeedback, index = 0 }) {
+function TaskCard({ task, feedbackState, isBusy, onFeedback, onRemoveTag, index = 0 }) {
   return (
     <article className={`task-card task-card-queue task-card-tier-${task.priority_tier.toLowerCase()}`}>
       <div className="task-card-top task-card-top-queue">
@@ -385,19 +457,15 @@ function TaskCard({ task, feedbackState, isBusy, onFeedback, index = 0 }) {
       <p className="task-queue-summary">
         {buildQueueSummary(task)}
       </p>
+      <TaskTags
+        isBusy={isBusy}
+        onRemoveTag={onRemoveTag ? (tag) => onRemoveTag(task.canonical_task_id, tag) : null}
+        task={task}
+      />
       <div className="task-meta task-meta-compact">
         <span>Confidence {Math.round((task.confidence ?? 0) * 100)}%</span>
         <span>{task.platforms_seen?.join(", ") || "email"}</span>
       </div>
-      {task.tags?.length ? (
-        <div className="task-tag-list">
-          {task.tags.map((tag) => (
-            <span className="task-tag-chip" key={tag}>
-              {tag.replace(/_/g, " ")}
-            </span>
-          ))}
-        </div>
-      ) : null}
       <div className="task-card-details">
         <TaskSource compact task={task} />
         <p className="task-rationale task-rationale-queue">
@@ -419,6 +487,7 @@ function QueueCard({
   feedbackState,
   isBusy,
   onFeedback,
+  onRemoveTag,
   index,
 }) {
   return (
@@ -427,6 +496,7 @@ function QueueCard({
       index={index}
       isBusy={isBusy}
       onFeedback={onFeedback}
+      onRemoveTag={onRemoveTag}
       task={task}
     />
   );
@@ -441,6 +511,7 @@ export default function Home() {
   const [pipelineProfile, setPipelineProfile] = useState(() => cachedDashboard?.profile ?? null);
   const [availableTags, setAvailableTags] = useState([]);
   const [taskFeedbackStates, setTaskFeedbackStates] = useState({});
+  const [taskTagUpdateStates, setTaskTagUpdateStates] = useState({});
   const [taskError, setTaskError] = useState("");
   const [taskStatus, setTaskStatus] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
@@ -448,13 +519,15 @@ export default function Home() {
   const [isProcessingFeedbackQueue, setIsProcessingFeedbackQueue] = useState(false);
   const [isManualFormOpen, setIsManualFormOpen] = useState(false);
   const [isCreatingManualTask, setIsCreatingManualTask] = useState(false);
+  const [isManualTagInputFocused, setIsManualTagInputFocused] = useState(false);
   const [manualTask, setManualTask] = useState({
     title: "",
     description: "",
     taskType: "admin",
     deadlineAt: "",
     entityName: "",
-    tagsText: "",
+    tags: [],
+    tagInput: "",
   });
 
   useEffect(() => {
@@ -623,6 +696,16 @@ export default function Home() {
     });
   }
 
+  function applyLocalTagUpdate(canonicalTaskId, nextTags) {
+    setTasks((current) =>
+      current.map((task) =>
+        task.canonical_task_id === canonicalTaskId
+          ? { ...task, tags: nextTags }
+          : task
+      )
+    );
+  }
+
   async function handleSyncTasks() {
     setIsSyncing(true);
     setTaskError("");
@@ -632,6 +715,7 @@ export default function Home() {
       setTasks(result.items ?? []);
       setAvailableTags(result.availableTags ?? []);
       setTaskFeedbackStates({});
+      setTaskTagUpdateStates({});
       const latestProfile = await fetchPipelineProfile();
       setPipelineProfile(latestProfile);
       setTaskStatus(buildSyncStatus(result));
@@ -664,11 +748,51 @@ export default function Home() {
     ]);
   }
 
+  async function handleRemoveTaskTag(canonicalTaskId, tagToRemove) {
+    const selectedTask = tasks.find((task) => task.canonical_task_id === canonicalTaskId);
+    if (!selectedTask) {
+      return;
+    }
+
+    const nextTags = getVisibleTaskTags(selectedTask).filter((tag) => tag !== tagToRemove);
+    setTaskError("");
+    setTaskStatus("Saving your tag correction.");
+    setTaskTagUpdateStates((current) => ({
+      ...current,
+      [canonicalTaskId]: tagToRemove,
+    }));
+    applyLocalTagUpdate(canonicalTaskId, nextTags);
+
+    try {
+      const result = await updateTaskTags(canonicalTaskId, nextTags);
+      updateTaskListFromResponse(result);
+      setTaskStatus(`Removed tag "${tagToRemove.replace(/_/g, " ")}".`);
+    } catch (error) {
+      setTaskError(error.message);
+      try {
+        const taskPayload = await fetchPrioritizedTasks();
+        setTasks(taskPayload.items ?? []);
+      } catch {
+        // Keep the optimistic tag state if refresh fails.
+      }
+    } finally {
+      setTaskTagUpdateStates((current) => {
+        const updated = { ...current };
+        delete updated[canonicalTaskId];
+        return updated;
+      });
+    }
+  }
+
   async function handleCreateManualTask(event) {
     event.preventDefault();
     setTaskError("");
     setTaskStatus("");
     setIsCreatingManualTask(true);
+    const finalTags = dedupeManualTags([
+      ...manualTask.tags,
+      manualTask.tagInput,
+    ]);
     try {
       const result = await createManualTask({
         title: manualTask.title,
@@ -676,10 +800,7 @@ export default function Home() {
         taskType: manualTask.taskType,
         deadlineAt: manualTask.deadlineAt || null,
         entityName: manualTask.entityName || null,
-        tags: manualTask.tagsText
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean),
+        tags: finalTags,
       });
       updateTaskListFromResponse(result);
       if (!result.profile) {
@@ -692,8 +813,10 @@ export default function Home() {
         taskType: "admin",
         deadlineAt: "",
         entityName: "",
-        tagsText: "",
+        tags: [],
+        tagInput: "",
       });
+      setIsManualTagInputFocused(false);
       setIsManualFormOpen(false);
       setTaskStatus("Manual task added and queued for prioritization.");
     } catch (error) {
@@ -709,6 +832,78 @@ export default function Home() {
       [field]: value,
     }));
   }
+
+  function commitManualTag(rawValue) {
+    const normalized = normalizeManualTag(rawValue);
+    if (!normalized) {
+      setManualTask((current) => ({
+        ...current,
+        tagInput: "",
+      }));
+      return;
+    }
+
+    setManualTask((current) => ({
+      ...current,
+      tags: dedupeManualTags([...current.tags, normalized]),
+      tagInput: "",
+    }));
+  }
+
+  function removeManualTag(tagToRemove) {
+    setManualTask((current) => ({
+      ...current,
+      tags: current.tags.filter((tag) => tag !== tagToRemove),
+    }));
+  }
+
+  function handleManualTagInputChange(event) {
+    const nextValue = event.target.value;
+    const segments = nextValue.split(",");
+    if (segments.length > 1) {
+      const completedTags = segments.slice(0, -1);
+      setManualTask((current) => ({
+        ...current,
+        tags: dedupeManualTags([...current.tags, ...completedTags]),
+        tagInput: segments[segments.length - 1],
+      }));
+      return;
+    }
+
+    updateManualTask("tagInput", nextValue);
+  }
+
+  function handleManualTagKeyDown(event) {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      commitManualTag(manualTask.tagInput);
+      return;
+    }
+
+    if (event.key === "Backspace" && !manualTask.tagInput && manualTask.tags.length) {
+      event.preventDefault();
+      const lastTag = manualTask.tags[manualTask.tags.length - 1];
+      removeManualTag(lastTag);
+    }
+  }
+
+  const filteredAvailableTags = useMemo(() => {
+    const selected = new Set(manualTask.tags);
+    const query = normalizeManualTag(manualTask.tagInput);
+    return availableTags
+      .map((tag) => normalizeManualTag(tag))
+      .filter((tag) => tag && !selected.has(tag))
+      .filter((tag) => !query || tag.includes(query))
+      .sort((left, right) => {
+        const leftStarts = query && left.startsWith(query) ? 0 : 1;
+        const rightStarts = query && right.startsWith(query) ? 0 : 1;
+        if (leftStarts !== rightStarts) {
+          return leftStarts - rightStarts;
+        }
+        return left.localeCompare(right);
+      })
+      .slice(0, query ? 8 : 12);
+  }, [availableTags, manualTask.tagInput, manualTask.tags]);
 
   if (!user) {
     return <main className="simple-shell">Loading your dashboard...</main>;
@@ -838,14 +1033,54 @@ export default function Home() {
             </div>
             <label className="field-group">
               <span>Tags</span>
-              <input
-                className="auth-input"
-                list="available-task-tags"
-                onChange={(event) => updateManualTask("tagsText", event.target.value)}
-                placeholder="Comma separated, e.g. assignment, urgent, group_work"
-                type="text"
-                value={manualTask.tagsText}
-              />
+              <div className="manual-tag-field">
+                <div className="manual-tag-input-shell">
+                  {manualTask.tags.map((tag) => (
+                    <span className="manual-tag-chip" key={tag}>
+                      {tag.replace(/_/g, " ")}
+                      <button
+                        aria-label={`Remove ${tag}`}
+                        className="manual-tag-remove"
+                        onClick={() => removeManualTag(tag)}
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    className="manual-tag-input"
+                    onBlur={() => {
+                      commitManualTag(manualTask.tagInput);
+                      setIsManualTagInputFocused(false);
+                    }}
+                    onChange={handleManualTagInputChange}
+                    onFocus={() => setIsManualTagInputFocused(true)}
+                    onKeyDown={handleManualTagKeyDown}
+                    placeholder={manualTask.tags.length ? "Add another tag" : "Type a tag and press Enter"}
+                    type="text"
+                    value={manualTask.tagInput}
+                  />
+                </div>
+                {isManualTagInputFocused && filteredAvailableTags.length ? (
+                  <div className="manual-tag-autocomplete">
+                    <p className="manual-tag-autocomplete-label">Suggested tags</p>
+                    <div className="manual-tag-suggestions">
+                      {filteredAvailableTags.map((tag) => (
+                        <button
+                          className="manual-tag-suggestion"
+                          key={tag}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => commitManualTag(tag)}
+                          type="button"
+                        >
+                          {tag.replace(/_/g, " ")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </label>
             <label className="field-group">
               <span>Details</span>
@@ -866,16 +1101,9 @@ export default function Home() {
               </p>
             </div>
             {availableTags.length ? (
-              <>
-                <datalist id="available-task-tags">
-                  {availableTags.map((tag) => (
-                    <option key={tag} value={tag} />
-                  ))}
-                </datalist>
-                <p className="panel-copy">
-                  Available tags: {availableTags.join(", ")}
-                </p>
-              </>
+              <p className="panel-copy">
+                Press `Enter` or type a comma to turn a tag into a chip. Fixed and custom tags appear as suggestions while you type.
+              </p>
             ) : null}
           </form>
         ) : null}
@@ -890,9 +1118,10 @@ export default function Home() {
                 <QueueCard
                   feedbackState={taskFeedbackStates[task.canonical_task_id]}
                   index={index}
-                  isBusy={false}
+                  isBusy={Boolean(taskTagUpdateStates[task.canonical_task_id])}
                   key={task.canonical_task_id}
                   onFeedback={handleFeedback}
+                  onRemoveTag={handleRemoveTaskTag}
                   task={task}
                 />
               ))}

@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from pipeline.config import PipelineSettings
 from pipeline.models import CanonicalTask, PrioritizedTaskCard, StructuredLlmOutput, TaskStatus
-from pipeline.utils.tags import dedupe_tags
+from pipeline.utils.tags import synthesize_task_tags
 
 
 class PostProcessor:
@@ -20,11 +20,27 @@ class PostProcessor:
         task: CanonicalTask,
         llm_output: StructuredLlmOutput,
         profile_version: int,
+        available_tags: list[str] | None = None,
     ) -> PrioritizedTaskCard:
         task_title = self._build_task_title(task)
         task_description = self._build_task_description(task, task_title=task_title)
-        persisted_llm_tags = llm_output.tags if llm_output.confidence >= self.settings.profile_confidence_threshold else []
-        task_tags = dedupe_tags([*task.manual_tags, *persisted_llm_tags])
+        task_tags = synthesize_task_tags(
+            task_type=task.task_type,
+            text_parts=[
+                task_title,
+                task_description,
+                task.representative_subject,
+                task.representative_body_excerpt,
+                task.representative_snippet,
+                task.representative_sender_display,
+                task.topic_entity.entity_name,
+            ],
+            score_reasons=task.score_reasons,
+            manual_tags=task.manual_tags,
+            llm_tags=llm_output.tags,
+            available_tags=available_tags,
+            max_count=3,
+        )
         return PrioritizedTaskCard(
             task_id=uuid4().hex,
             canonical_task_id=task.canonical_task_id,
