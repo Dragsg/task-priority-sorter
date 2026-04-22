@@ -519,6 +519,11 @@ select {
   color: #2f241a;
 }
 
+.inline-button:disabled {
+  color: rgba(93, 78, 64, 0.45);
+  cursor: not-allowed;
+}
+
 .error-text {
   margin: 14px 0 0;
   color: #8a3028;
@@ -886,6 +891,16 @@ select {
   flex-wrap: wrap;
   gap: 14px;
   margin-top: 12px;
+  align-items: center;
+}
+
+.task-secondary-label {
+  color: var(--ink-muted);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .task-remove-link {

@@ -21,7 +21,7 @@ from pipeline.models import (
     RawMessage,
     TaskSignal,
 )
-from pipeline.models.enums import EntityType, TaskType
+from pipeline.models.enums import EntityType, FeedbackDirection, PriorityTier, TaskType
 from pipeline.services.postprocess import PostProcessor
 from pipeline.storage.tables import (
     BehaviorProfileRecord,
@@ -49,6 +49,24 @@ def _sort_task_cards(cards: list[PrioritizedTaskCard]) -> list[PrioritizedTaskCa
         cards,
         key=lambda card: (_PRIORITY_ORDER.get(card.priority_tier.value, 99), card.deadline_hours or float("inf")),
     )
+
+
+def _shift_priority_tier(
+    priority_tier: PriorityTier,
+    direction: FeedbackDirection,
+) -> PriorityTier:
+    ordered_tiers = [
+        PriorityTier.CRITICAL,
+        PriorityTier.HIGH,
+        PriorityTier.MEDIUM,
+        PriorityTier.LOW,
+    ]
+    current_index = ordered_tiers.index(priority_tier)
+    if direction == FeedbackDirection.TOO_LOW:
+        next_index = max(0, current_index - 1)
+    else:
+        next_index = min(len(ordered_tiers) - 1, current_index + 1)
+    return ordered_tiers[next_index]
 
 
 def _enrich_canonical_task(task: CanonicalTask, signals: list[TaskSignal]) -> CanonicalTask:
@@ -207,6 +225,14 @@ class PipelineRepository(Protocol):
 
     def get_feedback_update_context(self, user_id: str, canonical_task_id: str) -> FeedbackUpdateContext | None: ...
 
+    def shift_current_task_card_priority(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        direction: FeedbackDirection,
+    ) -> PrioritizedTaskCard | None: ...
+
     def dismiss_task_card(self, user_id: str, canonical_task_id: str) -> bool: ...
 
     def save_feedback_event(self, event: FeedbackEvent) -> None: ...
@@ -325,6 +351,22 @@ class InMemoryPipelineRepository:
     def save_feedback_profile_update(self, event: FeedbackEvent, profile: BehaviorProfile) -> None:
         self.feedback_events.append(event)
         self.profiles[profile.user_id] = profile
+
+    def shift_current_task_card_priority(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        direction: FeedbackDirection,
+    ) -> PrioritizedTaskCard | None:
+        card = self.get_current_task_card(user_id, canonical_task_id)
+        if card is None:
+            return None
+        updated = card.model_copy(
+            update={"priority_tier": _shift_priority_tier(card.priority_tier, direction)}
+        )
+        self.current_cards[canonical_task_id] = updated
+        return updated
 
     def dismiss_task_card(self, user_id: str, canonical_task_id: str) -> bool:
         self.dismissed_cards.add((user_id, canonical_task_id))
@@ -687,6 +729,40 @@ class SqlAlchemyPipelineRepository:
                 ),
                 profile=None if profile_row is None else BehaviorProfile.model_validate(profile_row.payload),
             )
+
+    def shift_current_task_card_priority(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        direction: FeedbackDirection,
+    ) -> PrioritizedTaskCard | None:
+        with Session(self.engine) as session:
+            dismissed_ids = self._get_dismissed_task_ids(session, user_id)
+            if canonical_task_id in dismissed_ids:
+                return None
+
+            current = session.scalar(
+                select(CurrentTaskCardRecord).where(
+                    CurrentTaskCardRecord.user_id == user_id,
+                    CurrentTaskCardRecord.canonical_task_id == canonical_task_id,
+                )
+            )
+            if current is None:
+                return None
+
+            row = session.scalar(select(TaskCardRecord).where(TaskCardRecord.task_id == current.task_id))
+            if row is None or not isinstance(row.payload, dict):
+                return None
+
+            card = PrioritizedTaskCard.model_validate(row.payload)
+            updated = card.model_copy(
+                update={"priority_tier": _shift_priority_tier(card.priority_tier, direction)}
+            )
+            row.payload = updated.model_dump(mode="json")
+            current.updated_at = utc_now_naive()
+            session.commit()
+            return updated
 
     def dismiss_task_card(self, user_id: str, canonical_task_id: str) -> bool:
         with Session(self.engine) as session:

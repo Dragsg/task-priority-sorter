@@ -22,6 +22,10 @@ const TASK_TYPE_OPTIONS = [
   { value: "social", label: "Social" },
 ];
 const DASHBOARD_CACHE_VERSION = 1;
+const PRIORITY_TIERS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+const PRIORITY_ORDER = Object.fromEntries(
+  PRIORITY_TIERS.map((tier, index) => [tier, index])
+);
 
 function getDashboardCacheKey(userId) {
   return `task-priority-dashboard:v${DASHBOARD_CACHE_VERSION}:${userId}`;
@@ -105,19 +109,86 @@ function describeFeedback(action, direction) {
     return "Marked as done";
   }
   if (action === "WRONG_PRIORITY" && direction === "too_low") {
-    return "Marked priority too low";
+    return "Moved up one priority level";
   }
   if (action === "WRONG_PRIORITY" && direction === "too_high") {
-    return "Marked priority too high";
+    return "Moved down one priority level";
   }
   return "Feedback saved";
 }
 
-function createFeedbackState(action, direction) {
+function formatPriorityTierLabel(priorityTier) {
+  if (!priorityTier) {
+    return "Unknown";
+  }
+  return `${priorityTier.charAt(0)}${priorityTier.slice(1).toLowerCase()}`;
+}
+
+function describePriorityTarget(direction, currentPriorityTier) {
+  const targetTier = shiftPriorityTier(currentPriorityTier, direction);
+  return `Changed priority to ${formatPriorityTierLabel(targetTier)}`;
+}
+
+function createFeedbackState(action, direction, currentPriorityTier) {
   return {
     action,
     direction: direction ?? null,
-    label: describeFeedback(action, direction),
+    label:
+      action === "WRONG_PRIORITY" && direction
+        ? describePriorityTarget(direction, currentPriorityTier)
+        : describeFeedback(action, direction),
+  };
+}
+
+function compareTaskPriority(a, b) {
+  const priorityDelta =
+    (PRIORITY_ORDER[a.priority_tier] ?? PRIORITY_TIERS.length) -
+    (PRIORITY_ORDER[b.priority_tier] ?? PRIORITY_TIERS.length);
+
+  if (priorityDelta !== 0) {
+    return priorityDelta;
+  }
+
+  return (a.deadline_hours ?? Number.POSITIVE_INFINITY) - (b.deadline_hours ?? Number.POSITIVE_INFINITY);
+}
+
+function shiftPriorityTier(priorityTier, direction) {
+  const currentIndex = PRIORITY_TIERS.indexOf(priorityTier);
+  if (currentIndex === -1) {
+    return priorityTier;
+  }
+
+  if (direction === "too_low") {
+    return PRIORITY_TIERS[Math.max(0, currentIndex - 1)];
+  }
+
+  if (direction === "too_high") {
+    return PRIORITY_TIERS[Math.min(PRIORITY_TIERS.length - 1, currentIndex + 1)];
+  }
+
+  return priorityTier;
+}
+
+function sortTasks(tasks) {
+  return [...tasks].sort(compareTaskPriority);
+}
+
+function getPriorityChangeOptions(priorityTier) {
+  const currentIndex = PRIORITY_TIERS.indexOf(priorityTier);
+  if (currentIndex === -1) {
+    return {
+      increaseTarget: priorityTier,
+      decreaseTarget: priorityTier,
+      increaseDisabled: true,
+      decreaseDisabled: true,
+    };
+  }
+
+  return {
+    increaseTarget: PRIORITY_TIERS[Math.max(0, currentIndex - 1)],
+    decreaseTarget: PRIORITY_TIERS[Math.min(PRIORITY_TIERS.length - 1, currentIndex + 1)],
+    increaseDisabled: currentIndex === 0,
+    decreaseDisabled: currentIndex === PRIORITY_TIERS.length - 1,
   };
 }
 
@@ -237,12 +308,16 @@ function TaskActions({
 }) {
   const feedbackLabel = feedbackState?.label ?? null;
   const isStarted = feedbackState?.action === "GOT_IT";
-  const isLocked = Boolean(feedbackState) && !isStarted;
+  const isLocked =
+    Boolean(feedbackState) &&
+    !isStarted &&
+    feedbackState?.action !== "WRONG_PRIORITY";
+  const priorityChangeOptions = getPriorityChangeOptions(task.priority_tier);
 
   return (
     <>
       {feedbackLabel ? (
-        <p className="task-feedback-note">Saved: {feedbackLabel}</p>
+        <p className="task-feedback-note">Updated: {feedbackLabel}</p>
       ) : null}
       {isStarted ? (
         <>
@@ -296,21 +371,46 @@ function TaskActions({
             </button>
           </div>
           <div className="task-secondary-actions">
+            <span className="task-secondary-label">Adjust ranking:</span>
             <button
               className="inline-button"
-              disabled={isBusy || isLocked}
-              onClick={() => onFeedback(task.canonical_task_id, "WRONG_PRIORITY", "too_low")}
+              disabled={isBusy || isLocked || priorityChangeOptions.increaseDisabled}
+              title={
+                priorityChangeOptions.increaseDisabled
+                  ? `Already ${formatPriorityTierLabel(priorityChangeOptions.increaseTarget)}`
+                  : `Change priority to ${formatPriorityTierLabel(priorityChangeOptions.increaseTarget)}`
+              }
+              onClick={() =>
+                onFeedback(
+                  task.canonical_task_id,
+                  "WRONG_PRIORITY",
+                  "too_low",
+                  task.priority_tier
+                )
+              }
               type="button"
             >
-              Priority too low
+              Change priority to {formatPriorityTierLabel(priorityChangeOptions.increaseTarget)}
             </button>
             <button
               className="inline-button"
-              disabled={isBusy || isLocked}
-              onClick={() => onFeedback(task.canonical_task_id, "WRONG_PRIORITY", "too_high")}
+              disabled={isBusy || isLocked || priorityChangeOptions.decreaseDisabled}
+              title={
+                priorityChangeOptions.decreaseDisabled
+                  ? `Already ${formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}`
+                  : `Change priority to ${formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}`
+              }
+              onClick={() =>
+                onFeedback(
+                  task.canonical_task_id,
+                  "WRONG_PRIORITY",
+                  "too_high",
+                  task.priority_tier
+                )
+              }
               type="button"
             >
-              Priority too high
+              Change priority to {formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}
             </button>
             <button
               className="inline-button task-remove-link"
@@ -524,10 +624,15 @@ export default function Home() {
           }
           setPipelineProfile(latestProfile);
         }
+        if (result.items) {
+          setTasks(result.items);
+        }
         setTaskStatus(
           next.action === "RESCHEDULE"
             ? "Marked for later. Your profile was updated."
-            : "Feedback saved. Your profile was updated."
+            : next.action === "WRONG_PRIORITY"
+              ? "Priority updated. Your profile was updated."
+              : "Feedback saved. Your profile was updated."
         );
       } catch (error) {
         if (cancelled) {
@@ -582,7 +687,7 @@ export default function Home() {
     }
   }
 
-  function applyLocalFeedback(canonicalTaskId, action) {
+  function applyLocalFeedback(canonicalTaskId, action, direction) {
     setTasks((current) => {
       const selectedTask = current.find((task) => task.canonical_task_id === canonicalTaskId);
       if (!selectedTask) {
@@ -598,6 +703,16 @@ export default function Home() {
           ...current.filter((task) => task.canonical_task_id !== canonicalTaskId),
           selectedTask,
         ];
+      }
+
+      if (action === "WRONG_PRIORITY" && direction) {
+        return sortTasks(
+          current.map((task) =>
+            task.canonical_task_id === canonicalTaskId
+              ? { ...task, priority_tier: shiftPriorityTier(task.priority_tier, direction) }
+              : task
+          )
+        );
       }
 
       return current;
@@ -622,17 +737,19 @@ export default function Home() {
     }
   }
 
-  function handleFeedback(canonicalTaskId, action, direction) {
+  function handleFeedback(canonicalTaskId, action, direction, currentPriorityTier = null) {
     setTaskError("");
     setTaskFeedbackStates((current) => ({
       ...current,
-      [canonicalTaskId]: createFeedbackState(action, direction),
+      [canonicalTaskId]: createFeedbackState(action, direction, currentPriorityTier),
     }));
-    applyLocalFeedback(canonicalTaskId, action);
+    applyLocalFeedback(canonicalTaskId, action, direction);
     setTaskStatus(
       action === "RESCHEDULE"
         ? "Marked for later. Saving feedback in the background."
-        : "Feedback saved. Updating your profile in the background."
+        : action === "WRONG_PRIORITY"
+          ? "Updating priority and profile in the background."
+          : "Feedback saved. Updating your profile in the background."
     );
     setFeedbackQueue((current) => [
       ...current,

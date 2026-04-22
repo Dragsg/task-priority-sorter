@@ -225,14 +225,32 @@ def map_gmail_message_for_storage(message: dict) -> dict:
     }
 
 
-def get_message_detail(service, message_id: str) -> dict:
-    message = (
-        service.users()
-        .messages()
-        .get(userId="me", id=message_id, format="full")
-        .execute()
-    )
-    return message
+def get_message_detail(service, message_id: str) -> dict | None:
+    try:
+        message = (
+            service.users()
+            .messages()
+            .get(userId="me", id=message_id, format="full")
+            .execute()
+        )
+        return message
+    except HttpError as error:
+        if getattr(error.resp, "status", None) == 404:
+            logger.warning(
+                "Skipping missing Gmail message during fetch: message_id=%s",
+                message_id,
+            )
+            return None
+        raise
+
+
+def get_existing_message_details(service, message_ids: list[str]) -> list[dict]:
+    messages = []
+    for message_id in message_ids:
+        message = get_message_detail(service, message_id)
+        if message:
+            messages.append(message)
+    return messages
 
 
 def list_recent_messages(user_id: int, limit: int = 5) -> dict:
@@ -244,9 +262,10 @@ def list_recent_messages(user_id: int, limit: int = 5) -> dict:
         .execute()
     )
 
-    detailed_messages = [
-        get_message_detail(service, item["id"]) for item in response.get("messages", [])
-    ]
+    detailed_messages = get_existing_message_details(
+        service,
+        [item["id"] for item in response.get("messages", [])],
+    )
     save_messages(
         user_id,
         [map_gmail_message_for_storage(message) for message in detailed_messages],
@@ -301,7 +320,7 @@ def list_new_messages(user_id: int) -> dict:
                 seen_ids.add(message_id)
                 message_ids.append(message_id)
 
-    detailed_messages = [get_message_detail(service, message_id) for message_id in message_ids]
+    detailed_messages = get_existing_message_details(service, message_ids)
     save_messages(
         user_id,
         [map_gmail_message_for_storage(message) for message in detailed_messages],
@@ -334,7 +353,8 @@ def complete_gmail_link(user_id: int, flow: Flow):
     latest_history_id = None
     if recent_message_ids:
         latest_message = get_message_detail(service, recent_message_ids[0]["id"])
-        latest_history_id = latest_message.get("historyId")
+        if latest_message:
+            latest_history_id = latest_message.get("historyId")
 
     save_gmail_link(
         user_id=user_id,

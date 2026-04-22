@@ -53,6 +53,7 @@ class PipelineRunResponse(BaseModel):
 class FeedbackResponse(BaseModel):
     feedback_event: FeedbackEvent
     profile: BehaviorProfile
+    items: list[PrioritizedTaskCard] | None = None
 
 
 class PipelineApiService:
@@ -100,7 +101,7 @@ class PipelineApiService:
         *,
         action: FeedbackAction,
         direction: FeedbackDirection | None = None,
-    ) -> tuple[FeedbackEvent, BehaviorProfile]:
+    ) -> tuple[FeedbackEvent, BehaviorProfile, list[PrioritizedTaskCard] | None]:
         feedback_context = self.repository.get_feedback_update_context(user_id, canonical_task_id)
         if feedback_context is None:
             raise LookupError(f"No current task found for canonical_task_id={canonical_task_id!r}")
@@ -121,7 +122,18 @@ class PipelineApiService:
             deadline_hours=task_context.deadline_hours,
         )
         updated = self.pipeline.apply_feedback_to_profile(profile, event)
-        return event, updated
+        items = None
+        if action == FeedbackAction.WRONG_PRIORITY and direction is not None:
+            self.repository.shift_current_task_card_priority(
+                user_id,
+                canonical_task_id,
+                direction=direction,
+            )
+            items = self.repository.get_current_task_cards(user_id)
+        elif action == FeedbackAction.ALREADY_DONE:
+            self.repository.dismiss_task_card(user_id, canonical_task_id)
+            items = self.repository.get_current_task_cards(user_id)
+        return event, updated, items
 
     def _sender_hash_for_task(self, profile: BehaviorProfile, sender_ids: list[str]) -> str | None:
         for sender_id in sender_ids:

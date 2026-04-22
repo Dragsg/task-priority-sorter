@@ -4,6 +4,14 @@ from pipeline.api import create_app
 from pipeline.storage.repositories import InMemoryPipelineRepository
 
 
+def _shift_priority_tier(priority_tier: str, direction: str) -> str:
+    ordered_tiers = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+    current_index = ordered_tiers.index(priority_tier)
+    if direction == "too_low":
+        return ordered_tiers[max(0, current_index - 1)]
+    return ordered_tiers[min(len(ordered_tiers) - 1, current_index + 1)]
+
+
 def test_api_end_to_end_ingest_run_read_and_feedback():
     repository = InMemoryPipelineRepository()
     app = create_app(repository=repository)
@@ -79,6 +87,7 @@ def test_api_end_to_end_ingest_run_read_and_feedback():
     assert len(cards) == 1
     assert cards[0]["entity_name"] == "CS2103T"
     canonical_task_id = cards[0]["canonical_task_id"]
+    original_priority_tier = cards[0]["priority_tier"]
 
     feedback_response = client.post(
         f"/users/user-1/task-cards/{canonical_task_id}/feedback",
@@ -89,6 +98,12 @@ def test_api_end_to_end_ingest_run_read_and_feedback():
     assert feedback_payload["feedback_event"]["canonical_task_id"] == canonical_task_id
     assert feedback_payload["profile"]["profile_version"] == 2
     assert feedback_payload["profile"]["entity_weights"]["cs2103t"]["priority_multiplier"] >= 1.1
+    assert feedback_payload["items"][0]["priority_tier"] == _shift_priority_tier(original_priority_tier, "too_low")
+
+    refreshed_cards_response = client.get("/users/user-1/task-cards")
+    assert refreshed_cards_response.status_code == 200
+    refreshed_cards = refreshed_cards_response.json()["items"]
+    assert refreshed_cards[0]["priority_tier"] == _shift_priority_tier(original_priority_tier, "too_low")
 
     profile_response = client.get("/users/user-1/profile")
     assert profile_response.status_code == 200
