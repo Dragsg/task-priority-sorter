@@ -1,5 +1,7 @@
 __pycache__/
+.pytest_cache/
 *.pyc
+.python_packages/
 .venv/
 venv/
 env/
@@ -10,3 +12,6 @@ dist/
 .env
 frontend/.env
 backend/.env
+pipeline/.env
+
+test-data/

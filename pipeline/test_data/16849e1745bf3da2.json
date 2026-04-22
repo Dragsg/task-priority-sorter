@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16849e1745bf3da2",
+  "thread_id": "16849e1745bf3da2",
+  "timestamp_iso": "2019-01-14T01:02:18+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_5704af7c",
+  "sender_display": "Person_10313202",
+  "sender_email": "user_5704af7c@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New material: \"Computer History Group Presentation…\"",
+  "snippet": "Hi NG YING XUAN, Jonathan Chua posted a new material in 2019 S1-04 ICT. Computer History Group Presentation Materials OPEN If you don&#39;t want to receive emails from Classroom, you can unsubscribe.",
+  "body_text": "Hi NG YING XUAN,\r\nJonathan Chua posted a new material in 2019 S1-04 ICT  \r\n<https://classroom.google.com/c/MjcxMjM0MjUzODla>.\r\n\r\nComputer History Group Presentation Materials\r\nOPEN  \r\n<https://classroom.google.com/c/MjcxMjM0MjUzODla/m/MjczMjg3MzUwMDNa/details>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16849e1745bf3da2",
+    "history_id": "1801765",
+    "internal_date_ms": "1547427738000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_[phone_166d9a4b]\" <user_5704af7c@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

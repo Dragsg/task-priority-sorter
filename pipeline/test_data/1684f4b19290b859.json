@@ -1,0 +1,51 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1684f4b19290b859",
+  "thread_id": "1684f4b19290b859",
+  "timestamp_iso": "2019-01-15T02:15:47+00:00",
+  "label_ids": [
+    "IMPORTANT",
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_0072ec78",
+  "sender_display": "Person_fc043b4b",
+  "sender_email": "user_0072ec78@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New question: \"Discuss in your groups and list down…\"",
+  "snippet": "Hi NG YING XUAN, Dennis Lam posted a new question in 2019 S1-04 ChangeMakers: Innovation and Entrepreneurship (CMIE). Discuss in your groups and list down the top 5 traits and skills in order of",
+  "body_text": "Hi NG YING XUAN,\r\nDennis Lam posted a new question in 2019 S1-04 ChangeMakers: Innovation and  \r\nEntrepreneurship (CMIE) <https://classroom.google.com/c/MjcyMDU2MzYwOTda>.\r\n\r\nDiscuss in your groups and list down the top 5 traits and skills in order  \r\nof importance.\r\nDo not submit until I tell you to. Thanks!\r\nOPEN  \r\n<https://classroom.google.com/c/MjcyMDU2MzYwOTda/sa/MjczNzI2NjQ2ODRa/details>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1684f4b19290b859",
+    "history_id": "1801780",
+    "internal_date_ms": "1547518547000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_fc043b4b\" <user_0072ec78@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

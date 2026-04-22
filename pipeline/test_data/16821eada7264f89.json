@@ -1,0 +1,64 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16821eada7264f89",
+  "thread_id": "16821eada7264f89",
+  "timestamp_iso": "2019-01-06T06:47:08+00:00",
+  "label_ids": [
+    "YELLOW_STAR",
+    "STARRED",
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_0984bb7f",
+  "sender_display": "Person_3b305c36",
+  "sender_email": "user_0984bb7f@redacted.test",
+  "sender_domain": "sst.edu.sg",
+  "subject": "[For action, pls] SLS account - account unlocked & password reset (S1-04) NG YING XUAN",
+  "snippet": "Dear Ying Xuan Greetings. This is Ms Loh who is the SLS account administrator. To facilitate your learning in SST, you need to have an active SLS account. According to records in SLS, your account has",
+  "body_text": "Dear Ying Xuan\r\n\r\nGreetings. This is Ms Loh who is the SLS account administrator.\r\nTo facilitate your learning in SST, you need to have an active SLS account.\r\n\r\nAccording to records in SLS, your account has been locked.\r\n\r\nI’ve unlocked and reset the password for your SLS account:\r\n\r\n*SLSSOSATS7805*\r\n\r\n\r\nUse the USER ID as shown in the image.\r\n\r\nRemember to update your email address to SST email address.\r\n\r\n\r\nLet me know if you have successfully login to the system.\r\n\r\n\r\n[image: Screenshot [phone_17377296] at 14.45.53.png]\r\n\r\n\r\n*With regards*\r\n\r\n*Ms Loh Kwai Yin *罗桂艳\r\nHead of Department\r\n\r\nSpecial Projects\r\n\r\nApple Distinguished Educator\r\n\r\nGoogle Certified Innovator\r\n\r\n\r\n*School of Science and Technology, **Singapore*\r\n1 Technology Drive, Singapore 138527\r\nT: (65) [phone_63ab2acb] | F: (65) [phone_55758dd3]\r\nWebsite <http://www.sst.edu.sg/> | Facebook\r\n<http://www.facebook.com/ssts.1technologydrive> | Twitter\r\n<https://twitter.com/SSTSingapore>\r\n\r\n\r\n\r\n** CONFIDENTIALITY: If this email has been sent to you by mistake, please\r\nnotify the sender and delete it immediately. As it may contain confidential\r\ninformation, the retention or dissemination of its contents may be an\r\noffence under the Official Secrets Act.",
+  "body_html_present": true,
+  "attachments_present": true,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/related",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "image/png",
+      "filename": "Screenshot 2019-01-06 at 14.45.53.png",
+      "has_body_data": false,
+      "attachment_id_present": true
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16821eada7264f89",
+    "history_id": "1819263",
+    "internal_date_ms": "1546757228000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_3b305c36 <user_0984bb7f@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

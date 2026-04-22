@@ -1,0 +1,51 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "168552be60eb3be4",
+  "thread_id": "168552be60eb3be4",
+  "timestamp_iso": "2019-01-16T05:39:26+00:00",
+  "label_ids": [
+    "IMPORTANT",
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_5b8c0490",
+  "sender_display": "Person_fc4acf99",
+  "sender_email": "user_5b8c0490@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New announcement: \"Hello all,\r\n\r\nHere is the scanned copy of…\"",
+  "snippet": "Hi NG YING XUAN, Althea Ong Min posted a new announcement in 2019 S1-04 History. Hello all, Here is the scanned copy of the learning contract for easy reference. OPEN If you don&#39;t want to receive",
+  "body_text": "Hi NG YING XUAN,\r\nAlthea Ong Min posted a new announcement in 2019 S1-04 History  \r\n<https://classroom.google.com/c/MjcxMjM4NTU5MTVa>.\r\n\r\nHello all,\r\n\r\nHere is the scanned copy of the learning contract for easy reference.\r\nOPEN <https://classroom.google.com/c/MjcxMjM4NTU5MTVa/p/Mjc0MTEyODkxMjRa>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "168552be60eb3be4",
+    "history_id": "1801802",
+    "internal_date_ms": "1547617166000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_fc4acf99\" <user_5b8c0490@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

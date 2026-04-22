@@ -12,6 +12,7 @@ import {
   getGmailLinkUrl,
   getOutlookLinkUrl,
 } from "../api";
+import PageNav from "../components/PageNav";
 
 function EmailList({ title, description, emails }) {
   return (
@@ -277,6 +278,7 @@ export default function Linking() {
 
   return (
     <main className="app-shell">
+      <PageNav />
       <section className="hero">
         <p className="eyebrow">Email Linking</p>
         <h1>Connect Gmail and Outlook inboxes</h1>

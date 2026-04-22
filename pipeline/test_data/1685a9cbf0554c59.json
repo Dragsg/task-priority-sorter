@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1685a9cbf0554c59",
+  "thread_id": "1685a9cbf0554c59",
+  "timestamp_iso": "2019-01-17T07:00:36+00:00",
+  "label_ids": [
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_dc59da8e",
+  "sender_display": "Person_42e47b00",
+  "sender_email": "user_dc59da8e@redacted.test",
+  "sender_domain": "sst.edu.sg",
+  "subject": "Greetings from SST (Class S104)",
+  "snippet": "Dear Parents of S104, Welcome to the 2019 school year at School of Science and Technology, Singapore! We are the Form Teachers of S104 and we are delighted to have your child, in our form class this",
+  "body_text": "Dear Parents of S104,\r\n\r\n\r\n\r\nWelcome to the 2019 school year at School of Science and Technology,\r\nSingapore!\r\n\r\n\r\n\r\nWe are the Form Teachers of S104 and we are delighted to have your child,\r\nin our form class this year. Besides being your child’s form teachers, Mdm\r\nAzizah will also be teaching him/her Character and Citizenship Education\r\n(CCE).  I am also teaching the Higher Malay Language & Malay Language\r\nstudents.  Mr Peh will be teaching Mathematics and Character and\r\nCitizenship Education (CCE).\r\n\r\n\r\n\r\nWe are looking forward to an exciting year ahead. It is our goal to provide\r\nall students with an educationally challenging, yet fun and enriching\r\nexperience in our classrooms. We have high expectations for your child and\r\nwe will do all that we can to help your child achieve those expectations.\r\n\r\n\r\n\r\nSince attendance and appropriate behaviour at school are crucial to the\r\nlearning process, it is imperative that your child attends school every day\r\nas a mature and responsible student.  During the first few weeks of school,\r\nwe will be working together with the students in S104 to develop a set of\r\ncode of conduct. Kindly note that the school’s code of conduct can be found\r\non the school’s website.\r\n\r\n\r\n\r\nWe would also like to take this opportunity to update you on the names and\r\ncontact details of the subject teachers teaching your child this year.  Do\r\nfeel free to contact them if you have any queries.  As Form Teachers, we do\r\nwant to extend our help in any way that we can.  As such, do CC us (Mdm\r\nAzizah & Mr Peh) in the email correspondences.\r\n\r\n\r\n\r\nSubject\r\n\r\nName of Teacher\r\n\r\nEmail contact\r\n\r\nEnglish\r\n\r\nMs Christine Lam\r\n\r\nuser_d9b78e33@redacted.test\r\n\r\nMathematics\r\n\r\nMr Desmond Peh\r\n\r\nuser_364c3bf7@redacted.test\r\n\r\nScience\r\n\r\nMr Ng Guohui, Discipline Master\r\n\r\nuser_145d724c@redacted.test\r\n\r\nIntegrated Humanities\r\n\r\nMs Althea Ong Min\r\n\r\nuser_58291f0e@redacted.test\r\n\r\nHigher Chinese\r\n\r\nMs Zhao Jing\r\n\r\nuser_0714bffb@redacted.test\r\n\r\nChinese\r\n\r\nDr Yeo Len",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1685a9cbf0554c59",
+    "history_id": "1801823",
+    "internal_date_ms": "1547708436000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_42e47b00 <user_dc59da8e@redacted.test>",
+  "to_raw": "Person_42e47b00 <user_dc59da8e@redacted.test>, Desmond Peh <user_364c3bf7@redacted.test>",
+  "cc_raw": null,
+  "bcc_raw": "user_9a747a63@redacted.test"
+}

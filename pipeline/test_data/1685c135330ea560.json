@@ -1,0 +1,51 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1685c135330ea560",
+  "thread_id": "16856f43a1c70fbd",
+  "timestamp_iso": "2019-01-17T13:49:40+00:00",
+  "label_ids": [
+    "IMPORTANT",
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_10be5014",
+  "sender_display": "Person_624f259e",
+  "sender_email": "user_10be5014@redacted.test",
+  "sender_domain": "s2019.ssts.edu.sg",
+  "subject": "Re: Badminton tryouts",
+  "snippet": "Hello but i&#39;m not mei qi errrr i think u got the wrong person On Thu, 17 Jan 2019, 10:24 am NG YING XUAN student &lt;user_9a747a63@redacted.test wrote: Hello Mei Qi, I am Ying Xuan, your most",
+  "body_text": "Hello but i'm not mei qi errrr i think u got the wrong person\r\n\r\nOn Thu, 17 Jan 2019, 10:24 am NG YING XUAN student <\r\nuser_9a747a63@redacted.test wrote:\r\n\r\n> Hello Mei Qi,\r\n>\r\n>             I am Ying Xuan, your most hated one(but I hope not). I'm just\r\n> trying out this email, it is my first time. Thanks, I'll be there!\r\n>             Sorry for disturbing you.\r\n>\r\n> Best regards,\r\n> Ng Ying Xuan\r\n>\r\n>\r\n> On Wed, Jan 16, 2019 at 9:57 PM CHONG MEI QI student <\r\n> user_1ee853be@redacted.test> wrote:\r\n>\r\n>> helloooos guysss !! its me again :) so you guys are invited to come back\r\n>> on Friday 18 Jan at the multi purpose hall (mph) so same thing, S&W attire,\r\n>> rackets and shuttlecocks will be provided !! if you guys are unable to make\r\n>> it because of other CCA tryouts, its okays too :)\r\n>>\r\n>> Regards,\r\n>> *Chong Mei Qi 张美琪*,\r\n>> Student of S3-05\r\n>> *School of Science and Technology, **Singapore*\r\n>>\r\n>> 1 Technology Drive, Singapore 138572\r\n>> T: (65) [phone_bd2a6d4a] | F: (65) [phone_55758dd3]\r\n>>\r\n>>\r\n>>",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1685c135330ea560",
+    "history_id": "1801811",
+    "internal_date_ms": "1547732980000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_624f259e <user_10be5014@redacted.test>",
+  "to_raw": "NG YING XUAN student <user_9a747a63@redacted.test>",
+  "cc_raw": null,
+  "bcc_raw": null
+}

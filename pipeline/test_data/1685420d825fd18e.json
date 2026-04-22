@@ -1,0 +1,51 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1685420d825fd18e",
+  "thread_id": "1685420d825fd18e",
+  "timestamp_iso": "2019-01-16T00:47:43+00:00",
+  "label_ids": [
+    "IMPORTANT",
+    "CATEGORY_FORUMS",
+    "INBOX"
+  ],
+  "sender_id": "user_364c3bf7",
+  "sender_display": "Person_78bf4273",
+  "sender_email": "user_364c3bf7@redacted.test",
+  "sender_domain": "sst.edu.sg",
+  "subject": "2019 Sec 1 Content Page - Invitation to view",
+  "snippet": "Desmond Peh has invited you to view the following document: 2019 Sec 1 Content Page Open in Docs Google Docs: Create and edit documents online. Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA",
+  "body_text": "I've shared an item with you:\r\n\r\n2019 Sec 1 Content Page\r\nhttps://docs.google.com/document/d/1CNjpHaK_f0zi1rYab0GEAYapf-pwr4iggCIpFVWRnCc/edit?usp=sharing&ts=5c3e7f2f\r\n\r\nIt's not an attachment -- it's stored online. To open this item, just click  \r\nthe link above.",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1685420d825fd18e",
+    "history_id": "1801796",
+    "internal_date_ms": "1547599663000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_78bf4273\" <user_364c3bf7@redacted.test>",
+  "to_raw": "user_0bebd1b0@redacted.test",
+  "cc_raw": "user_2d796468@redacted.test, user_8be3a206@redacted.test, user_fda59525@redacted.test, user_[phone_e84ab68d]@redacted.test",
+  "bcc_raw": null
+}

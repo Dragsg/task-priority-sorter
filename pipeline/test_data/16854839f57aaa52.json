@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16854839f57aaa52",
+  "thread_id": "16854839f57aaa52",
+  "timestamp_iso": "2019-01-16T02:35:38+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_be4b82b1",
+  "sender_display": "Person_edb7cafe",
+  "sender_email": "user_be4b82b1@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "Class invitation: \"2019 S1-04 Character & Citizenship Education Student Development\"",
+  "snippet": "Hi NG YING XUAN, Azizah bte Ahmad (user_dc59da8e@redacted.test) invited you to the class 2019 S1-04 Character &amp; Citizenship Education Student Development. Azizah bte Ahmad 2019 S1-04 Character &amp;",
+  "body_text": "Hi NG YING XUAN,\r\nAzizah bte Ahmad (user_dc59da8e@redacted.test) invited you to the class 2019  \r\nS1-04 Character & Citizenship Education Student Development  \r\n<https://classroom.google.com/invite/accept/Mjc0MDg0NTQ2NTVa?role=3>.\r\nAzizah bte Ahmad\r\n2019 S1-04 Character & Citizenship Education Student Development\r\nJOIN <https://classroom.google.com/invite/accept/Mjc0MDg0NTQ2NTVa?role=3>\r\nIf you accept, your contact information will be shared with the class  \r\nmembers and applications they authorize to use Classroom. Learn more  \r\n<https://support.google.com/edu/classroom/answer/[id_a74034da]>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16854839f57aaa52",
+    "history_id": "1801799",
+    "internal_date_ms": "1547606138000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_edb7cafe\" <user_be4b82b1@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

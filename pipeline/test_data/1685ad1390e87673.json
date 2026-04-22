@@ -1,0 +1,51 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1685ad1390e87673",
+  "thread_id": "1685ad1390e87673",
+  "timestamp_iso": "2019-01-17T07:58:07+00:00",
+  "label_ids": [
+    "IMPORTANT",
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_089d9b85",
+  "sender_display": "Person_be40ca0e",
+  "sender_email": "user_089d9b85@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New announcement: \"诊断测试（理解问答二的参考答案）\"",
+  "snippet": "Hi NG YING XUAN, Yeo Leng Leng posted a new announcement in 2019 S101-104 (A组）. 诊断测试（理解问答二的参考答案） OPEN If you don&#39;t want to receive emails from Classroom, you can unsubscribe. Google Inc. 1600",
+  "body_text": "Hi NG YING XUAN,\r\nYeo Leng Leng posted a new announcement in 2019 S101-104 (A组）  \r\n<https://classroom.google.com/c/MjcyNDU0OTY3MzVa>.\r\n\r\n诊断测试（理解问答二的参考答案）\r\nOPEN <https://classroom.google.com/c/MjcyNDU0OTY3MzVa/p/Mjc0NDE4ODAxNTRa>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1685ad1390e87673",
+    "history_id": "1801829",
+    "internal_date_ms": "1547711887000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_be40ca0e\" <user_089d9b85@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

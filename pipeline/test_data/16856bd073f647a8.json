@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16856bd073f647a8",
+  "thread_id": "16856bd073f647a8",
+  "timestamp_iso": "2019-01-17T04:56:55+00:00",
+  "label_ids": [
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_b4fc45e3",
+  "sender_display": "Person_0f3b4bf6",
+  "sender_email": "user_b4fc45e3@redacted.test",
+  "sender_domain": "s2016.sst.edu.sg",
+  "subject": "Singapore Youth Flying Club Interview and Tryouts",
+  "snippet": "Dear applicants, Due to your application to SYFC CCA, you have been invited for an interview session. Please find the date and time of your interview in this link, please take note of the information",
+  "body_text": "Dear applicants,\r\n\r\nDue to your application to SYFC CCA, you have been invited for an interview\r\nsession. Please find the date and time of your interview in this link\r\n<https://docs.google.com/spreadsheets/d/1JV7unuS3iqf0TQPenbFr6qPjIqFWiz2rarQH0HkoZks/edit?usp=sharing>,\r\nplease take note of the information below\r\n\r\n\r\n   -\r\n\r\n   Along with the interviews, there will be tryouts happening concurrently\r\n   on the 18th and 25th January only.\r\n   -\r\n\r\n   Your preferred date indicated in the signup form may not be your\r\n   interview date.\r\n\r\n\r\n   -\r\n\r\n   You are not required to bring anything.\r\n   -\r\n\r\n   No preparation required, just your passion for aviation.\r\n   -\r\n\r\n   Report at the Lecture Theater at 230pm for a briefing.\r\n   -\r\n\r\n   Please email us at least 2 days in advance(For 18 Jan students, please\r\n   inform me by tomorrow) if you require a change of dates for your interview.\r\n   -\r\n\r\n   You are not required to stay at the tryout after you have finished your\r\n   interview\r\n\r\n\r\nFeel free to contact me via email if you have any enquiries.\r\n\r\nBest Regards,\r\n\r\nPerson_0f3b4bf6\r\n\r\nVice Chairperson\r\n\r\nSST SYFC",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16856bd073f647a8",
+    "history_id": "1819178",
+    "internal_date_ms": "1547701015000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_0f3b4bf6 <user_b4fc45e3@redacted.test>",
+  "to_raw": null,
+  "cc_raw": "Azizah bte Ahmad <user_dc59da8e@redacted.test>, AAKASH SANJAY MEHTA Student <user_9c71ea8b@redacted.test>, Mike Lee <user_0116d611@redacted.test>, \"LOKE JI HAN, ETHAN student\" <user_13b77fdf@redacted.test>, KHU ZI HAN SEAN student <user_6c3e2313@redacted.test>, Choy Keanric <user_d6efe7e9@redacted.test>, Cephas Koh <user_a64ef0f8@redacted.test>, Tan Wei <user_40eb73c2@redacted.test>",
+  "bcc_raw": "user_9a747a63@redacted.test"
+}

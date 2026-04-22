@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1684f501bc21a694",
+  "thread_id": "1684f501bc21a694",
+  "timestamp_iso": "2019-01-15T02:21:16+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_0072ec78",
+  "sender_display": "Person_fc043b4b",
+  "sender_email": "user_0072ec78@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New assignment: \"Level 1: What is my understanding of…\"",
+  "snippet": "Hi NG YING XUAN, Dennis Lam posted a new assignment in 2019 S1-04 ChangeMakers: Innovation and Entrepreneurship (CMIE). Due: Jan 20 Level 1: What is my understanding of collaboration? Level 2: How do",
+  "body_text": "Hi NG YING XUAN,\r\nDennis Lam posted a new assignment in 2019 S1-04 ChangeMakers: Innovation  \r\nand Entrepreneurship (CMIE)  \r\n<https://classroom.google.com/c/MjcyMDU2MzYwOTda>.\r\n\r\nDue: Jan 20\r\nLevel 1: What is my understanding of collaboration?\r\nLevel 2: How do my personal decisions and actions affect others?\r\nLevel 3: Why is it important for me to be collaborative? (In what ways does  \r\nlearning to collaborate cultivate me as a person?)\r\nHomework for Week 2. Please complete INDIVIDUALLY and submit your answers  \r\nby next Monday morning 8.30am.\r\nOPEN  \r\n<https://classroom.google.com/c/MjcyMDU2MzYwOTda/a/MjczNzI2NjQ3MDFa/details>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1684f501bc21a694",
+    "history_id": "1819148",
+    "internal_date_ms": "1547518876000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_fc043b4b\" <user_0072ec78@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "168503e934b668ee",
+  "thread_id": "168503e934b668ee",
+  "timestamp_iso": "2019-01-15T06:41:43+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_504eef33",
+  "sender_display": "Person_4cca78e4",
+  "sender_email": "user_504eef33@redacted.test",
+  "sender_domain": "google.com",
+  "subject": "Untitled presentation - Invitation to edit",
+  "snippet": "user_cc8eb5c0@redacted.test has invited you to edit the following presentation: Untitled presentation Open in Slides Google Slides: Create and edit presentations online. Google LLC, 1600",
+  "body_text": "I've shared an item with you:\r\n\r\nUntitled presentation\r\nhttp://docs.google.com/presentation/d/18hPMJjYrUi95tEB6w5RO8xyfYCD34vJfliJbBc3wIf8/edit?usp=sharing&ts=5c3d80a7\r\n\r\nIt's not an attachment -- it's stored online. To open this item, just click  \r\nthe link above.",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "168503e934b668ee",
+    "history_id": "1819159",
+    "internal_date_ms": "1547534503000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_4cca78e4\" <user_504eef33@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

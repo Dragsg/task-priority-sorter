@@ -7,6 +7,24 @@ export function getStoredToken() {
   return localStorage.getItem("token");
 }
 
+export function getStoredUserId() {
+  const token = getStoredToken();
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) {
+      return null;
+    }
+    const decoded = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return decoded.user_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function clearStoredToken() {
   localStorage.removeItem("token");
 }
@@ -59,6 +77,13 @@ export async function fetchCurrentUser() {
   return sendJson("/user", {
     headers: getAuthHeaders(),
   });
+}
+
+export async function fetchDashboardBootstrap() {
+  const response = await fetch(`${API_BASE_URL}/dashboard`, {
+    headers: getAuthHeaders(),
+  });
+  return readJson(response);
 }
 
 export async function saveOnboardingPreferences(preferences) {
@@ -124,4 +149,49 @@ export async function fetchBackgroundSyncStatus() {
     headers: getAuthHeaders(),
   });
   return readJson(response);
+}
+
+export async function syncPrioritizedTasks(limit) {
+  const query = limit ? `?limit=${limit}` : "";
+  return sendJson(`/tasks/sync${query}`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+}
+
+export async function createManualTask(payload) {
+  return sendJson("/tasks/manual", {
+    method: "POST",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchPrioritizedTasks() {
+  const response = await fetch(`${API_BASE_URL}/tasks`, {
+    headers: getAuthHeaders(),
+  });
+  return readJson(response);
+}
+
+export async function fetchPipelineProfile() {
+  const response = await fetch(`${API_BASE_URL}/tasks/profile`, {
+    headers: getAuthHeaders(),
+  });
+  return readJson(response);
+}
+
+export async function submitTaskFeedback(canonicalTaskId, { action, direction } = {}) {
+  return sendJson(`/tasks/${canonicalTaskId}/feedback`, {
+    method: "POST",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ action, direction }),
+  });
+}
+
+export async function removePrioritizedTask(canonicalTaskId) {
+  return sendJson(`/tasks/${canonicalTaskId}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
 }

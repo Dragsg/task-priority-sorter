@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "16855870f0c727ea",
+  "thread_id": "16855870f0c727ea",
+  "timestamp_iso": "2019-01-16T07:18:58+00:00",
+  "label_ids": [
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_9176fbaa",
+  "sender_display": "Person_0b799a36",
+  "sender_email": "user_9176fbaa@redacted.test",
+  "sender_domain": "accounts.google.com",
+  "subject": "Security alert",
+  "snippet": "New device signed in to user_9a747a63@redacted.test Your Person_0b799a36 Account was just signed in to from a new Huawei nova 3i device. You&#39;re getting this email to make sure it was you. Check activity",
+  "body_text": "New device signed in to\r\n\r\n\r\nuser_9a747a63@redacted.test\r\nYour Person_0b799a36 Account was just signed in to from a new Huawei nova 3i device.\r\nYou're getting this email to make sure it was you.\r\nCheck activity\r\n<https://accounts.google.com/AccountChooser?Email=user_9a747a63@redacted.test&continue=https://myaccount.google.com/alert/nt/[phone_47cf1b6c]?rfn%3D31%26rfnc%3D1%26eid%3D[phone_97bf95ec]%26et%3D0%26anexp%3Dgivab-fa--mdv2-fa--hsc-control_a>\r\nYou received this email to let you know about important changes to your\r\nPerson_0b799a36 Account and services.\r\n© 2019 Person_0b799a36 LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA\r\n[phone_2c6fb485]",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "16855870f0c727ea",
+    "history_id": "1801805",
+    "internal_date_ms": "1547623138000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_0b799a36 <user_9176fbaa@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

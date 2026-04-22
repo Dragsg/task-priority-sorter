@@ -1,0 +1,51 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1685c1ddb187fa3b",
+  "thread_id": "1685c1ddb187fa3b",
+  "timestamp_iso": "2019-01-17T14:01:24+00:00",
+  "label_ids": [
+    "IMPORTANT",
+    "CATEGORY_PERSONAL",
+    "INBOX"
+  ],
+  "sender_id": "user_9176fbaa",
+  "sender_display": "Person_0b799a36",
+  "sender_email": "user_9176fbaa@redacted.test",
+  "sender_domain": "accounts.google.com",
+  "subject": "Security alert",
+  "snippet": "New device signed in to user_9a747a63@redacted.test Your Person_0b799a36 Account was just signed in to from a new Apple iPhone device. You&#39;re getting this email to make sure it was you. Check activity",
+  "body_text": "New device signed in to\r\n\r\n\r\nuser_9a747a63@redacted.test\r\nYour Person_0b799a36 Account was just signed in to from a new Apple iPhone device.\r\nYou're getting this email to make sure it was you.\r\nCheck activity\r\n<https://accounts.google.com/AccountChooser?Email=user_9a747a63@redacted.test&continue=https://myaccount.google.com/alert/nt/[phone_922051f6]?rfn%3D31%26rfnc%3D1%26eid%3D[phone_defd0a03]%26et%3D0%26anexp%3Dgivab-fa--mdv2-fa--hsc-control_a>\r\nYou received this email to let you know about important changes to your\r\nPerson_0b799a36 Account and services.\r\n© 2019 Person_0b799a36 LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA\r\n[phone_b23d1aac]",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1685c1ddb187fa3b",
+    "history_id": "1801832",
+    "internal_date_ms": "1547733684000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_0b799a36 <user_9176fbaa@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

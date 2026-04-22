@@ -5,6 +5,7 @@ import {
   fetchCurrentUser,
   saveOnboardingPreferences,
 } from "../api";
+import PageNav from "../components/PageNav";
 import { PREFERENCE_OPTIONS } from "../preferences";
 
 export default function Onboarding() {
@@ -56,6 +57,7 @@ export default function Onboarding() {
 
   return (
     <main className="simple-shell">
+      <PageNav />
       <section className="simple-hero">
         <p className="auth-eyebrow">Onboarding</p>
         <h1 className="simple-title">Pick the workspace that fits your day</h1>

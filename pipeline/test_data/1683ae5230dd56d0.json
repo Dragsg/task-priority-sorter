@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1683ae5230dd56d0",
+  "thread_id": "1683ae5230dd56d0",
+  "timestamp_iso": "2019-01-11T03:12:01+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_0343c215",
+  "sender_display": "Person_2c5ee54b",
+  "sender_email": "user_0343c215@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New question: \"Is 0 even or odd? Explain.\"",
+  "snippet": "Hi NG YING XUAN, Desmond Peh posted a new question in 2019 S104 Maths. Due: Jan 14 Is 0 even or odd? Explain. OPEN If you don&#39;t want to receive emails from Classroom, you can unsubscribe. Google",
+  "body_text": "Hi NG YING XUAN,\r\nDesmond Peh posted a new question in 2019 S104 Maths  \r\n<https://classroom.google.com/c/MjcyNDQ2NjQxMDVa>.\r\n\r\nDue: Jan 14\r\nIs 0 even or odd? Explain.\r\nOPEN  \r\n<https://classroom.google.com/c/MjcyNDQ2NjQxMDVa/sa/MjcyODU1Mjg4MzNa/details>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1683ae5230dd56d0",
+    "history_id": "1801882",
+    "internal_date_ms": "1547176321000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_2c5ee54b\" <user_0343c215@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

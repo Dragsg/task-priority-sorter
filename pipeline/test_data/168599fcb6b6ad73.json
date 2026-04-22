@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "168599fcb6b6ad73",
+  "thread_id": "16856f43a1c70fbd",
+  "timestamp_iso": "2019-01-17T02:24:30+00:00",
+  "label_ids": [
+    "SENT",
+    "INBOX"
+  ],
+  "sender_id": "user_9a747a63",
+  "sender_display": "Person_53174a93",
+  "sender_email": "user_9a747a63@redacted.test",
+  "sender_domain": "s2019.ssts.edu.sg",
+  "subject": "Re: Badminton tryouts",
+  "snippet": "Hello Mei Qi, I am Ying Xuan, your most hated one(but I hope not). I&#39;m just trying out this email, it is my first time. Thanks, I&#39;ll be there! Sorry for disturbing you. Best regards, Ng Ying",
+  "body_text": "Hello Mei Qi,\r\n\r\n            I am Ying Xuan, your most hated one(but I hope not). I'm just\r\ntrying out this email, it is my first time. Thanks, I'll be there!\r\n            Sorry for disturbing you.\r\n\r\nBest regards,\r\nNg Ying Xuan\r\n\r\n\r\nOn Wed, Jan 16, 2019 at 9:57 PM CHONG MEI QI student <\r\nuser_1ee853be@redacted.test> wrote:\r\n\r\n> helloooos guysss !! its me again :) so you guys are invited to come back\r\n> on Friday 18 Jan at the multi purpose hall (mph) so same thing, S&W attire,\r\n> rackets and shuttlecocks will be provided !! if you guys are unable to make\r\n> it because of other CCA tryouts, its okays too :)\r\n>\r\n> Regards,\r\n> *Chong Mei Qi 张美琪*,\r\n> Student of S3-05\r\n> *School of Science and Technology, **Singapore*\r\n>\r\n> 1 Technology Drive, Singapore 138572\r\n> T: (65) [phone_bd2a6d4a] | F: (65) [phone_55758dd3]\r\n>\r\n>\r\n>",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "168599fcb6b6ad73",
+    "history_id": "1801811",
+    "internal_date_ms": "1547691870000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "Person_53174a93 <user_9a747a63@redacted.test>",
+  "to_raw": "CHONG MEI QI student <user_1ee853be@redacted.test>",
+  "cc_raw": "user_91042e13@redacted.test, user_c6d53929@redacted.test, user_07f268bf@redacted.test, user_2724c856@redacted.test, user_c7b25e49@redacted.test, user_877b6eac@redacted.test, user_ad57cdad@redacted.test, user_ca8c863a@redacted.test, user_f2973f46@redacted.test, user_a23e42cb@redacted.test, user_32fe0fc7@redacted.test, user_10be5014@redacted.test, user_2b73de8e@redacted.test, user_b4404b40@redacted.test, user_a6f77b71@redacted.test, BRYDON TI student <user_521fab40@redacted.test>, user_0e6e0721@redacted.test, user_631f1142@redacted.test, ONG ZHI XUAN student <user_b55b0a72@redacted.test>, user_7a8ff45d@redacted.test, user_b0a45fe5@redacted.test, user_da13f4af@redacted.test",
+  "bcc_raw": null
+}

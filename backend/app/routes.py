@@ -16,6 +16,16 @@ from .db import (
     get_user_by_id,
     update_user_preferences,
 )
+from .pipeline_bridge import (
+    create_manual_task,
+    get_pipeline_recompute_status,
+    get_profile_snapshot,
+    list_prioritized_tasks,
+    remove_prioritized_task,
+    run_prioritization_for_user,
+    submit_task_feedback,
+    sync_onboarding_context,
+)
 from .account_utils import (
     normalize_email,
     normalize_name,
@@ -184,6 +194,7 @@ def onboarding():
         user = update_user_preferences(user_id, preferences)
         if not user:
             return jsonify({"error": "User not found"}), 404
+        sync_onboarding_context(user_id, preferences)
     except ValueError as error:
         return jsonify({"error": str(error)}), 422
     except Exception as error:
@@ -405,3 +416,124 @@ def outlook_new_messages():
 @api.get("/background-sync/status")
 def background_sync_status():
     return jsonify(get_background_sync_status())
+
+
+@api.post("/tasks/sync")
+def sync_prioritized_tasks():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        limit = request.args.get("limit", default=None, type=int)
+        result = run_prioritization_for_user(user_id, limit=limit)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(result)
+
+
+@api.post("/tasks/manual")
+def add_manual_task():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        data = request.get_json() or {}
+        result = create_manual_task(
+            user_id,
+            title=data.get("title") or "",
+            description=data.get("description"),
+            task_type=data.get("taskType"),
+            deadline_at=data.get("deadlineAt"),
+            entity_name=data.get("entityName"),
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(result)
+
+
+@api.get("/tasks")
+def prioritized_tasks():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        items = list_prioritized_tasks(user_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify({"items": items})
+
+
+@api.get("/dashboard")
+def dashboard_bootstrap():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        user = get_user_by_id(user_id)
+        if user is None:
+            raise LookupError("User not found")
+        items = list_prioritized_tasks(user_id)
+        profile = get_profile_snapshot(user_id)
+    except LookupError as error:
+        return jsonify({"error": str(error)}), 404
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(
+        {
+            "user": serialize_user(user),
+            "items": items,
+            "profile": profile,
+        }
+    )
+
+
+@api.get("/tasks/profile")
+def pipeline_profile():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        profile = get_profile_snapshot(user_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(profile)
+
+
+@api.get("/tasks/recompute-status")
+def pipeline_recompute_status():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        status = get_pipeline_recompute_status(user_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(status)
+
+
+@api.post("/tasks/<canonical_task_id>/feedback")
+def task_feedback(canonical_task_id: str):
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        data = request.get_json() or {}
+        result = submit_task_feedback(
+            user_id,
+            canonical_task_id,
+            action=data.get("action"),
+            direction=data.get("direction"),
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except LookupError as error:
+        return jsonify({"error": str(error)}), 404
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(result)
+
+
+@api.delete("/tasks/<canonical_task_id>")
+def remove_task_card(canonical_task_id: str):
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        result = remove_prioritized_task(user_id, canonical_task_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(result)

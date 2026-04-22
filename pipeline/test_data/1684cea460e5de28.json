@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1684cea460e5de28",
+  "thread_id": "1684cea460e5de28",
+  "timestamp_iso": "2019-01-14T15:10:48+00:00",
+  "label_ids": [
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "sender_id": "user_089d9b85",
+  "sender_display": "Person_be40ca0e",
+  "sender_email": "user_089d9b85@redacted.test",
+  "sender_domain": "classroom.google.com",
+  "subject": "New assignment: \"小任务（请看课本第8-9页）\"",
+  "snippet": "Hi NG YING XUAN, Yeo Leng Leng posted a new assignment in 2019 S101-104 (A组）. 小任务（请看课本第8-9页） 老师讲解课文之后，请在课堂上完成这个作业。 OPEN If you don&#39;t want to receive emails from Classroom, you can unsubscribe.",
+  "body_text": "Hi NG YING XUAN,\r\nYeo Leng Leng posted a new assignment in 2019 S101-104 (A组）  \r\n<https://classroom.google.com/c/MjcyNDU0OTY3MzVa>.\r\n\r\n小任务（请看课本第8-9页）\r\n老师讲解课文之后，请在课堂上完成这个作业。\r\nOPEN  \r\n<https://classroom.google.com/c/MjcyNDU0OTY3MzVa/a/MjczNDUxMjY5NDJa/details>\r\nIf you don't want to receive emails from Classroom, you can unsubscribe  \r\n<https://classroom.google.com/s>.\r\n\r\nGoogle Inc.\r\n1600 Amphitheatre Pkwy\r\nMountain View, CA 94043 USA",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1684cea460e5de28",
+    "history_id": "1801774",
+    "internal_date_ms": "1547478648000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "\"Person_be40ca0e\" <user_089d9b85@redacted.test>",
+  "to_raw": "user_9a747a63@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": "raw_message.v1",
+  "platform": "gmail",
+  "source_id": "1683bfc8bafdd8b0",
+  "thread_id": "1683bfc8bafdd8b0",
+  "timestamp_iso": "2019-01-11T08:17:07+00:00",
+  "label_ids": [
+    "CATEGORY_FORUMS",
+    "INBOX"
+  ],
+  "sender_id": "user_145d724c",
+  "sender_display": null,
+  "sender_email": "user_145d724c@redacted.test",
+  "sender_domain": "sst.edu.sg",
+  "subject": "Introduction to Science (Homework)",
+  "snippet": "Dear all, Please complete the following quiz on Introduction to Science before Monday. Thanks Introduction to Science (Homework) Fill out form Create your own Google Form",
+  "body_text": "I've invited you to fill in the following form:\r\nIntroduction to Science (Homework)\r\n\r\nTo fill it in, visit:\r\nhttps://docs.google.com/forms/d/e/1FAIpQLSeUHi_virGwmj67RKNjlIy9w97q1rsnY-PrU6XlE_CV27B_kg/viewform?vc=0&amp;c=0&amp;w=1&amp;usp=mail_form_link\r\n\r\nDear all,\r\n\r\nPlease complete the following quiz on Introduction to Science before  \r\nMonday. Thanks\r\n\r\nGoogle Forms: Create and analyse surveys.",
+  "body_html_present": true,
+  "attachments_present": false,
+  "mime_parts": [
+    {
+      "mime_type": "multipart/alternative",
+      "filename": null,
+      "has_body_data": false,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/plain",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    },
+    {
+      "mime_type": "text/html",
+      "filename": null,
+      "has_body_data": true,
+      "attachment_id_present": false
+    }
+  ],
+  "provider_metadata": {
+    "gmail_id": "1683bfc8bafdd8b0",
+    "history_id": "1801885",
+    "internal_date_ms": "1547194627000",
+    "raw_payload_ref": null
+  },
+  "from_raw": "user_145d724c@redacted.test",
+  "to_raw": "user_0bebd1b0@redacted.test",
+  "cc_raw": null,
+  "bcc_raw": null
+}

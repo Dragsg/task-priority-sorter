@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "priority-pipeline"
+version = "0.1.0"
+description = "Priority queue pipeline for cross-platform task extraction and prioritization."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "OpenAI Codex" }
+]
+dependencies = [
+  "pydantic>=2.7.0",
+  "sqlalchemy>=2.0.30",
+  "python-dateutil>=2.9.0",
+  "dateparser>=1.2.0",
+  "openai>=1.76.0",
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "spacy>=3.7.0",
+  "sentence-transformers>=3.0.0",
+  "numpy>=1.26.0",
+]
+
+[project.optional-dependencies]
+nlp = []
+ml = []
+dev = [
+  "pytest>=8.2.0",
+]
+
+[project.scripts]
+priority-pipeline-batch = "pipeline.jobs.batch:main"
+priority-pipeline-api = "pipeline.api.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pipeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
