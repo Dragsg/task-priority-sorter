@@ -139,6 +139,14 @@ function formatPriorityTierLabel(priorityTier) {
   return `${priorityTier.charAt(0)}${priorityTier.slice(1).toLowerCase()}`;
 }
 
+function formatPlatformLabel(task) {
+  const platforms = Array.isArray(task?.platforms_seen) ? task.platforms_seen.filter(Boolean) : [];
+  if (!platforms.length) {
+    return "email";
+  }
+  return platforms.join(", ");
+}
+
 function formatDeadline(hours) {
   if (hours == null) {
     return "No deadline";
@@ -249,7 +257,7 @@ function matchesDeadlineFilter(task, filterValue) {
   return true;
 }
 
-function TaskEditPanel({
+function TaskEditModal({
   task,
   availableTags,
   editState,
@@ -267,6 +275,23 @@ function TaskEditPanel({
     setDraft(createTaskEditDraft(task));
     setTagInput("");
   }, [task]);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === "Escape" && !editState?.isSaving) {
+        onCancel();
+      }
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [editState?.isSaving, onCancel]);
 
   function updateDraft(field, value) {
     setDraft((current) => ({
@@ -334,133 +359,171 @@ function TaskEditPanel({
   }
 
   return (
-    <form className="kanban-edit-panel" onSubmit={handleSubmit}>
-      <div className="kanban-edit-grid">
-        <label className="field-group">
-          <span>Title</span>
-          <input
-            className="auth-input"
-            disabled={editState?.isSaving}
-            onChange={(event) => updateDraft("title", event.target.value)}
-            type="text"
-            value={draft.title}
-          />
-        </label>
-        <label className="field-group">
-          <span>Priority tier</span>
-          <select
-            className="auth-input"
-            disabled={editState?.isSaving}
-            onChange={(event) => updateDraft("priorityTier", event.target.value)}
-            value={draft.priorityTier}
-          >
-            {PRIORITY_COLUMNS.map((column) => (
-              <option key={column.value} value={column.value}>
-                {column.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field-group">
-          <span>Deadline</span>
-          <input
-            className="auth-input"
-            disabled={editState?.isSaving}
-            onChange={(event) => updateDraft("deadlineAt", event.target.value)}
-            type="datetime-local"
-            value={draft.deadlineAt}
-          />
-        </label>
-        <label className="field-group">
-          <span>Status</span>
-          <select
-            className="auth-input"
-            disabled={editState?.isSaving}
-            onChange={(event) => updateDraft("status", event.target.value)}
-            value={draft.status}
-          >
-            {TASK_STATUS_OPTIONS.map((status) => (
-              <option key={status} value={status}>
-                {status === "COMPLETED" ? "Completed" : "Open"}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <label className="field-group">
-        <span>Description</span>
-        <textarea
-          className="auth-input auth-textarea kanban-edit-textarea"
-          disabled={editState?.isSaving}
-          onChange={(event) => updateDraft("description", event.target.value)}
-          rows={4}
-          value={draft.description}
-        />
-      </label>
-      <label className="field-group">
-        <span>Tags</span>
-        <div className="manual-tag-field">
-          <div className="manual-tag-input-shell">
-            {draft.tags.map((tag) => (
-              <span className="manual-tag-chip" key={tag}>
-                {tag.replace(/_/g, " ")}
-                <button
-                  aria-label={`Remove ${tag}`}
-                  className="manual-tag-remove"
-                  disabled={editState?.isSaving}
-                  onClick={() => removeTag(tag)}
-                  type="button"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            <input
-              className="manual-tag-input"
-              disabled={editState?.isSaving}
-              onBlur={() => commitTag(tagInput)}
-              onChange={handleTagInputChange}
-              onKeyDown={handleTagInputKeyDown}
-              placeholder={draft.tags.length ? "Add another tag" : "Type a tag and press Enter"}
-              type="text"
-              value={tagInput}
-            />
+    <div
+      aria-modal="true"
+      className="kanban-modal-backdrop"
+      onClick={() => {
+        if (!editState?.isSaving) {
+          onCancel();
+        }
+      }}
+      role="dialog"
+    >
+      <div className="kanban-modal-card" onClick={(event) => event.stopPropagation()}>
+        <div className="kanban-modal-header">
+          <div>
+            <p className="auth-eyebrow">Edit task</p>
+            <h2 className="kanban-modal-title">
+              {cleanPreviewText(task.task_title) || "Untitled task"}
+            </h2>
+            <p className="kanban-modal-copy">
+              Update the details here without shifting the rest of the board.
+            </p>
           </div>
-          {suggestions.length ? (
-            <div className="manual-tag-autocomplete kanban-tag-autocomplete">
-              <div className="manual-tag-suggestions">
-                {suggestions.map((tag) => (
-                  <button
-                    className="manual-tag-suggestion"
-                    disabled={editState?.isSaving}
-                    key={tag}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => commitTag(tag)}
-                    type="button"
-                  >
-                    {tag.replace(/_/g, " ")}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          <button
+            aria-label="Close edit dialog"
+            className="kanban-modal-close"
+            disabled={editState?.isSaving}
+            onClick={onCancel}
+            type="button"
+          >
+            ×
+          </button>
         </div>
-      </label>
-      {editState?.error ? <p className="error-text">{editState.error}</p> : null}
-      <div className="kanban-edit-actions">
-        <button className="auth-button" disabled={editState?.isSaving} type="submit">
-          {editState?.isSaving ? "Saving..." : "Save changes"}
-        </button>
-        <button
-          className="secondary-button"
-          disabled={editState?.isSaving}
-          onClick={onCancel}
-          type="button"
-        >
-          Cancel
-        </button>
+
+        <form className="kanban-edit-panel" onSubmit={handleSubmit}>
+          <div className="kanban-edit-grid">
+            <label className="field-group">
+              <span>Title</span>
+              <input
+                className="auth-input"
+                disabled={editState?.isSaving}
+                onChange={(event) => updateDraft("title", event.target.value)}
+                type="text"
+                value={draft.title}
+              />
+            </label>
+            <label className="field-group">
+              <span>Priority tier</span>
+              <select
+                className="auth-input"
+                disabled={editState?.isSaving}
+                onChange={(event) => updateDraft("priorityTier", event.target.value)}
+                value={draft.priorityTier}
+              >
+                {PRIORITY_COLUMNS.map((column) => (
+                  <option key={column.value} value={column.value}>
+                    {column.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-group">
+              <span>Deadline</span>
+              <input
+                className="auth-input"
+                disabled={editState?.isSaving}
+                onChange={(event) => updateDraft("deadlineAt", event.target.value)}
+                type="datetime-local"
+                value={draft.deadlineAt}
+              />
+            </label>
+            <label className="field-group">
+              <span>Status</span>
+              <select
+                className="auth-input"
+                disabled={editState?.isSaving}
+                onChange={(event) => updateDraft("status", event.target.value)}
+                value={draft.status}
+              >
+                {TASK_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status === "COMPLETED" ? "Completed" : "Open"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="field-group">
+            <span>Description</span>
+            <textarea
+              className="auth-input auth-textarea kanban-edit-textarea"
+              disabled={editState?.isSaving}
+              onChange={(event) => updateDraft("description", event.target.value)}
+              rows={5}
+              value={draft.description}
+            />
+          </label>
+
+          <label className="field-group">
+            <span>Tags</span>
+            <div className="manual-tag-field">
+              <div className="manual-tag-input-shell">
+                {draft.tags.map((tag) => (
+                  <span className="manual-tag-chip" key={tag}>
+                    {tag.replace(/_/g, " ")}
+                    <button
+                      aria-label={`Remove ${tag}`}
+                      className="manual-tag-remove"
+                      disabled={editState?.isSaving}
+                      onClick={() => removeTag(tag)}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <input
+                  className="manual-tag-input"
+                  disabled={editState?.isSaving}
+                  onBlur={() => commitTag(tagInput)}
+                  onChange={handleTagInputChange}
+                  onKeyDown={handleTagInputKeyDown}
+                  placeholder={draft.tags.length ? "Add another tag" : "Type a tag and press Enter"}
+                  type="text"
+                  value={tagInput}
+                />
+              </div>
+              {suggestions.length ? (
+                <div className="manual-tag-autocomplete kanban-tag-autocomplete">
+                  <div className="manual-tag-suggestions">
+                    {suggestions.map((tag) => (
+                      <button
+                        className="manual-tag-suggestion"
+                        disabled={editState?.isSaving}
+                        key={tag}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => commitTag(tag)}
+                        type="button"
+                      >
+                        {tag.replace(/_/g, " ")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </label>
+
+          {editState?.error ? <p className="error-text">{editState.error}</p> : null}
+
+          <div className="kanban-edit-actions">
+            <button className="auth-button" disabled={editState?.isSaving} type="submit">
+              {editState?.isSaving ? "Saving..." : "Save changes"}
+            </button>
+            <button
+              className="secondary-button"
+              disabled={editState?.isSaving}
+              onClick={onCancel}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       </div>
-    </form>
+    </div>
   );
 }
 
@@ -468,22 +531,18 @@ function KanbanCard({
   task,
   isDragging,
   isSaving,
-  isEditing,
-  editState,
-  availableTags,
   onDragStart,
   onDragEnd,
   onEditOpen,
-  onEditClose,
-  onEditSave,
   onDelete,
   onToggleCompleted,
 }) {
   const visibleTags = getVisibleTaskTags(task);
   const preview = truncateText(
     task.task_description || task.source_snippet || task.source_subject,
-    120
+    150
   );
+  const sourceContext = cleanPreviewText(task.source_subject || task.source_sender);
   const isCompleted = getTaskWorkflowStatus(task) === "COMPLETED";
 
   return (
@@ -494,61 +553,68 @@ function KanbanCard({
       onDragStart={(event) => onDragStart(event, task)}
     >
       <div className="kanban-card-top">
-        <span className={`task-tier task-tier-${task.priority_tier.toLowerCase()}`}>
-          {formatPriorityTierLabel(task.priority_tier)}
-        </span>
-        {isCompleted ? <span className="task-status-badge">Completed</span> : null}
-      </div>
-      <h3 className="task-title">{cleanPreviewText(task.task_title) || "Untitled task"}</h3>
-      {preview ? <p className="kanban-card-preview">{preview}</p> : null}
-      <div className="kanban-card-meta">
-        <span>{formatDeadline(task.deadline_hours)}</span>
-        <span>{task.platforms_seen?.join(", ") || "email"}</span>
-      </div>
-      {visibleTags.length ? (
-        <div className="task-tag-list kanban-tag-list">
-          {visibleTags.map((tag) => (
-            <span className="task-tag-chip" key={tag}>
-              {tag.replace(/_/g, " ")}
-            </span>
-          ))}
+        <div className="kanban-card-badges">
+          <span className={`task-tier task-tier-${task.priority_tier.toLowerCase()}`}>
+            {formatPriorityTierLabel(task.priority_tier)}
+          </span>
+          {isCompleted ? <span className="task-status-badge kanban-status-badge">Completed</span> : null}
         </div>
-      ) : null}
-      <div className="kanban-card-actions">
-        <button
-          className="inline-button"
-          disabled={isSaving}
-          onClick={() => (isEditing ? onEditClose(task.canonical_task_id) : onEditOpen(task.canonical_task_id))}
-          type="button"
-        >
-          {isEditing ? "Close edit" : "Edit"}
-        </button>
-        <button
-          className="inline-button"
-          disabled={isSaving}
-          onClick={() => onToggleCompleted(task)}
-          type="button"
-        >
-          {isCompleted ? "Reopen" : "Complete"}
-        </button>
-        <button
-          className="inline-button task-remove-link"
-          disabled={isSaving}
-          onClick={() => onDelete(task)}
-          type="button"
-        >
-          Delete
-        </button>
+        <span className="kanban-card-platform">{formatPlatformLabel(task)}</span>
       </div>
-      {isEditing ? (
-        <TaskEditPanel
-          availableTags={availableTags}
-          editState={editState}
-          onCancel={() => onEditClose(task.canonical_task_id)}
-          onSave={onEditSave}
-          task={task}
-        />
-      ) : null}
+
+      <div className="kanban-card-content">
+        <h3 className="task-title kanban-card-title">
+          {cleanPreviewText(task.task_title) || "Untitled task"}
+        </h3>
+        {sourceContext ? <p className="kanban-card-context">{sourceContext}</p> : null}
+        {preview ? <p className="kanban-card-preview">{preview}</p> : null}
+      </div>
+
+      <div className="kanban-card-footer">
+        <div className="kanban-card-meta">
+          <span>{formatDeadline(task.deadline_hours)}</span>
+          {typeof task.confidence === "number" ? (
+            <span>{Math.round(task.confidence * 100)}% confidence</span>
+          ) : null}
+        </div>
+
+        {visibleTags.length ? (
+          <div className="task-tag-list kanban-tag-list">
+            {visibleTags.map((tag) => (
+              <span className="task-tag-chip" key={tag}>
+                {tag.replace(/_/g, " ")}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="kanban-card-actions">
+          <button
+            className="kanban-action-button"
+            disabled={isSaving}
+            onClick={() => onEditOpen(task.canonical_task_id)}
+            type="button"
+          >
+            Edit
+          </button>
+          <button
+            className="kanban-action-button"
+            disabled={isSaving}
+            onClick={() => onToggleCompleted(task)}
+            type="button"
+          >
+            {isCompleted ? "Reopen" : "Complete"}
+          </button>
+          <button
+            className="kanban-action-button kanban-action-danger"
+            disabled={isSaving}
+            onClick={() => onDelete(task)}
+            type="button"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
     </article>
   );
 }
@@ -580,22 +646,18 @@ function KanbanColumn({
           {column.label}
         </span>
       </div>
+
       <div className="kanban-column-body">
         {tasks.length ? (
           tasks.map((task) => (
             <KanbanCard
-              availableTags={cardProps.availableTags}
-              editState={cardProps.editStates[task.canonical_task_id]}
               isDragging={dragState.taskId === task.canonical_task_id}
-              isEditing={cardProps.editingTaskId === task.canonical_task_id}
               isSaving={Boolean(cardProps.savingStates[task.canonical_task_id])}
               key={task.canonical_task_id}
               onDelete={cardProps.onDelete}
               onDragEnd={cardProps.onDragEnd}
               onDragStart={cardProps.onDragStart}
-              onEditClose={cardProps.onEditClose}
               onEditOpen={cardProps.onEditOpen}
-              onEditSave={cardProps.onEditSave}
               onToggleCompleted={cardProps.onToggleCompleted}
               task={task}
             />
@@ -657,7 +719,7 @@ export default function Kanban() {
     }
 
     loadBoard();
-  }, [navigate]);
+  }, [cachedKanban, navigate]);
 
   useEffect(() => {
     if (!user?.userId) {
@@ -702,6 +764,11 @@ export default function Kanban() {
     return grouped;
   }, [filteredTasks]);
 
+  const activeEditingTask = useMemo(
+    () => tasks.find((task) => task.canonical_task_id === editingTaskId) ?? null,
+    [editingTaskId, tasks]
+  );
+
   function updateBoardFromResult(result) {
     if (result?.items) {
       setTasks(result.items);
@@ -745,9 +812,7 @@ export default function Kanban() {
 
   function handleTagFilterToggle(tag) {
     setSelectedTags((current) =>
-      current.includes(tag)
-        ? current.filter((value) => value !== tag)
-        : [...current, tag]
+      current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag]
     );
   }
 
@@ -778,9 +843,7 @@ export default function Kanban() {
 
   function handleDragLeave(priorityTier) {
     setDragState((current) =>
-      current.overTier === priorityTier
-        ? { ...current, overTier: null }
-        : current
+      current.overTier === priorityTier ? { ...current, overTier: null } : current
     );
   }
 
@@ -801,14 +864,12 @@ export default function Kanban() {
     markTaskBusy(canonicalTaskId);
     setTasks((current) =>
       current.map((task) =>
-        task.canonical_task_id === canonicalTaskId
-          ? { ...task, priority_tier: priorityTier }
-          : task
+        task.canonical_task_id === canonicalTaskId ? { ...task, priority_tier: priorityTier } : task
       )
     );
 
     try {
-      const result = await updatePrioritizedTask(canonicalTaskId, { priorityTier: priorityTier });
+      const result = await updatePrioritizedTask(canonicalTaskId, { priorityTier });
       updateBoardFromResult(result);
       setStatusMessage(`Moved task to ${formatPriorityTierLabel(priorityTier)}.`);
     } catch (saveError) {
@@ -927,8 +988,12 @@ export default function Kanban() {
           <article className="summary-card">
             <p className="summary-label">Quick links</p>
             <p className="summary-value summary-value-stack">
-              <span><Link className="inline-button" to="/home">Dashboard</Link></span>
-              <span><Link className="inline-button" to="/statistics">Statistics</Link></span>
+              <span>
+                <Link className="inline-button" to="/home">Dashboard</Link>
+              </span>
+              <span>
+                <Link className="inline-button" to="/statistics">Statistics</Link>
+              </span>
             </p>
           </article>
         </div>
@@ -1008,11 +1073,8 @@ export default function Kanban() {
           <section className="kanban-board">
             {PRIORITY_COLUMNS.map((column) => (
               <KanbanColumn
-                availableTags={availableTags}
                 column={column}
                 dragState={dragState}
-                editStates={editStates}
-                editingTaskId={editingTaskId}
                 key={column.value}
                 onDelete={handleDelete}
                 onDragEnd={handleDragEnd}
@@ -1020,9 +1082,7 @@ export default function Kanban() {
                 onDragOver={handleDragOver}
                 onDragStart={handleDragStart}
                 onDrop={handlePriorityDrop}
-                onEditClose={closeTaskEditor}
                 onEditOpen={openTaskEditor}
-                onEditSave={handleTaskEditSave}
                 onToggleCompleted={handleToggleCompleted}
                 savingStates={savingStates}
                 tasks={groupedTasks[column.value]}
@@ -1038,6 +1098,16 @@ export default function Kanban() {
           </div>
         )}
       </section>
+
+      {activeEditingTask ? (
+        <TaskEditModal
+          availableTags={availableTags}
+          editState={editStates[activeEditingTask.canonical_task_id]}
+          onCancel={() => closeTaskEditor(activeEditingTask.canonical_task_id)}
+          onSave={handleTaskEditSave}
+          task={activeEditingTask}
+        />
+      ) : null}
     </main>
   );
 }
