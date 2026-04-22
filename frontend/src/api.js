@@ -86,6 +86,13 @@ export async function fetchDashboardBootstrap() {
   return readJson(response);
 }
 
+export async function fetchStatisticsSnapshot() {
+  const response = await fetch(`${API_BASE_URL}/statistics`, {
+    headers: getAuthHeaders(),
+  });
+  return readJson(response);
+}
+
 export async function saveOnboardingPreferences(preferences) {
   return sendJson("/onboarding", {
     method: "PUT",
