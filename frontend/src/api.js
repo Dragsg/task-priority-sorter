@@ -2,6 +2,7 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:5000/api";
 const OUTLOOK_AUTH_BASE_URL =
   import.meta.env.VITE_OUTLOOK_AUTH_BASE_URL ?? "http://localhost:5000/api";
+const STORED_USER_KEY = "task-priority-user";
 
 export function getStoredToken() {
   return localStorage.getItem("token");
@@ -27,6 +28,42 @@ export function getStoredUserId() {
 
 export function clearStoredToken() {
   localStorage.removeItem("token");
+  localStorage.removeItem(STORED_USER_KEY);
+}
+
+export function getStoredUser() {
+  const storedUserId = getStoredUserId();
+  if (!storedUserId) {
+    return null;
+  }
+
+  try {
+    const raw = localStorage.getItem(STORED_USER_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.userId !== storedUserId) {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function storeUser(user) {
+  if (!user?.userId) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(STORED_USER_KEY, JSON.stringify(user));
+  } catch {
+    // Ignore cache write failures so auth flows still work.
+  }
 }
 
 function getAuthHeaders(extraHeaders = {}) {
@@ -74,23 +111,29 @@ export async function signIn({ email, password }) {
 }
 
 export async function fetchCurrentUser() {
-  return sendJson("/user", {
+  const user = await sendJson("/user", {
     headers: getAuthHeaders(),
   });
+  storeUser(user);
+  return user;
 }
 
 export async function fetchDashboardBootstrap() {
   const response = await fetch(`${API_BASE_URL}/dashboard`, {
     headers: getAuthHeaders(),
   });
-  return readJson(response);
+  const payload = await readJson(response);
+  storeUser(payload.user);
+  return payload;
 }
 
 export async function fetchStatisticsSnapshot() {
   const response = await fetch(`${API_BASE_URL}/statistics`, {
     headers: getAuthHeaders(),
   });
-  return readJson(response);
+  const payload = await readJson(response);
+  storeUser(payload.user);
+  return payload;
 }
 
 export async function saveOnboardingPreferences(preferences) {

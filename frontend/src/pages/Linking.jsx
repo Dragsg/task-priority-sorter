@@ -10,6 +10,7 @@ import {
   fetchRecentEmails,
   fetchRecentOutlookEmails,
   getGmailLinkUrl,
+  getStoredUser,
   getOutlookLinkUrl,
 } from "../api";
 import PageNav from "../components/PageNav";
@@ -60,7 +61,7 @@ function formatSyncTimestamp(value) {
 
 export default function Linking() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => getStoredUser());
   const [gmailStatus, setGmailStatus] = useState({
     linked: false,
     userId: 1,

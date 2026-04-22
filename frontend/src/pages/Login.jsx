@@ -4,6 +4,7 @@ import {
   clearStoredToken,
   fetchCurrentUser,
   getStoredToken,
+  storeUser,
   signIn,
   signUp,
 } from "../api";
@@ -55,9 +56,13 @@ export default function Login() {
       const payload = isSignUp
         ? await signUp({ email, password, name })
         : await signIn({ email, password });
+      const nextUser = payload.user ?? null;
 
       localStorage.setItem("token", payload.token);
-      navigate(isSignUp || !payload.user.preferences ? "/onboarding" : "/home");
+      if (nextUser) {
+        storeUser(nextUser);
+      }
+      navigate(isSignUp || !nextUser?.preferences ? "/onboarding" : "/home");
     } catch (submitError) {
       setError(submitError.message);
     } finally {

@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { clearStoredToken, fetchStatisticsSnapshot } from "../api";
+import {
+  clearStoredToken,
+  fetchStatisticsSnapshot,
+  getStoredUser,
+  getStoredUserId,
+} from "../api";
 import PageNav from "../components/PageNav";
 import { getPreferenceLabel } from "../preferences";
 
@@ -100,6 +105,57 @@ const EMPTY_DISTRIBUTIONS = {
   actionWindows: [],
   platformMix: [],
 };
+const STATISTICS_CACHE_VERSION = 1;
+
+function getStatisticsCacheKey(userId) {
+  return `task-priority-statistics:v${STATISTICS_CACHE_VERSION}:${userId}`;
+}
+
+function readStatisticsCache(userId) {
+  if (!userId) {
+    return null;
+  }
+
+  try {
+    const raw = localStorage.getItem(getStatisticsCacheKey(userId));
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    return {
+      user: parsed.user ?? null,
+      summary: parsed.summary ?? EMPTY_SUMMARY,
+      distributions: parsed.distributions ?? EMPTY_DISTRIBUTIONS,
+      nearestDeadlines: Array.isArray(parsed.nearestDeadlines) ? parsed.nearestDeadlines : [],
+      strongestSignals: Array.isArray(parsed.strongestSignals) ? parsed.strongestSignals : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStatisticsCache(userId, payload) {
+  if (!userId) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      getStatisticsCacheKey(userId),
+      JSON.stringify({
+        cachedAt: new Date().toISOString(),
+        user: payload.user ?? null,
+        summary: payload.summary ?? EMPTY_SUMMARY,
+        distributions: payload.distributions ?? EMPTY_DISTRIBUTIONS,
+        nearestDeadlines: payload.nearestDeadlines ?? [],
+        strongestSignals: payload.strongestSignals ?? [],
+      })
+    );
+  } catch {
+    // Ignore cache write failures and keep the page usable.
+  }
+}
 
 function getTaskKey(task) {
   return task.canonical_task_id || task.task_id || task.created_at || task.task_title;
@@ -112,11 +168,19 @@ function getTaskTierClassName(priorityTier) {
 
 export default function Statistics() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [summary, setSummary] = useState(EMPTY_SUMMARY);
-  const [distributions, setDistributions] = useState(EMPTY_DISTRIBUTIONS);
-  const [nearestDeadlines, setNearestDeadlines] = useState([]);
-  const [strongestSignals, setStrongestSignals] = useState([]);
+  const cachedUserId = getStoredUserId();
+  const cachedStatistics = readStatisticsCache(cachedUserId);
+  const [user, setUser] = useState(() => cachedStatistics?.user ?? getStoredUser());
+  const [summary, setSummary] = useState(() => cachedStatistics?.summary ?? EMPTY_SUMMARY);
+  const [distributions, setDistributions] = useState(
+    () => cachedStatistics?.distributions ?? EMPTY_DISTRIBUTIONS
+  );
+  const [nearestDeadlines, setNearestDeadlines] = useState(
+    () => cachedStatistics?.nearestDeadlines ?? []
+  );
+  const [strongestSignals, setStrongestSignals] = useState(
+    () => cachedStatistics?.strongestSignals ?? []
+  );
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -138,9 +202,19 @@ export default function Statistics() {
     loadStatistics();
   }, [navigate]);
 
-  if (!user) {
-    return <main className="simple-shell">Loading your statistics...</main>;
-  }
+  useEffect(() => {
+    if (!user?.userId) {
+      return;
+    }
+
+    writeStatisticsCache(user.userId, {
+      user,
+      summary,
+      distributions,
+      nearestDeadlines,
+      strongestSignals,
+    });
+  }, [distributions, nearestDeadlines, strongestSignals, summary, user]);
 
   return (
     <main className="simple-shell">
@@ -158,12 +232,14 @@ export default function Statistics() {
         <div className="summary-grid summary-grid-wide">
           <article className="summary-card">
             <p className="summary-label">Signed in as</p>
-            <p className="summary-value">{user.email}</p>
+            <p className="summary-value">{user?.email ?? "Refreshing your account..."}</p>
             <p className="stats-help-copy">{SUMMARY_CARD_HELP.signedIn}</p>
           </article>
           <article className="summary-card">
             <p className="summary-label">Focus setting</p>
-            <p className="summary-value">{getPreferenceLabel(user.preferences)}</p>
+            <p className="summary-value">
+              {getPreferenceLabel(user?.preferences) ?? "Loading preference..."}
+            </p>
             <p className="stats-help-copy">{SUMMARY_CARD_HELP.focus}</p>
           </article>
           <article className="summary-card">
