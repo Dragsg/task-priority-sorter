@@ -461,15 +461,26 @@ def submit_task_feedback(
     )
     updated_profile = pipeline.apply_feedback_to_profile(profile, event)
     _set_cached_value(_PROFILE_CACHE, user_id, updated_profile.model_dump(mode="json"))
+    items = None
+    if feedback_action == FeedbackAction.WRONG_PRIORITY and feedback_direction is not None:
+        repository.shift_current_task_card_priority(
+            pipeline_user_id,
+            canonical_task_id,
+            direction=feedback_direction,
+        )
+        items = [card.model_dump(mode="json") for card in repository.get_current_task_cards(pipeline_user_id)]
+        _set_cached_value(_TASK_CACHE, user_id, items)
     if feedback_action == FeedbackAction.ALREADY_DONE:
         repository.dismiss_task_card(pipeline_user_id, canonical_task_id)
         _update_cached_tasks_after_remove(user_id, canonical_task_id)
+        items = _get_cached_value(_TASK_CACHE, user_id)
     return {
         "success": True,
         "feedbackEvent": event.model_dump(mode="json"),
         "profile": updated_profile.model_dump(mode="json"),
         "canonicalTaskId": canonical_task_id,
         "action": feedback_action.value,
+        "items": items,
     }
 
 

@@ -83,7 +83,7 @@ def create_app(
     @app.post("/users/{user_id}/task-cards/{canonical_task_id}/feedback", response_model=FeedbackResponse)
     def submit_feedback(user_id: str, canonical_task_id: str, request: FeedbackRequest) -> FeedbackResponse:
         try:
-            event, profile = service.submit_feedback(
+            event, profile, items = service.submit_feedback(
                 user_id,
                 canonical_task_id,
                 action=request.action,
@@ -93,7 +93,7 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return FeedbackResponse(feedback_event=event, profile=profile)
+        return FeedbackResponse(feedback_event=event, profile=profile, items=items)
 
     return app
 
