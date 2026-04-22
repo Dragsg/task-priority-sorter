@@ -4,11 +4,13 @@ import {
   clearStoredToken,
   fetchDashboardBootstrap,
   getStoredUser,
+  getStoredUserId,
   removePrioritizedTask,
   updatePrioritizedTask,
 } from "../api";
 import PageNav from "../components/PageNav";
 
+const KANBAN_CACHE_VERSION = 1;
 const PRIORITY_COLUMNS = [
   { value: "CRITICAL", label: "Critical" },
   { value: "HIGH", label: "High" },
@@ -26,6 +28,51 @@ const DEADLINE_FILTER_OPTIONS = [
 ];
 
 const TASK_STATUS_OPTIONS = ["OPEN", "COMPLETED"];
+
+function getKanbanCacheKey(userId) {
+  return `task-priority-kanban:v${KANBAN_CACHE_VERSION}:${userId}`;
+}
+
+function readKanbanCache(userId) {
+  if (!userId) {
+    return null;
+  }
+
+  try {
+    const raw = localStorage.getItem(getKanbanCacheKey(userId));
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return {
+      user: parsed.user ?? null,
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+      availableTags: Array.isArray(parsed.availableTags) ? parsed.availableTags : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeKanbanCache(userId, user, tasks, availableTags) {
+  if (!userId) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      getKanbanCacheKey(userId),
+      JSON.stringify({
+        cachedAt: new Date().toISOString(),
+        user: user ?? null,
+        tasks: Array.isArray(tasks) ? tasks : [],
+        availableTags: Array.isArray(availableTags) ? availableTags : [],
+      })
+    );
+  } catch {
+    // Ignore cache write failures and keep the board interactive.
+  }
+}
 
 function normalizeTag(value) {
   if (typeof value !== "string") {
@@ -566,10 +613,13 @@ function KanbanColumn({
 
 export default function Kanban() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(() => getStoredUser());
-  const [tasks, setTasks] = useState([]);
-  const [availableTags, setAvailableTags] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const storedUserId = getStoredUserId();
+  const storedUser = getStoredUser();
+  const [cachedKanban] = useState(() => readKanbanCache(storedUserId));
+  const [user, setUser] = useState(() => cachedKanban?.user ?? storedUser);
+  const [tasks, setTasks] = useState(() => cachedKanban?.tasks ?? []);
+  const [availableTags, setAvailableTags] = useState(() => cachedKanban?.availableTags ?? []);
+  const [loading, setLoading] = useState(() => !cachedKanban);
   const [error, setError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -595,13 +645,11 @@ export default function Kanban() {
         setAvailableTags(dashboard.availableTags ?? []);
         setError("");
       } catch (loadError) {
-        if (getStoredUser()) {
+        if (cachedKanban || getStoredUser()) {
           setError(loadError.message || "Unable to load the latest board right now.");
-          setTasks([]);
-          setAvailableTags([]);
         } else {
-        clearStoredToken();
-        navigate("/", { replace: true });
+          clearStoredToken();
+          navigate("/", { replace: true });
         }
       } finally {
         setLoading(false);
@@ -610,6 +658,13 @@ export default function Kanban() {
 
     loadBoard();
   }, [navigate]);
+
+  useEffect(() => {
+    if (!user?.userId) {
+      return;
+    }
+    writeKanbanCache(user.userId, user, tasks, availableTags);
+  }, [availableTags, tasks, user]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
