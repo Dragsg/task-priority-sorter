@@ -58,6 +58,9 @@ _DASHBOARD_CACHE_LOCK = RLock()
 _TASK_CACHE: dict[int, dict] = {}
 _PROFILE_CACHE: dict[int, dict] = {}
 _DASHBOARD_CACHE_TTL_SECONDS = 60.0
+_ALLOWED_TASK_PATCH_FIELDS = {"title", "description", "deadlineAt", "priorityTier", "status", "tags"}
+_ALLOWED_PRIORITY_TIERS = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
+_ALLOWED_TASK_STATUSES = {"OPEN", "COMPLETED"}
 
 
 def _state_now_iso() -> str:
@@ -302,15 +305,32 @@ def get_available_tags(user_id: int) -> list[str]:
     return merge_tag_catalog(repository.get_custom_tags(str(user_id)))
 
 
+def _list_dashboard_task_cards(repository: SqlAlchemyPipelineRepository, user_id: str):
+    return [
+        *repository.get_current_task_cards(user_id),
+        *repository.get_completed_task_cards(user_id),
+    ]
+
+
+def _build_dashboard_items(repository: SqlAlchemyPipelineRepository, user_id: int) -> list[dict]:
+    items = [
+        card.model_dump(mode="json")
+        for card in _list_dashboard_task_cards(repository, str(user_id))
+    ]
+    _set_cached_value(_TASK_CACHE, user_id, items)
+    return items
+
+
+def _task_payload_is_completed(task: dict) -> bool:
+    return str(task.get("status") or "").lower() == "completed"
+
+
 def list_prioritized_tasks(user_id: int) -> list[dict]:
     cached = _get_cached_value(_TASK_CACHE, user_id)
     if cached is not None:
         return cached
     repository = get_pipeline_repository()
-    cards = repository.get_current_task_cards(str(user_id))
-    payload = [card.model_dump(mode="json") for card in cards]
-    _set_cached_value(_TASK_CACHE, user_id, payload)
-    return payload
+    return _build_dashboard_items(repository, user_id)
 
 
 def remove_prioritized_task(user_id: int, canonical_task_id: str) -> dict:
@@ -350,16 +370,98 @@ def update_prioritized_task_tags(
     if normalized_tags:
         repository.upsert_custom_tags(str(user_id), normalized_tags)
 
-    items = [
-        card.model_dump(mode="json")
-        for card in repository.get_current_task_cards(str(user_id))
-    ]
-    _set_cached_value(_TASK_CACHE, user_id, items)
+    items = _build_dashboard_items(repository, user_id)
     return {
         "success": True,
         "canonicalTaskId": canonical_task_id,
         "task": updated_card.model_dump(mode="json"),
         "items": items,
+        "availableTags": get_available_tags(user_id),
+    }
+
+
+def update_prioritized_task(
+    user_id: int,
+    canonical_task_id: str,
+    *,
+    updates: dict,
+) -> dict:
+    if not isinstance(updates, dict):
+        raise ValueError("Task updates must be a JSON object.")
+
+    unknown_fields = sorted(set(updates) - _ALLOWED_TASK_PATCH_FIELDS)
+    if unknown_fields:
+        raise ValueError(f"Unsupported task fields: {', '.join(unknown_fields)}")
+    if not updates:
+        raise ValueError("At least one editable field is required.")
+
+    normalized_updates: dict[str, object] = {}
+
+    if "title" in updates:
+        title = updates.get("title")
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("title cannot be blank.")
+        normalized_updates["title"] = title.strip()
+
+    if "description" in updates:
+        description = updates.get("description")
+        if not isinstance(description, str):
+            raise ValueError("description must be a string.")
+        normalized_updates["description"] = description
+
+    if "deadlineAt" in updates:
+        deadline_at = updates.get("deadlineAt")
+        if deadline_at in {None, ""}:
+            normalized_updates["deadline_at"] = None
+        elif not isinstance(deadline_at, str):
+            raise ValueError("deadlineAt must be a valid ISO datetime or null.")
+        else:
+            normalized_updates["deadline_at"] = _normalize_manual_deadline(deadline_at)
+
+    if "priorityTier" in updates:
+        priority_tier = updates.get("priorityTier")
+        if not isinstance(priority_tier, str):
+            raise ValueError("priorityTier must be a string.")
+        normalized_priority = priority_tier.strip().upper()
+        if normalized_priority not in _ALLOWED_PRIORITY_TIERS:
+            raise ValueError("priorityTier must be one of CRITICAL, HIGH, MEDIUM, or LOW.")
+        normalized_updates["priority_tier"] = normalized_priority
+
+    if "status" in updates:
+        status = updates.get("status")
+        if not isinstance(status, str):
+            raise ValueError("status must be a string.")
+        normalized_status = status.strip().upper()
+        if normalized_status not in _ALLOWED_TASK_STATUSES:
+            raise ValueError("status must be OPEN or COMPLETED.")
+        normalized_updates["status"] = normalized_status
+
+    if "tags" in updates:
+        tags = updates.get("tags")
+        if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
+            raise ValueError("tags must be an array of strings.")
+        normalized_updates["tags"] = dedupe_tags(tags)
+
+    repository = get_pipeline_repository()
+    updated_card = repository.update_task(
+        str(user_id),
+        canonical_task_id,
+        updates=normalized_updates,
+    )
+    if updated_card is None:
+        raise LookupError("Task card not found for this user.")
+
+    if normalized_updates.get("tags"):
+        repository.upsert_custom_tags(str(user_id), normalized_updates["tags"])
+
+    items = _build_dashboard_items(repository, user_id)
+    profile = get_profile_snapshot(user_id)
+    return {
+        "success": True,
+        "taskId": canonical_task_id,
+        "task": updated_card.model_dump(mode="json"),
+        "items": items,
+        "profile": profile,
         "availableTags": get_available_tags(user_id),
     }
 
@@ -377,7 +479,7 @@ def get_profile_snapshot(user_id: int) -> dict:
 
 
 def get_task_statistics_snapshot(user_id: int) -> dict:
-    task_cards = list_prioritized_tasks(user_id)
+    task_cards = [task for task in list_prioritized_tasks(user_id) if not _task_payload_is_completed(task)]
     profile = get_profile_snapshot(user_id)
 
     total_task_cards = len(task_cards)
@@ -605,9 +707,7 @@ def _run_pipeline_from_stored_messages(
     stored_rows = list_stored_messages(user_id, limit=limit)
     raw_messages = [_row_to_raw_message(user_id, row) for row in stored_rows]
     bundle = pipeline.run_messages(str(user_id), raw_messages)
-    current_cards = repository.get_current_task_cards(str(user_id))
-    card_payloads = [card.model_dump(mode="json") for card in current_cards]
-    _set_cached_value(_TASK_CACHE, user_id, card_payloads)
+    card_payloads = _build_dashboard_items(repository, user_id)
     if bundle.profile is not None:
         _set_cached_value(_PROFILE_CACHE, user_id, bundle.profile.model_dump(mode="json"))
 
@@ -699,8 +799,7 @@ def submit_task_feedback(
         action=feedback_action,
         direction=feedback_direction,
     )
-    items = [card.model_dump(mode="json") for card in repository.get_current_task_cards(pipeline_user_id)]
-    _set_cached_value(_TASK_CACHE, user_id, items)
+    items = _build_dashboard_items(repository, user_id)
     return {
         "success": True,
         "feedbackEvent": event.model_dump(mode="json"),

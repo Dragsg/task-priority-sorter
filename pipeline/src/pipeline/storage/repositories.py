@@ -200,6 +200,91 @@ def _apply_tag_overrides(generated_tags: list[str], payload: dict[str, Any] | No
     return effective
 
 
+def _get_edit_override_state(payload: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    overrides = payload.get("edit_overrides")
+    if not isinstance(overrides, dict):
+        return {}
+
+    normalized: dict[str, Any] = {}
+    title = overrides.get("title")
+    if isinstance(title, str):
+        cleaned_title = title.strip()
+        if cleaned_title:
+            normalized["title"] = cleaned_title
+
+    if "description" in overrides:
+        description = overrides.get("description")
+        if isinstance(description, str):
+            normalized["description"] = description
+        elif description is None:
+            normalized["description"] = ""
+
+    if "deadline_at" in overrides:
+        deadline_value = overrides.get("deadline_at")
+        if deadline_value in {None, ""}:
+            normalized["deadline_at"] = None
+        elif isinstance(deadline_value, str):
+            parsed_deadline = _parse_dt(deadline_value)
+            if parsed_deadline is not None:
+                normalized["deadline_at"] = parsed_deadline.isoformat()
+
+    return normalized
+
+
+def _set_edit_override_state(payload: dict[str, Any], *, overrides: dict[str, Any]) -> dict[str, Any]:
+    updated = dict(payload or {})
+    normalized = _get_edit_override_state({"edit_overrides": overrides})
+    if normalized:
+        updated["edit_overrides"] = normalized
+    else:
+        updated.pop("edit_overrides", None)
+    return updated
+
+
+def _deadline_hours_from_iso(value: str | None) -> float | None:
+    parsed = _parse_dt(value)
+    if parsed is None:
+        return None
+    delta = parsed.replace(tzinfo=None) - utc_now_naive()
+    return max(0.0, delta.total_seconds() / 3600)
+
+
+def _apply_edit_overrides_to_task(task: CanonicalTask, payload: dict[str, Any] | None) -> CanonicalTask:
+    overrides = _get_edit_override_state(payload)
+    if "deadline_at" not in overrides:
+        return task
+    deadline_at = _parse_dt(overrides["deadline_at"])
+    return task.model_copy(
+        update={
+            "deadline_at": deadline_at,
+            "deadline_hours": _deadline_hours_from_iso(overrides["deadline_at"]),
+        }
+    )
+
+
+def _apply_edit_overrides_to_card(card: PrioritizedTaskCard, payload: dict[str, Any] | None) -> PrioritizedTaskCard:
+    overrides = _get_edit_override_state(payload)
+    if not overrides:
+        return card
+
+    update: dict[str, Any] = {}
+    if "title" in overrides:
+        update["task_title"] = overrides["title"]
+    if "description" in overrides:
+        update["task_description"] = overrides["description"]
+    if "deadline_at" in overrides:
+        update["deadline_at_iso"] = overrides["deadline_at"]
+        update["deadline_hours"] = _deadline_hours_from_iso(overrides["deadline_at"])
+
+    return card.model_copy(update=update) if update else card
+
+
+def _priority_delta_for_tiers(*, suggested: PriorityTier, effective: PriorityTier) -> int:
+    return _LEARNING_PRIORITY_INDEX[effective.value] - _LEARNING_PRIORITY_INDEX[suggested.value]
+
+
 def _parse_payload_card(payload: dict[str, Any]) -> PrioritizedTaskCard | None:
     task_card_payload = payload.get("task_card") if isinstance(payload, dict) else None
     if not isinstance(task_card_payload, dict):
@@ -253,6 +338,7 @@ def _row_to_card(row: PipelineTaskRecord) -> PrioritizedTaskCard | None:
     card = _parse_payload_card(row.payload or {})
     if card is None:
         return None
+    card = _apply_edit_overrides_to_card(card, row.payload or {})
     return card.model_copy(
         update={
             "status": TaskStatus(row.status),
@@ -260,6 +346,7 @@ def _row_to_card(row: PipelineTaskRecord) -> PrioritizedTaskCard | None:
             "suggested_priority_tier": PriorityTier(row.suggested_priority_tier),
             "effective_priority_tier": PriorityTier(row.effective_priority_tier),
             "applied_priority_delta": row.applied_priority_delta,
+            "deadline_hours": row.deadline_hours,
             "tags": dedupe_tags(row.tags or card.tags),
             "confidence": row.confidence,
         }
@@ -270,6 +357,7 @@ def _row_to_task(row: PipelineTaskRecord) -> CanonicalTask | None:
     task = _parse_payload_task(row.payload or {})
     if task is None:
         return None
+    task = _apply_edit_overrides_to_task(task, row.payload or {})
     return _enrich_canonical_task(task)
 
 
@@ -340,6 +428,8 @@ class PipelineRepository(Protocol):
 
     def get_current_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]: ...
 
+    def get_completed_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]: ...
+
     def get_accepted_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]: ...
 
     def get_current_task_card(self, user_id: str, canonical_task_id: str) -> PrioritizedTaskCard | None: ...
@@ -356,6 +446,14 @@ class PipelineRepository(Protocol):
         canonical_task_id: str,
         *,
         tags: list[str],
+    ) -> PrioritizedTaskCard | None: ...
+
+    def update_task(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        updates: dict[str, Any],
     ) -> PrioritizedTaskCard | None: ...
 
     def apply_task_action(
@@ -456,6 +554,15 @@ class InMemoryPipelineRepository:
         cards = [card for card in cards if card is not None]
         return cards
 
+    def get_completed_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
+        cards = [
+            _row_to_card_from_memory(row)
+            for row in self.task_rows.values()
+            if row["user_id"] == user_id and row["status"] == TaskStatus.COMPLETED.value
+        ]
+        cards = [card for card in cards if card is not None]
+        return _sort_task_cards(cards)
+
     def get_accepted_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
         cards = [
             _row_to_card_from_memory(row)
@@ -475,7 +582,8 @@ class InMemoryPipelineRepository:
         row = self.task_rows.get((user_id, canonical_task_id))
         if row is None:
             return None
-        return _parse_payload_task(row["payload"])
+        task = _parse_payload_task(row["payload"])
+        return None if task is None else _apply_edit_overrides_to_task(task, row.get("payload", {}))
 
     def get_feedback_task_context(self, user_id: str, canonical_task_id: str) -> FeedbackTaskContext | None:
         row = self.task_rows.get((user_id, canonical_task_id))
@@ -500,6 +608,21 @@ class InMemoryPipelineRepository:
         if row is None:
             return None
         updated = _replace_tags_in_memory_row(row, tags=tags)
+        self.task_rows[(user_id, canonical_task_id)] = updated
+        self._refresh_current_cards(user_id)
+        return _row_to_card_from_memory(updated)
+
+    def update_task(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        updates: dict[str, Any],
+    ) -> PrioritizedTaskCard | None:
+        row = self.task_rows.get((user_id, canonical_task_id))
+        if row is None:
+            return None
+        updated = _update_memory_task_row(row, updates=updates)
         self.task_rows[(user_id, canonical_task_id)] = updated
         self._refresh_current_cards(user_id)
         return _row_to_card_from_memory(updated)
@@ -707,6 +830,9 @@ class SqlAlchemyPipelineRepository:
     def get_current_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
         return self._list_task_cards_for_status(user_id, TaskStatus.PENDING_REVIEW)
 
+    def get_completed_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
+        return self._list_task_cards_for_status(user_id, TaskStatus.COMPLETED)
+
     def get_accepted_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
         return self._list_task_cards_for_status(user_id, TaskStatus.ACCEPTED)
 
@@ -750,6 +876,23 @@ class SqlAlchemyPipelineRepository:
             if row is None:
                 return None
             _replace_tags_in_sql_row(row, tags=tags)
+            row.updated_at = utc_now_naive()
+            session.commit()
+            session.refresh(row)
+            return self._hydrate_card(row)
+
+    def update_task(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        updates: dict[str, Any],
+    ) -> PrioritizedTaskCard | None:
+        with Session(self.engine) as session:
+            row = self._get_task_row(session, user_id, canonical_task_id)
+            if row is None:
+                return None
+            _update_sql_task_row(row, updates=updates)
             row.updated_at = utc_now_naive()
             session.commit()
             session.refresh(row)
@@ -910,6 +1053,8 @@ def _feedback_context_from_row(row: PipelineTaskRecord) -> FeedbackTaskContext:
 
 def _feedback_context_from_memory_row(row: dict[str, Any]) -> FeedbackTaskContext:
     task = _parse_payload_task(row["payload"])
+    if task is not None:
+        task = _apply_edit_overrides_to_task(task, row.get("payload", {}))
     card = _row_to_card_from_memory(row)
     if task is None or card is None:
         raise ValueError("Task payload is incomplete.")
@@ -934,6 +1079,7 @@ def _row_to_card_from_memory(row: dict[str, Any]) -> PrioritizedTaskCard | None:
     card = _parse_payload_card(row["payload"])
     if card is None:
         return None
+    card = _apply_edit_overrides_to_card(card, row.get("payload", {}))
     return card.model_copy(
         update={
             "status": TaskStatus(row["status"]),
@@ -941,6 +1087,7 @@ def _row_to_card_from_memory(row: dict[str, Any]) -> PrioritizedTaskCard | None:
             "suggested_priority_tier": PriorityTier(row["suggested_priority_tier"]),
             "effective_priority_tier": PriorityTier(row["effective_priority_tier"]),
             "applied_priority_delta": row["applied_priority_delta"],
+            "deadline_hours": row["deadline_hours"],
             "tags": dedupe_tags(row["tags"] or card.tags),
             "confidence": row["confidence"],
         }
@@ -961,9 +1108,11 @@ def _merge_sql_task_row(
     effective_priority = PriorityTier(row.effective_priority_tier) if preserve_priority and row.effective_priority_tier else task_card.effective_priority_tier
     applied_priority_delta = row.applied_priority_delta if preserve_priority else task_card.applied_priority_delta
     status = existing_status if row.status else task_card.status
-    overrides = _get_tag_override_state(row.payload or {})
+    tag_overrides = _get_tag_override_state(row.payload or {})
+    edit_overrides = _get_edit_override_state(row.payload or {})
     generated_tags = dedupe_tags(task_card.tags)
     persisted_tags = _apply_tag_overrides(generated_tags, row.payload or {})
+    persisted_task = _apply_edit_overrides_to_task(canonical_task, row.payload or {})
 
     persisted_card = task_card.model_copy(
         update={
@@ -975,6 +1124,7 @@ def _merge_sql_task_row(
             "tags": persisted_tags,
         }
     )
+    persisted_card = _apply_edit_overrides_to_card(persisted_card, row.payload or {})
 
     row.origin = persisted_card.origin.value
     row.status = status.value
@@ -987,9 +1137,12 @@ def _merge_sql_task_row(
     row.confidence = persisted_card.confidence
     row.tags = persisted_tags
     row.payload = _set_tag_override_state(
-        _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision),
-        added_tags=overrides["added"],
-        removed_tags=overrides["removed"],
+        _set_edit_override_state(
+            _payload_for_task(task_card=persisted_card, canonical_task=persisted_task, llm_decision=llm_decision),
+            overrides=edit_overrides,
+        ),
+        added_tags=tag_overrides["added"],
+        removed_tags=tag_overrides["removed"],
         generated_tags=generated_tags,
     )
     row.decision_history = row.decision_history or []
@@ -1018,9 +1171,11 @@ def _merge_memory_task_row(
     applied_priority_delta = existing["applied_priority_delta"] if preserve_priority and existing else task_card.applied_priority_delta
     status = existing_status if existing else task_card.status
     existing_payload = existing.get("payload", {}) if existing else {}
-    overrides = _get_tag_override_state(existing_payload)
+    tag_overrides = _get_tag_override_state(existing_payload)
+    edit_overrides = _get_edit_override_state(existing_payload)
     generated_tags = dedupe_tags(task_card.tags)
     persisted_tags = _apply_tag_overrides(generated_tags, existing_payload)
+    persisted_task = _apply_edit_overrides_to_task(canonical_task, existing_payload)
 
     persisted_card = task_card.model_copy(
         update={
@@ -1032,6 +1187,7 @@ def _merge_memory_task_row(
             "tags": persisted_tags,
         }
     )
+    persisted_card = _apply_edit_overrides_to_card(persisted_card, existing_payload)
 
     return {
         "user_id": persisted_card.user_id,
@@ -1047,9 +1203,12 @@ def _merge_memory_task_row(
         "confidence": persisted_card.confidence,
         "tags": persisted_tags,
         "payload": _set_tag_override_state(
-            _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision),
-            added_tags=overrides["added"],
-            removed_tags=overrides["removed"],
+            _set_edit_override_state(
+                _payload_for_task(task_card=persisted_card, canonical_task=persisted_task, llm_decision=llm_decision),
+                overrides=edit_overrides,
+            ),
+            added_tags=tag_overrides["added"],
+            removed_tags=tag_overrides["removed"],
             generated_tags=generated_tags,
         ),
         "decision_history": list(existing.get("decision_history", [])) if existing else [],
@@ -1105,7 +1264,8 @@ def _apply_action_to_sql_row(
 
     row.status = after_status.value
     row.tags = dedupe_tags(row.tags or card.tags)
-    overrides = _get_tag_override_state(row.payload or {})
+    tag_overrides = _get_tag_override_state(row.payload or {})
+    edit_overrides = _get_edit_override_state(row.payload or {})
     updated_card = card.model_copy(
         update={
             "status": after_status,
@@ -1116,10 +1276,13 @@ def _apply_action_to_sql_row(
         }
     )
     row.payload = _set_tag_override_state(
-        _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload)),
-        added_tags=overrides["added"],
-        removed_tags=overrides["removed"],
-        generated_tags=overrides["generated"] or dedupe_tags(row.tags),
+        _set_edit_override_state(
+            _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload)),
+            overrides=edit_overrides,
+        ),
+        added_tags=tag_overrides["added"],
+        removed_tags=tag_overrides["removed"],
+        generated_tags=tag_overrides["generated"] or dedupe_tags(row.tags),
     )
     history = list(row.decision_history or [])
     history.append(
@@ -1147,20 +1310,131 @@ def _replace_tags_in_sql_row(
         raise ValueError("Task payload is incomplete.")
 
     desired_tags = dedupe_tags(tags)
-    overrides = _get_tag_override_state(row.payload or {})
-    generated_tags = overrides["generated"] or dedupe_tags(row.tags or card.tags)
+    tag_overrides = _get_tag_override_state(row.payload or {})
+    edit_overrides = _get_edit_override_state(row.payload or {})
+    generated_tags = tag_overrides["generated"] or dedupe_tags(row.tags or card.tags)
     added_tags = [tag for tag in desired_tags if tag not in generated_tags]
     removed_tags = [tag for tag in generated_tags if tag not in desired_tags]
 
     row.tags = desired_tags
     updated_card = card.model_copy(update={"tags": desired_tags})
     row.payload = _set_tag_override_state(
-        _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload)),
+        _set_edit_override_state(
+            _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload)),
+            overrides=edit_overrides,
+        ),
         added_tags=added_tags,
         removed_tags=removed_tags,
         generated_tags=generated_tags,
     )
     row.confidence = updated_card.confidence
+
+
+def _update_sql_task_row(
+    row: PipelineTaskRecord,
+    *,
+    updates: dict[str, Any],
+) -> None:
+    card = _row_to_card(row)
+    task = _row_to_task(row)
+    if card is None or task is None:
+        raise ValueError("Task payload is incomplete.")
+
+    next_task = task
+    next_card = card
+    edit_overrides = _get_edit_override_state(row.payload or {})
+    before_status = TaskStatus(row.status)
+    before_priority = PriorityTier(row.effective_priority_tier)
+    history = list(row.decision_history or [])
+
+    if "title" in updates:
+        edit_overrides["title"] = updates["title"]
+        next_card = next_card.model_copy(update={"task_title": updates["title"]})
+
+    if "description" in updates:
+        edit_overrides["description"] = updates["description"]
+        next_card = next_card.model_copy(update={"task_description": updates["description"]})
+
+    if "deadline_at" in updates:
+        edit_overrides["deadline_at"] = updates["deadline_at"]
+        deadline_at = _parse_dt(updates["deadline_at"])
+        deadline_hours = _deadline_hours_from_iso(updates["deadline_at"])
+        next_task = next_task.model_copy(update={"deadline_at": deadline_at, "deadline_hours": deadline_hours})
+        next_card = next_card.model_copy(update={"deadline_at_iso": updates["deadline_at"], "deadline_hours": deadline_hours})
+        row.deadline_hours = deadline_hours
+
+    if "priority_tier" in updates:
+        next_priority = PriorityTier(updates["priority_tier"])
+        new_delta = _priority_delta_for_tiers(
+            suggested=PriorityTier(row.suggested_priority_tier),
+            effective=next_priority,
+        )
+        incremental_delta = new_delta - row.applied_priority_delta
+        row.effective_priority_tier = next_priority.value
+        row.applied_priority_delta = new_delta
+        next_card = next_card.model_copy(
+            update={
+                "priority_tier": next_priority,
+                "effective_priority_tier": next_priority,
+                "applied_priority_delta": new_delta,
+            }
+        )
+        if next_priority != before_priority:
+            history.append(
+                TaskDecision(
+                    action=FeedbackAction.WRONG_PRIORITY,
+                    before_status=before_status,
+                    after_status=before_status,
+                    before_priority=before_priority,
+                    after_priority=next_priority,
+                    incremental_priority_delta=incremental_delta,
+                ).model_dump(mode="json")
+            )
+
+    if "status" in updates:
+        next_status = TaskStatus.COMPLETED if updates["status"] == "COMPLETED" else TaskStatus.PENDING_REVIEW
+        row.status = next_status.value
+        next_card = next_card.model_copy(update={"status": next_status})
+        if next_status == TaskStatus.COMPLETED:
+            row.completed_at = row.completed_at or utc_now_naive()
+        else:
+            row.completed_at = None
+        if next_status != before_status and next_status == TaskStatus.COMPLETED:
+            history.append(
+                TaskDecision(
+                    action=FeedbackAction.COMPLETED,
+                    before_status=before_status,
+                    after_status=next_status,
+                    before_priority=PriorityTier(row.effective_priority_tier),
+                    after_priority=PriorityTier(row.effective_priority_tier),
+                    incremental_priority_delta=0,
+                ).model_dump(mode="json")
+            )
+
+    tag_overrides = _get_tag_override_state(row.payload or {})
+    generated_tags = tag_overrides["generated"] or dedupe_tags(row.tags or card.tags)
+    if "tags" in updates:
+        desired_tags = dedupe_tags(updates["tags"])
+        added_tags = [tag for tag in desired_tags if tag not in generated_tags]
+        removed_tags = [tag for tag in generated_tags if tag not in desired_tags]
+        row.tags = desired_tags
+        next_card = next_card.model_copy(update={"tags": desired_tags})
+    else:
+        added_tags = tag_overrides["added"]
+        removed_tags = tag_overrides["removed"]
+
+    row.decision_history = history
+    row.confidence = next_card.confidence
+    row.payload = _set_tag_override_state(
+        _set_edit_override_state(
+            _payload_for_task(task_card=next_card, canonical_task=next_task, llm_decision=_parse_llm_decision(row.payload)),
+            overrides=edit_overrides,
+        ),
+        added_tags=added_tags,
+        removed_tags=removed_tags,
+        generated_tags=generated_tags,
+    )
+    row.updated_at = utc_now_naive()
 
 
 def _apply_action_to_memory_row(
@@ -1206,7 +1480,8 @@ def _apply_action_to_memory_row(
 
     row["status"] = after_status.value
     row["tags"] = dedupe_tags(row["tags"] or card.tags)
-    overrides = _get_tag_override_state(row.get("payload", {}))
+    tag_overrides = _get_tag_override_state(row.get("payload", {}))
+    edit_overrides = _get_edit_override_state(row.get("payload", {}))
     updated_card = card.model_copy(
         update={
             "status": after_status,
@@ -1217,10 +1492,13 @@ def _apply_action_to_memory_row(
         }
     )
     row["payload"] = _set_tag_override_state(
-        _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"])),
-        added_tags=overrides["added"],
-        removed_tags=overrides["removed"],
-        generated_tags=overrides["generated"] or dedupe_tags(row["tags"]),
+        _set_edit_override_state(
+            _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"])),
+            overrides=edit_overrides,
+        ),
+        added_tags=tag_overrides["added"],
+        removed_tags=tag_overrides["removed"],
+        generated_tags=tag_overrides["generated"] or dedupe_tags(row["tags"]),
     )
     history = list(row.get("decision_history", []))
     history.append(
@@ -1249,20 +1527,132 @@ def _replace_tags_in_memory_row(
         raise ValueError("Task payload is incomplete.")
 
     desired_tags = dedupe_tags(tags)
-    overrides = _get_tag_override_state(row.get("payload", {}))
-    generated_tags = overrides["generated"] or dedupe_tags(row["tags"] or card.tags)
+    tag_overrides = _get_tag_override_state(row.get("payload", {}))
+    edit_overrides = _get_edit_override_state(row.get("payload", {}))
+    generated_tags = tag_overrides["generated"] or dedupe_tags(row["tags"] or card.tags)
     added_tags = [tag for tag in desired_tags if tag not in generated_tags]
     removed_tags = [tag for tag in generated_tags if tag not in desired_tags]
 
     row["tags"] = desired_tags
     updated_card = card.model_copy(update={"tags": desired_tags})
     row["payload"] = _set_tag_override_state(
-        _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"])),
+        _set_edit_override_state(
+            _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"])),
+            overrides=edit_overrides,
+        ),
         added_tags=added_tags,
         removed_tags=removed_tags,
         generated_tags=generated_tags,
     )
     row["confidence"] = updated_card.confidence
+    row["updated_at"] = utc_now_naive()
+    return row
+
+
+def _update_memory_task_row(
+    row: dict[str, Any],
+    *,
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    card = _row_to_card_from_memory(row)
+    task = _parse_payload_task(row["payload"])
+    if card is None or task is None:
+        raise ValueError("Task payload is incomplete.")
+
+    next_task = task
+    next_card = card
+    edit_overrides = _get_edit_override_state(row.get("payload", {}))
+    before_status = TaskStatus(row["status"])
+    before_priority = PriorityTier(row["effective_priority_tier"])
+    history = list(row.get("decision_history", []))
+
+    if "title" in updates:
+        edit_overrides["title"] = updates["title"]
+        next_card = next_card.model_copy(update={"task_title": updates["title"]})
+
+    if "description" in updates:
+        edit_overrides["description"] = updates["description"]
+        next_card = next_card.model_copy(update={"task_description": updates["description"]})
+
+    if "deadline_at" in updates:
+        edit_overrides["deadline_at"] = updates["deadline_at"]
+        deadline_at = _parse_dt(updates["deadline_at"])
+        deadline_hours = _deadline_hours_from_iso(updates["deadline_at"])
+        next_task = next_task.model_copy(update={"deadline_at": deadline_at, "deadline_hours": deadline_hours})
+        next_card = next_card.model_copy(update={"deadline_at_iso": updates["deadline_at"], "deadline_hours": deadline_hours})
+        row["deadline_hours"] = deadline_hours
+
+    if "priority_tier" in updates:
+        next_priority = PriorityTier(updates["priority_tier"])
+        new_delta = _priority_delta_for_tiers(
+            suggested=PriorityTier(row["suggested_priority_tier"]),
+            effective=next_priority,
+        )
+        incremental_delta = new_delta - row["applied_priority_delta"]
+        row["effective_priority_tier"] = next_priority.value
+        row["applied_priority_delta"] = new_delta
+        next_card = next_card.model_copy(
+            update={
+                "priority_tier": next_priority,
+                "effective_priority_tier": next_priority,
+                "applied_priority_delta": new_delta,
+            }
+        )
+        if next_priority != before_priority:
+            history.append(
+                TaskDecision(
+                    action=FeedbackAction.WRONG_PRIORITY,
+                    before_status=before_status,
+                    after_status=before_status,
+                    before_priority=before_priority,
+                    after_priority=next_priority,
+                    incremental_priority_delta=incremental_delta,
+                ).model_dump(mode="json")
+            )
+
+    if "status" in updates:
+        next_status = TaskStatus.COMPLETED if updates["status"] == "COMPLETED" else TaskStatus.PENDING_REVIEW
+        row["status"] = next_status.value
+        next_card = next_card.model_copy(update={"status": next_status})
+        if next_status == TaskStatus.COMPLETED:
+            row["completed_at"] = row.get("completed_at") or utc_now_naive()
+        else:
+            row["completed_at"] = None
+        if next_status != before_status and next_status == TaskStatus.COMPLETED:
+            history.append(
+                TaskDecision(
+                    action=FeedbackAction.COMPLETED,
+                    before_status=before_status,
+                    after_status=next_status,
+                    before_priority=PriorityTier(row["effective_priority_tier"]),
+                    after_priority=PriorityTier(row["effective_priority_tier"]),
+                    incremental_priority_delta=0,
+                ).model_dump(mode="json")
+            )
+
+    tag_overrides = _get_tag_override_state(row.get("payload", {}))
+    generated_tags = tag_overrides["generated"] or dedupe_tags(row["tags"] or card.tags)
+    if "tags" in updates:
+        desired_tags = dedupe_tags(updates["tags"])
+        added_tags = [tag for tag in desired_tags if tag not in generated_tags]
+        removed_tags = [tag for tag in generated_tags if tag not in desired_tags]
+        row["tags"] = desired_tags
+        next_card = next_card.model_copy(update={"tags": desired_tags})
+    else:
+        added_tags = tag_overrides["added"]
+        removed_tags = tag_overrides["removed"]
+
+    row["decision_history"] = history
+    row["confidence"] = next_card.confidence
+    row["payload"] = _set_tag_override_state(
+        _set_edit_override_state(
+            _payload_for_task(task_card=next_card, canonical_task=next_task, llm_decision=_parse_llm_decision(row["payload"])),
+            overrides=edit_overrides,
+        ),
+        added_tags=added_tags,
+        removed_tags=removed_tags,
+        generated_tags=generated_tags,
+    )
     row["updated_at"] = utc_now_naive()
     return row
 

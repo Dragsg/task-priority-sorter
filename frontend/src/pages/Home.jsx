@@ -10,6 +10,7 @@ import {
   getStoredUserId,
   submitTaskFeedback,
   syncPrioritizedTasks,
+  updatePrioritizedTask,
   updateTaskTags,
 } from "../api";
 import PageNav from "../components/PageNav";
@@ -22,8 +23,9 @@ const TASK_TYPE_OPTIONS = [
   { value: "admin", label: "Admin" },
   { value: "social", label: "Social" },
 ];
-const DASHBOARD_CACHE_VERSION = 3;
+const DASHBOARD_CACHE_VERSION = 4;
 const PRIORITY_TIERS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+const TASK_STATUS_OPTIONS = ["OPEN", "COMPLETED"];
 
 function normalizeManualTag(value) {
   if (typeof value !== "string") {
@@ -259,6 +261,33 @@ function formatSourceTimestamp(value) {
   return parsed.toLocaleString();
 }
 
+function getTaskWorkflowStatus(task) {
+  return String(task?.status || "").toLowerCase() === "completed" ? "COMPLETED" : "OPEN";
+}
+
+function formatDateTimeLocalInput(value) {
+  if (!value) {
+    return "";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  const offsetMilliseconds = parsed.getTimezoneOffset() * 60 * 1000;
+  return new Date(parsed.getTime() - offsetMilliseconds).toISOString().slice(0, 16);
+}
+
+function createTaskEditDraft(task) {
+  return {
+    title: cleanPreviewText(task.task_title) || "",
+    description: task.task_description || "",
+    deadlineAt: formatDateTimeLocalInput(task.deadline_at_iso),
+    priorityTier: task.priority_tier || "MEDIUM",
+    status: getTaskWorkflowStatus(task),
+    tags: getVisibleTaskTags(task),
+  };
+}
+
 function cleanPreviewText(value) {
   if (!value) {
     return null;
@@ -492,6 +521,222 @@ function TaskSource({ task, compact = false }) {
   );
 }
 
+function TaskEditForm({
+  task,
+  availableTags,
+  editState,
+  onCancel,
+  onSave,
+}) {
+  const [draft, setDraft] = useState(() => createTaskEditDraft(task));
+  const [tagInput, setTagInput] = useState("");
+  const suggestions = useMemo(
+    () => buildTagSuggestions(availableTags, draft.tags, tagInput),
+    [availableTags, draft.tags, tagInput]
+  );
+
+  useEffect(() => {
+    setDraft(createTaskEditDraft(task));
+    setTagInput("");
+  }, [task]);
+
+  function updateDraft(field, value) {
+    setDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function commitTag(rawValue) {
+    const normalized = normalizeManualTag(rawValue);
+    if (!normalized) {
+      setTagInput("");
+      return;
+    }
+    setDraft((current) => ({
+      ...current,
+      tags: dedupeManualTags([...current.tags, normalized]),
+    }));
+    setTagInput("");
+  }
+
+  function removeTag(tagToRemove) {
+    setDraft((current) => ({
+      ...current,
+      tags: current.tags.filter((tag) => tag !== tagToRemove),
+    }));
+  }
+
+  function handleTagInputChange(event) {
+    const nextValue = event.target.value;
+    const segments = nextValue.split(",");
+    if (segments.length > 1) {
+      const completedTags = dedupeManualTags(segments.slice(0, -1));
+      setDraft((current) => ({
+        ...current,
+        tags: dedupeManualTags([...current.tags, ...completedTags]),
+      }));
+      setTagInput(segments[segments.length - 1]);
+      return;
+    }
+    setTagInput(nextValue);
+  }
+
+  function handleTagInputKeyDown(event) {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      commitTag(tagInput);
+      return;
+    }
+    if (event.key === "Backspace" && !tagInput && draft.tags.length) {
+      event.preventDefault();
+      removeTag(draft.tags[draft.tags.length - 1]);
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    await onSave(task.canonical_task_id, {
+      title: draft.title,
+      description: draft.description,
+      deadlineAt: draft.deadlineAt || null,
+      priorityTier: draft.priorityTier,
+      status: draft.status,
+      tags: draft.tags,
+    });
+  }
+
+  return (
+    <form className="task-edit-form" onSubmit={handleSubmit}>
+      <div className="task-edit-grid">
+        <label className="field-group">
+          <span>Title</span>
+          <input
+            className="auth-input"
+            disabled={editState?.isSaving}
+            onChange={(event) => updateDraft("title", event.target.value)}
+            type="text"
+            value={draft.title}
+          />
+        </label>
+        <label className="field-group">
+          <span>Priority tier</span>
+          <select
+            className="auth-input"
+            disabled={editState?.isSaving}
+            onChange={(event) => updateDraft("priorityTier", event.target.value)}
+            value={draft.priorityTier}
+          >
+            {PRIORITY_TIERS.map((priorityTier) => (
+              <option key={priorityTier} value={priorityTier}>
+                {formatPriorityTierLabel(priorityTier)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field-group">
+          <span>Deadline</span>
+          <input
+            className="auth-input"
+            disabled={editState?.isSaving}
+            onChange={(event) => updateDraft("deadlineAt", event.target.value)}
+            type="datetime-local"
+            value={draft.deadlineAt}
+          />
+        </label>
+        <label className="field-group">
+          <span>Status</span>
+          <select
+            className="auth-input"
+            disabled={editState?.isSaving}
+            onChange={(event) => updateDraft("status", event.target.value)}
+            value={draft.status}
+          >
+            {TASK_STATUS_OPTIONS.map((status) => (
+              <option key={status} value={status}>
+                {status === "COMPLETED" ? "Completed" : "Open"}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="field-group">
+        <span>Description</span>
+        <textarea
+          className="auth-input auth-textarea task-edit-textarea"
+          disabled={editState?.isSaving}
+          onChange={(event) => updateDraft("description", event.target.value)}
+          rows={4}
+          value={draft.description}
+        />
+      </label>
+      <label className="field-group">
+        <span>Tags</span>
+        <div className="manual-tag-field">
+          <div className="manual-tag-input-shell">
+            {draft.tags.map((tag) => (
+              <span className="manual-tag-chip" key={tag}>
+                {tag.replace(/_/g, " ")}
+                <button
+                  aria-label={`Remove ${tag}`}
+                  className="manual-tag-remove"
+                  disabled={editState?.isSaving}
+                  onClick={() => removeTag(tag)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              className="manual-tag-input"
+              disabled={editState?.isSaving}
+              onBlur={() => commitTag(tagInput)}
+              onChange={handleTagInputChange}
+              onKeyDown={handleTagInputKeyDown}
+              placeholder={draft.tags.length ? "Add another tag" : "Type a tag and press Enter"}
+              type="text"
+              value={tagInput}
+            />
+          </div>
+          {suggestions.length ? (
+            <div className="manual-tag-autocomplete task-edit-tag-autocomplete">
+              <div className="manual-tag-suggestions">
+                {suggestions.map((tag) => (
+                  <button
+                    className="manual-tag-suggestion"
+                    disabled={editState?.isSaving}
+                    key={tag}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => commitTag(tag)}
+                    type="button"
+                  >
+                    {tag.replace(/_/g, " ")}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </label>
+      {editState?.error ? <p className="error-text task-edit-message">{editState.error}</p> : null}
+      <div className="task-edit-actions">
+        <button className="auth-button" disabled={editState?.isSaving} type="submit">
+          {editState?.isSaving ? "Saving..." : "Save changes"}
+        </button>
+        <button
+          className="secondary-button"
+          disabled={editState?.isSaving}
+          onClick={onCancel}
+          type="button"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function TaskActions({
   task,
   feedbackState,
@@ -500,12 +745,18 @@ function TaskActions({
 }) {
   const feedbackLabel = feedbackState?.label ?? null;
   const priorityChangeOptions = getPriorityChangeOptions(task.priority_tier);
+  const isCompleted = getTaskWorkflowStatus(task) === "COMPLETED";
 
   return (
     <>
       {feedbackLabel ? (
         <p className="task-feedback-note">Updated: {feedbackLabel}</p>
       ) : null}
+      {isCompleted ? (
+        <p className="task-feedback-note">This task is completed. Use Edit if you want to reopen it.</p>
+      ) : null}
+      {!isCompleted ? (
+        <>
       <div className="task-actions">
         <button
           className="primary-button"
@@ -567,11 +818,27 @@ function TaskActions({
           Change priority to {formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}
         </button>
       </div>
+        </>
+      ) : null}
     </>
   );
 }
 
-function TaskCard({ task, feedbackState, isBusy, onFeedback, onChangeTags, availableTags, index = 0 }) {
+function TaskCard({
+  task,
+  feedbackState,
+  isBusy,
+  onFeedback,
+  onChangeTags,
+  onOpenEdit,
+  onCloseEdit,
+  onSaveEdit,
+  isEditing,
+  editState,
+  availableTags,
+  index = 0,
+}) {
+  const taskStatus = getTaskWorkflowStatus(task);
   return (
     <article className={`task-card task-card-queue task-card-tier-${task.priority_tier.toLowerCase()}`}>
       <div className="task-card-top task-card-top-queue">
@@ -581,6 +848,7 @@ function TaskCard({ task, feedbackState, isBusy, onFeedback, onChangeTags, avail
             <span className={`task-tier task-tier-${task.priority_tier.toLowerCase()}`}>
               {formatPriorityTierLabel(task.priority_tier)}
             </span>
+            {taskStatus === "COMPLETED" ? <span className="task-status-badge">Completed</span> : null}
             <h3 className="task-title">{cleanPreviewText(task.task_title) || "Untitled task"}</h3>
             <p className="task-queue-window">{formatActionWindow(task.action_window)}</p>
           </div>
@@ -589,6 +857,14 @@ function TaskCard({ task, feedbackState, isBusy, onFeedback, onChangeTags, avail
           {formatDeadline(task.deadline_hours) ? (
             <span className="task-queue-deadline">{formatDeadline(task.deadline_hours)}</span>
           ) : null}
+          <button
+            className="secondary-button task-edit-toggle"
+            disabled={isBusy}
+            onClick={() => (isEditing ? onCloseEdit(task.canonical_task_id) : onOpenEdit(task.canonical_task_id))}
+            type="button"
+          >
+            {isEditing ? "Close edit" : "Edit"}
+          </button>
         </div>
       </div>
       <p className="task-queue-summary">
@@ -606,6 +882,15 @@ function TaskCard({ task, feedbackState, isBusy, onFeedback, onChangeTags, avail
       </div>
       <div className="task-card-details">
         <TaskSource compact task={task} />
+        {isEditing ? (
+          <TaskEditForm
+            availableTags={availableTags}
+            editState={editState}
+            onCancel={() => onCloseEdit(task.canonical_task_id)}
+            onSave={onSaveEdit}
+            task={task}
+          />
+        ) : null}
         <p className="task-rationale task-rationale-queue">
           <span>Why now:</span> {cleanPreviewText(task.rationale)}
         </p>
@@ -626,6 +911,11 @@ function QueueCard({
   isBusy,
   onFeedback,
   onChangeTags,
+  onOpenEdit,
+  onCloseEdit,
+  onSaveEdit,
+  isEditing,
+  editState,
   availableTags,
   index,
 }) {
@@ -636,6 +926,11 @@ function QueueCard({
       isBusy={isBusy}
       onFeedback={onFeedback}
       onChangeTags={onChangeTags}
+      onOpenEdit={onOpenEdit}
+      onCloseEdit={onCloseEdit}
+      onSaveEdit={onSaveEdit}
+      isEditing={isEditing}
+      editState={editState}
       availableTags={availableTags}
       task={task}
     />
@@ -652,6 +947,8 @@ export default function Home() {
   const [availableTags, setAvailableTags] = useState([]);
   const [taskFeedbackStates, setTaskFeedbackStates] = useState({});
   const [taskTagUpdateStates, setTaskTagUpdateStates] = useState({});
+  const [taskEditStates, setTaskEditStates] = useState({});
+  const [editingTaskId, setEditingTaskId] = useState(null);
   const [taskError, setTaskError] = useState("");
   const [taskStatus, setTaskStatus] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
@@ -703,9 +1000,11 @@ export default function Home() {
 
   const priorityCounts = useMemo(() => {
     const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
-    tasks.forEach((task) => {
+    tasks
+      .filter((task) => getTaskWorkflowStatus(task) === "OPEN")
+      .forEach((task) => {
       counts[task.priority_tier] = (counts[task.priority_tier] || 0) + 1;
-    });
+      });
     return counts;
   }, [tasks]);
 
@@ -846,6 +1145,23 @@ export default function Home() {
     );
   }
 
+  function openTaskEditor(canonicalTaskId) {
+    setEditingTaskId(canonicalTaskId);
+    setTaskEditStates((current) => ({
+      ...current,
+      [canonicalTaskId]: { isSaving: false, error: "" },
+    }));
+  }
+
+  function closeTaskEditor(canonicalTaskId) {
+    setEditingTaskId((current) => (current === canonicalTaskId ? null : current));
+    setTaskEditStates((current) => {
+      const updated = { ...current };
+      delete updated[canonicalTaskId];
+      return updated;
+    });
+  }
+
   async function handleSyncTasks() {
     setIsSyncing(true);
     setTaskError("");
@@ -856,6 +1172,8 @@ export default function Home() {
       setAvailableTags(result.availableTags ?? []);
       setTaskFeedbackStates({});
       setTaskTagUpdateStates({});
+      setTaskEditStates({});
+      setEditingTaskId(null);
       const latestProfile = await fetchPipelineProfile();
       setPipelineProfile(latestProfile);
       setTaskStatus(buildSyncStatus(result));
@@ -931,6 +1249,31 @@ export default function Home() {
         delete updated[canonicalTaskId];
         return updated;
       });
+    }
+  }
+
+  async function handleTaskEditSave(canonicalTaskId, payload) {
+    setTaskError("");
+    setTaskStatus("");
+    setTaskEditStates((current) => ({
+      ...current,
+      [canonicalTaskId]: { isSaving: true, error: "" },
+    }));
+
+    try {
+      const result = await updatePrioritizedTask(canonicalTaskId, payload);
+      updateTaskListFromResponse(result);
+      if (result.profile) {
+        setPipelineProfile(result.profile);
+      }
+      setTaskStatus("Task details updated.");
+      closeTaskEditor(canonicalTaskId);
+    } catch (error) {
+      setTaskError(error.message);
+      setTaskEditStates((current) => ({
+        ...current,
+        [canonicalTaskId]: { isSaving: false, error: error.message },
+      }));
     }
   }
 
@@ -1080,7 +1423,7 @@ export default function Home() {
             <p className="summary-value summary-value-stack">
               <span>{priorityCounts.CRITICAL} critical</span>
               <span>{priorityCounts.HIGH} high</span>
-              <span>{tasks.length} active</span>
+              <span>{tasks.filter((task) => getTaskWorkflowStatus(task) === "OPEN").length} active</span>
             </p>
           </article>
         </div>
@@ -1254,12 +1597,17 @@ export default function Home() {
               {tasks.map((task, index) => (
                 <QueueCard
                   availableTags={availableTags}
+                  editState={taskEditStates[task.canonical_task_id]}
                   feedbackState={taskFeedbackStates[task.canonical_task_id]}
                   index={index}
-                  isBusy={Boolean(taskTagUpdateStates[task.canonical_task_id])}
+                  isBusy={Boolean(taskTagUpdateStates[task.canonical_task_id] || taskEditStates[task.canonical_task_id]?.isSaving)}
+                  isEditing={editingTaskId === task.canonical_task_id}
                   key={task.canonical_task_id}
+                  onCloseEdit={closeTaskEditor}
                   onFeedback={handleFeedback}
                   onChangeTags={handleTaskTagChange}
+                  onOpenEdit={openTaskEditor}
+                  onSaveEdit={handleTaskEditSave}
                   task={task}
                 />
               ))}
