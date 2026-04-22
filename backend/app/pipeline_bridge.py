@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -13,7 +12,7 @@ from uuid import uuid4
 from dotenv import load_dotenv
 
 from config import Config
-<<<<<<< HEAD
+from .calendar_service import clear_calendar_context, parse_calendar_context
 from .db import (
     get_gmail_link,
     get_outlook_link,
@@ -21,10 +20,6 @@ from .db import (
     list_stored_messages,
     save_messages,
 )
-=======
-from .calendar_service import clear_calendar_context, parse_calendar_context
-from .db import get_gmail_link, get_outlook_link, get_user_by_id, list_stored_messages, save_messages
->>>>>>> 197cbed (WIP: local changes before syncing main)
 from .gmail_service import list_new_messages, list_recent_messages
 from .outlook_service import list_new_outlook_messages, list_recent_outlook_messages
 

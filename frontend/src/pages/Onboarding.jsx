@@ -2,17 +2,12 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
-<<<<<<< HEAD
-  fetchCurrentUser,
+  deleteOnboardingCalendar,
+  fetchOnboardingContext,
   getStoredUser,
   saveOnboardingPreferences,
   storeUser,
-=======
-  deleteOnboardingCalendar,
-  fetchOnboardingContext,
-  saveOnboardingPreferences,
   uploadOnboardingCalendar,
->>>>>>> 197cbed (WIP: local changes before syncing main)
 } from "../api";
 import PageNav from "../components/PageNav";
 import { PREFERENCE_OPTIONS } from "../preferences";
@@ -67,20 +62,14 @@ export default function Onboarding() {
     try {
       setBusy(true);
       setError("");
-<<<<<<< HEAD
-      await saveOnboardingPreferences(preferences);
-      if (user) {
-        const updatedUser = { ...user, preferences };
+      setStatus("");
+      const result = await saveOnboardingPreferences(preferences);
+      const updatedUser = result.user ?? (user ? { ...user, preferences } : null);
+      if (updatedUser) {
         setUser(updatedUser);
         storeUser(updatedUser);
       }
-      navigate("/home");
-=======
-      setStatus("");
-      const result = await saveOnboardingPreferences(preferences);
-      setUser(result.user);
       setStatus("Preferences saved.");
->>>>>>> 197cbed (WIP: local changes before syncing main)
     } catch (submitError) {
       setError(submitError.message);
     } finally {
@@ -88,8 +77,6 @@ export default function Onboarding() {
     }
   }
 
-<<<<<<< HEAD
-=======
   async function handleCalendarUpload(event) {
     event.preventDefault();
     if (!calendarFile) {
@@ -133,8 +120,6 @@ export default function Onboarding() {
 
   const calendarSource = onboarding.calendar_source;
   const busyWindowCount = onboarding.busy_windows?.length ?? 0;
-
->>>>>>> 197cbed (WIP: local changes before syncing main)
   return (
     <main className="simple-shell">
       <PageNav />
@@ -142,13 +127,8 @@ export default function Onboarding() {
         <p className="auth-eyebrow">Preferences</p>
         <h1 className="simple-title">Shape the context your queue learns from</h1>
         <p className="simple-copy">
-<<<<<<< HEAD
-          You&apos;re signed in as <strong>{user?.email ?? "your account"}</strong>.
-          Choose the context you want this workspace to support first.
-=======
           You&apos;re signed in as <strong>{user.email}</strong>. Set your main focus mode and
           optionally add a calendar file for timing context.
->>>>>>> 197cbed (WIP: local changes before syncing main)
         </p>
         <p className="simple-note">
           Calendar uploads are used only as scheduling context. The system stores normalized busy

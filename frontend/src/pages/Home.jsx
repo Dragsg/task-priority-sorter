@@ -434,18 +434,12 @@ function QueueCard({
 
 export default function Home() {
   const navigate = useNavigate();
-<<<<<<< HEAD
   const cachedUserId = getStoredUserId();
   const cachedDashboard = readDashboardCache(cachedUserId);
   const [user, setUser] = useState(() => cachedDashboard?.user ?? getStoredUser());
   const [tasks, setTasks] = useState(() => cachedDashboard?.tasks ?? []);
   const [pipelineProfile, setPipelineProfile] = useState(() => cachedDashboard?.profile ?? null);
-=======
-  const [user, setUser] = useState(null);
-  const [tasks, setTasks] = useState([]);
-  const [pipelineProfile, setPipelineProfile] = useState(null);
   const [availableTags, setAvailableTags] = useState([]);
->>>>>>> 197cbed (WIP: local changes before syncing main)
   const [taskFeedbackStates, setTaskFeedbackStates] = useState({});
   const [taskError, setTaskError] = useState("");
   const [taskStatus, setTaskStatus] = useState("");
@@ -716,16 +710,8 @@ export default function Home() {
     }));
   }
 
-<<<<<<< HEAD
-  function toggleTaskExpansion(canonicalTaskId) {
-    setExpandedTaskIds((current) => ({
-      ...current,
-      [canonicalTaskId]: !current[canonicalTaskId],
-    }));
-=======
   if (!user) {
     return <main className="simple-shell">Loading your dashboard...</main>;
->>>>>>> 197cbed (WIP: local changes before syncing main)
   }
 
   return (
