@@ -252,6 +252,48 @@ class TaskRoutesTestCase(unittest.TestCase):
             tags=["deadline"],
         )
 
+    @patch("app.routes.update_prioritized_task")
+    def test_task_update_route_returns_payload(self, update_prioritized_task):
+        update_prioritized_task.return_value = {
+            "success": True,
+            "taskId": "canon-1",
+            "task": {"canonical_task_id": "canon-1", "task_title": "Updated task"},
+            "items": [{"canonical_task_id": "canon-1", "task_title": "Updated task"}],
+            "profile": {"profile_version": 6},
+            "availableTags": ["deadline", "custom_focus"],
+        }
+
+        response = self.client.patch(
+            "/api/tasks/canon-1",
+            json={
+                "title": "Updated task",
+                "description": "Fresh details",
+                "deadlineAt": "2026-04-24T18:00:00",
+                "priorityTier": "HIGH",
+                "status": "COMPLETED",
+                "tags": ["deadline", "custom_focus"],
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["taskId"], "canon-1")
+        self.assertEqual(payload["profile"]["profile_version"], 6)
+        update_prioritized_task.assert_called_once_with(
+            7,
+            "canon-1",
+            updates={
+                "title": "Updated task",
+                "description": "Fresh details",
+                "deadlineAt": "2026-04-24T18:00:00",
+                "priorityTier": "HIGH",
+                "status": "COMPLETED",
+                "tags": ["deadline", "custom_focus"],
+            },
+        )
+
     @patch("app.routes.get_pipeline_recompute_status")
     def test_recompute_status_route_returns_payload(self, get_pipeline_recompute_status):
         get_pipeline_recompute_status.return_value = {

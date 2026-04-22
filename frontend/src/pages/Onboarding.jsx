@@ -5,12 +5,58 @@ import {
   deleteOnboardingCalendar,
   fetchOnboardingContext,
   getStoredUser,
+  getStoredUserId,
   saveOnboardingPreferences,
   storeUser,
   uploadOnboardingCalendar,
 } from "../api";
 import PageNav from "../components/PageNav";
 import { PREFERENCE_OPTIONS } from "../preferences";
+
+const ONBOARDING_CACHE_VERSION = 1;
+
+function getOnboardingCacheKey(userId) {
+  return `task-priority-onboarding:v${ONBOARDING_CACHE_VERSION}:${userId}`;
+}
+
+function readOnboardingCache(userId) {
+  if (!userId) {
+    return null;
+  }
+
+  try {
+    const raw = localStorage.getItem(getOnboardingCacheKey(userId));
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return {
+      user: parsed.user ?? null,
+      onboarding: parsed.onboarding ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeOnboardingCache(userId, user, onboarding) {
+  if (!userId) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      getOnboardingCacheKey(userId),
+      JSON.stringify({
+        cachedAt: new Date().toISOString(),
+        user: user ?? null,
+        onboarding: onboarding ?? null,
+      })
+    );
+  } catch {
+    // Ignore cache write failures and keep the page usable.
+  }
+}
 
 function formatCalendarTimestamp(value) {
   if (!value) {
@@ -25,9 +71,12 @@ function formatCalendarTimestamp(value) {
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(() => getStoredUser());
+  const storedUserId = getStoredUserId();
+  const storedUser = getStoredUser();
+  const [cachedOnboarding] = useState(() => readOnboardingCache(storedUserId));
+  const [user, setUser] = useState(() => cachedOnboarding?.user ?? storedUser);
   const [preferences, setPreferences] = useState("");
-  const [onboarding, setOnboarding] = useState(null);
+  const [onboarding, setOnboarding] = useState(() => cachedOnboarding?.onboarding ?? null);
   const [calendarFile, setCalendarFile] = useState(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -43,14 +92,33 @@ export default function Onboarding() {
         const savedPreference =
           data.user?.preferences || data.onboarding?.static_preferences?.focus_preference || "";
         setPreferences(savedPreference);
-      } catch {
+      } catch (loadError) {
+        if (cachedOnboarding) {
+          setError(loadError.message || "Using your saved preferences while fresh context loads.");
+          return;
+        }
         clearStoredToken();
         navigate("/", { replace: true });
       }
     }
 
+    if (cachedOnboarding) {
+      const savedPreference =
+        cachedOnboarding.user?.preferences
+        || cachedOnboarding.onboarding?.static_preferences?.focus_preference
+        || "";
+      setPreferences(savedPreference);
+    }
+
     loadContext();
   }, [navigate]);
+
+  useEffect(() => {
+    if (!user?.userId || !onboarding) {
+      return;
+    }
+    writeOnboardingCache(user.userId, user, onboarding);
+  }, [onboarding, user]);
 
   async function handleSubmit(event) {
     event.preventDefault();

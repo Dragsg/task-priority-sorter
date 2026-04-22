@@ -30,6 +30,7 @@ from .pipeline_bridge import (
     save_calendar_context,
     submit_task_feedback,
     sync_onboarding_context,
+    update_prioritized_task,
     update_prioritized_task_tags,
 )
 from .account_utils import (
@@ -617,6 +618,26 @@ def update_task_card_tags(canonical_task_id: str):
             user_id,
             canonical_task_id,
             tags=data.get("tags"),
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except LookupError as error:
+        return jsonify({"error": str(error)}), 404
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(result)
+
+
+@api.patch("/tasks/<canonical_task_id>")
+def update_task_card(canonical_task_id: str):
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        data = request.get_json() or {}
+        result = update_prioritized_task(
+            user_id,
+            canonical_task_id,
+            updates=data,
         )
     except ValueError as error:
         return jsonify({"error": str(error)}), 422

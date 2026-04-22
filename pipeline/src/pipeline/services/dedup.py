@@ -76,6 +76,7 @@ class TaskDeduplicator:
     def _merge_cluster(self, cluster: list[TaskSignal], *, run_id: str) -> CanonicalTask:
         first = cluster[0]
         representative = self._select_representative_signal(cluster)
+        deadline_at_values = [signal.deadline_at for signal in cluster if signal.deadline_at is not None]
         deadline_values = [signal.deadline_hours for signal in cluster if signal.deadline_hours is not None]
         sender_roles = list({signal.sender_role for signal in cluster})
         sender_ids = list({signal.sender_id for signal in cluster if signal.sender_id})
@@ -96,6 +97,7 @@ class TaskDeduplicator:
             task_type=first.task_type,
             topic_entity=first.topic_entity,
             source_ids=[signal.source_id for signal in cluster],
+            deadline_at=min(deadline_at_values) if deadline_at_values else None,
             deadline_hours=min(deadline_values) if deadline_values else None,
             signal_count=len(cluster),
             platforms_seen=sorted(platforms_seen, key=lambda item: item.value),

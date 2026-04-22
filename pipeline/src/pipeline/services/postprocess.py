@@ -58,6 +58,7 @@ class PostProcessor:
             rationale=llm_output.rationale,
             confidence=llm_output.confidence,
             needs_user_review=llm_output.confidence < self.settings.profile_confidence_threshold,
+            deadline_at_iso=task.deadline_at.isoformat() if task.deadline_at else None,
             deadline_hours=task.deadline_hours,
             platforms_seen=task.platforms_seen,
             profile_adjustment_made=llm_output.profile_adjustment_made,

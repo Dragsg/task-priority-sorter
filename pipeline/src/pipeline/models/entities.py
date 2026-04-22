@@ -103,6 +103,7 @@ class CanonicalTask(BaseModel):
     task_type: TaskType
     topic_entity: TopicEntity
     source_ids: list[str]
+    deadline_at: datetime | None = None
     deadline_hours: float | None = None
     priority_score: int | None = None
     priority_tier: PriorityTier | None = None
@@ -255,6 +256,7 @@ class PrioritizedTaskCard(BaseModel):
     rationale: str
     confidence: float
     needs_user_review: bool
+    deadline_at_iso: str | None = None
     deadline_hours: float | None = None
     platforms_seen: list[Platform] = Field(default_factory=list)
     profile_adjustment_made: bool = False

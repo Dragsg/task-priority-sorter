@@ -213,3 +213,53 @@ def test_added_task_tag_stays_after_rerun():
 
     assert current_card is not None
     assert "custom_focus" in current_card.tags
+
+
+def test_direct_task_edits_survive_rerun():
+    repository = InMemoryPipelineRepository()
+    settings = PipelineSettings(profile_confidence_threshold=0.65)
+    pipeline = PriorityPipeline(repository, settings=settings)
+
+    repository.upsert_raw_messages(
+        [
+            RawMessage(
+                user_id="user-5",
+                platform=Platform.GMAIL,
+                source_id="msg-6",
+                subject="Prepare lab report by Friday",
+                snippet="Please submit the lab report by Friday evening.",
+                body_text="Please submit the lab report by Friday evening through the portal.",
+                sender_display="Teaching Team",
+                sender_email="teaching@school.edu",
+                sender_domain="school.edu",
+            )
+        ]
+    )
+
+    first_bundle = pipeline.run_for_user("user-5")
+    card = first_bundle.task_cards[0]
+
+    repository.update_task(
+        "user-5",
+        card.canonical_task_id,
+        updates={
+            "title": "Finish lab report draft",
+            "description": "Use the new grading rubric before submitting.",
+            "deadline_at": "2026-04-25T18:30:00+00:00",
+            "priority_tier": "CRITICAL",
+            "status": "COMPLETED",
+            "tags": ["lab", "writing"],
+        },
+    )
+
+    pipeline.run_for_user("user-5")
+    completed_cards = repository.get_completed_task_cards("user-5")
+
+    assert len(completed_cards) == 1
+    current_card = completed_cards[0]
+    assert current_card.task_title == "Finish lab report draft"
+    assert current_card.task_description == "Use the new grading rubric before submitting."
+    assert current_card.deadline_at_iso == "2026-04-25T18:30:00+00:00"
+    assert current_card.priority_tier.value == "CRITICAL"
+    assert current_card.status.value == "completed"
+    assert current_card.tags == ["lab", "writing"]
