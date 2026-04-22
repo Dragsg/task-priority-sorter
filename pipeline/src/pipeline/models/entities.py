@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from pipeline.models.enums import (
     ActionWindow,
@@ -13,6 +13,8 @@ from pipeline.models.enums import (
     Platform,
     PriorityTier,
     SenderRole,
+    TaskOrigin,
+    TaskStatus,
     TaskType,
 )
 from pipeline.utils.time import utc_now_naive
@@ -63,11 +65,12 @@ class TopicEntity(BaseModel):
 
 
 class TaskSignal(BaseModel):
-    schema_version: Literal["task_signal.v1"] = "task_signal.v1"
+    schema_version: Literal["task_signal.v2"] = "task_signal.v2"
     user_id: str
     run_id: str | None = None
     source_id: str
     platform: Platform
+    origin: TaskOrigin = TaskOrigin.EMAIL
     timestamp: datetime | None = None
     sender_id: str | None = None
     sender_display: str | None = None
@@ -88,13 +91,15 @@ class TaskSignal(BaseModel):
     topic_entity: TopicEntity
     signal_count: int = 1
     platforms_seen: list[Platform] = Field(default_factory=list)
+    manual_tags: list[str] = Field(default_factory=list)
 
 
 class CanonicalTask(BaseModel):
-    schema_version: Literal["canonical_task.v1"] = "canonical_task.v1"
+    schema_version: Literal["canonical_task.v2"] = "canonical_task.v2"
     canonical_task_id: str
     user_id: str
     run_id: str
+    origin: TaskOrigin = TaskOrigin.EMAIL
     task_type: TaskType
     topic_entity: TopicEntity
     source_ids: list[str]
@@ -113,6 +118,7 @@ class CanonicalTask(BaseModel):
     representative_body_excerpt: str | None = None
     representative_sender_display: str | None = None
     representative_timestamp: datetime | None = None
+    manual_tags: list[str] = Field(default_factory=list)
 
 
 class EntityWeight(BaseModel):
@@ -134,14 +140,28 @@ class SenderWeight(BaseModel):
     weight: float = 1.0
 
 
+class TaskTypeWeight(BaseModel):
+    accept_rate: float | None = None
+    priority_multiplier: float = 1.0
+    observation_count: int = 0
+
+
+class TagWeight(BaseModel):
+    accept_rate: float | None = None
+    priority_multiplier: float = 1.0
+    observation_count: int = 0
+
+
 class BehaviorProfile(BaseModel):
-    schema_version: Literal["behavior_profile.v1"] = "behavior_profile.v1"
+    schema_version: Literal["behavior_profile.v2"] = "behavior_profile.v2"
     user_id: str
     profile_version: int = 1
     confidence: float = 0.0
     task_type_start_leads: dict[TaskType, float] = Field(default_factory=dict)
     entity_weights: dict[str, EntityWeight] = Field(default_factory=dict)
     sender_weights: dict[str, SenderWeight] = Field(default_factory=dict)
+    task_type_weights: dict[TaskType, TaskTypeWeight] = Field(default_factory=dict)
+    tag_weights: dict[str, TagWeight] = Field(default_factory=dict)
     decision_window: list[float] = Field(default_factory=list)
     peak_action_hour: int | None = None
     low_energy_hours: list[int] = Field(default_factory=list)
@@ -155,18 +175,28 @@ class AvailabilityWindow(BaseModel):
     label: str | None = None
 
 
+class CalendarSource(BaseModel):
+    type: Literal["ics"] = "ics"
+    filename: str
+    uploaded_at: datetime
+    source_hash: str
+    calendar_timezone: str | None = None
+    lookahead_days: int = 21
+
+
 class OnboardingContext(BaseModel):
-    schema_version: Literal["onboarding_context.v1"] = "onboarding_context.v1"
+    schema_version: Literal["onboarding_context.v2"] = "onboarding_context.v2"
     user_id: str
     timezone: str = "Asia/Singapore"
     timetable_summary: str | None = None
     busy_windows: list[AvailabilityWindow] = Field(default_factory=list)
     recurring_task_notes: list[str] = Field(default_factory=list)
     static_preferences: dict[str, Any] = Field(default_factory=dict)
+    calendar_source: CalendarSource | None = None
 
 
 class FeedbackEvent(BaseModel):
-    schema_version: Literal["feedback_event.v1"] = "feedback_event.v1"
+    schema_version: Literal["feedback_event.v2"] = "feedback_event.v2"
     user_id: str
     canonical_task_id: str
     action: FeedbackAction
@@ -178,6 +208,10 @@ class FeedbackEvent(BaseModel):
     entity_type: EntityType | None = None
     sender_hash: str | None = None
     deadline_hours: float | None = None
+    task_tags: list[str] = Field(default_factory=list)
+    priority_before: PriorityTier | None = None
+    priority_after: PriorityTier | None = None
+    incremental_priority_delta: int = 0
 
 
 class LlmDecision(BaseModel):
@@ -193,13 +227,30 @@ class LlmDecision(BaseModel):
     created_at: datetime = Field(default_factory=utc_now_naive)
 
 
+class TaskDecision(BaseModel):
+    action: FeedbackAction
+    occurred_at: datetime = Field(default_factory=utc_now_naive)
+    before_status: TaskStatus
+    after_status: TaskStatus
+    before_priority: PriorityTier
+    after_priority: PriorityTier
+    incremental_priority_delta: int = 0
+
+
 class PrioritizedTaskCard(BaseModel):
-    schema_version: Literal["task_card.v1"] = "task_card.v1"
+    schema_version: Literal["task_card.v2"] = "task_card.v2"
     task_id: str
     canonical_task_id: str
     user_id: str
     run_id: str
+    status: TaskStatus = TaskStatus.PENDING_REVIEW
+    origin: TaskOrigin = TaskOrigin.EMAIL
+    task_type: TaskType = TaskType.ADMIN
+    entity_key: str | None = None
     priority_tier: PriorityTier
+    suggested_priority_tier: PriorityTier | None = None
+    effective_priority_tier: PriorityTier | None = None
+    applied_priority_delta: int = 0
     action_window: ActionWindow
     rationale: str
     confidence: float
@@ -221,6 +272,17 @@ class PrioritizedTaskCard(BaseModel):
     profile_version: int | None = None
     prompt_version: str | None = None
     schema_version_ref: str | None = None
+    sender_ids: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def populate_priority_fields(self) -> "PrioritizedTaskCard":
+        if self.suggested_priority_tier is None:
+            self.suggested_priority_tier = self.priority_tier
+        if self.effective_priority_tier is None:
+            self.effective_priority_tier = self.priority_tier
+        self.priority_tier = self.effective_priority_tier
+        return self
 
 
 class EntityAlias(BaseModel):
@@ -239,3 +301,4 @@ class StructuredLlmOutput(BaseModel):
     confidence: float
     profile_adjustment_made: bool
     adjustment_reason: str | None = None
+    tags: list[str] = Field(default_factory=list)

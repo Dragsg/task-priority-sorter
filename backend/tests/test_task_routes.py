@@ -1,4 +1,5 @@
 import unittest
+from io import BytesIO
 from unittest.mock import patch
 
 from app import create_app
@@ -32,6 +33,7 @@ class TaskRoutesTestCase(unittest.TestCase):
         self.assertEqual(response.get_json()["items"][0]["canonical_task_id"], "canon-1")
         list_prioritized_tasks.assert_called_once_with(7)
 
+    @patch("app.routes.get_available_tags")
     @patch("app.routes.get_profile_snapshot")
     @patch("app.routes.list_prioritized_tasks")
     @patch("app.routes.get_user_by_id")
@@ -40,6 +42,7 @@ class TaskRoutesTestCase(unittest.TestCase):
         get_user_by_id,
         list_prioritized_tasks,
         get_profile_snapshot,
+        get_available_tags,
     ):
         get_user_by_id.return_value = {
             "user_id": 7,
@@ -49,6 +52,7 @@ class TaskRoutesTestCase(unittest.TestCase):
         }
         list_prioritized_tasks.return_value = [{"canonical_task_id": "canon-1"}]
         get_profile_snapshot.return_value = {"profile_version": 5}
+        get_available_tags.return_value = ["assignment", "urgent"]
 
         response = self.client.get("/api/dashboard", headers=self.headers)
 
@@ -57,6 +61,7 @@ class TaskRoutesTestCase(unittest.TestCase):
         self.assertEqual(payload["user"]["userId"], 7)
         self.assertEqual(payload["items"][0]["canonical_task_id"], "canon-1")
         self.assertEqual(payload["profile"]["profile_version"], 5)
+        self.assertEqual(payload["availableTags"], ["assignment", "urgent"])
 
     @patch("app.routes.get_task_statistics_snapshot")
     @patch("app.routes.get_user_by_id")
@@ -136,6 +141,7 @@ class TaskRoutesTestCase(unittest.TestCase):
                 "taskType": "submission",
                 "deadlineAt": "2026-04-22T23:59:00",
                 "entityName": "CS2103T",
+                "tags": ["assignment", "urgent"],
             },
             headers=self.headers,
         )
@@ -149,7 +155,53 @@ class TaskRoutesTestCase(unittest.TestCase):
             task_type="submission",
             deadline_at="2026-04-22T23:59:00",
             entity_name="CS2103T",
+            tags=["assignment", "urgent"],
         )
+
+    @patch("app.routes.get_onboarding_context_snapshot")
+    @patch("app.routes.get_user_by_id")
+    def test_onboarding_context_route_returns_payload(self, get_user_by_id, get_onboarding_context_snapshot):
+        get_user_by_id.return_value = {
+            "user_id": 7,
+            "name": "Avery",
+            "email": "avery@example.com",
+            "preferences": "School",
+        }
+        get_onboarding_context_snapshot.return_value = {
+            "timezone": "Asia/Singapore",
+            "busy_windows": [],
+            "recurring_task_notes": [],
+            "static_preferences": {"focus_preference": "School"},
+            "calendar_source": None,
+        }
+
+        response = self.client.get("/api/onboarding/context", headers=self.headers)
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["user"]["userId"], 7)
+        self.assertFalse(payload["calendarActive"])
+
+    @patch("app.routes.save_calendar_context")
+    def test_onboarding_calendar_upload_route_returns_payload(self, save_calendar_context):
+        save_calendar_context.return_value = {
+            "timezone": "Asia/Singapore",
+            "busy_windows": [],
+            "recurring_task_notes": [],
+            "static_preferences": {},
+            "calendar_source": {"filename": "class.ics"},
+        }
+
+        response = self.client.post(
+            "/api/onboarding/calendar",
+            data={"file": (BytesIO(b"BEGIN:VCALENDAR\nEND:VCALENDAR"), "class.ics")},
+            headers=self.headers,
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["calendarActive"])
+        save_calendar_context.assert_called_once()
 
     @patch("app.routes.submit_task_feedback")
     def test_task_feedback_route_validates_and_returns_payload(self, submit_task_feedback):

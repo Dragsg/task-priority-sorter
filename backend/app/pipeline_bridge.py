@@ -13,6 +13,7 @@ from uuid import uuid4
 from dotenv import load_dotenv
 
 from config import Config
+<<<<<<< HEAD
 from .db import (
     get_gmail_link,
     get_outlook_link,
@@ -20,6 +21,10 @@ from .db import (
     list_stored_messages,
     save_messages,
 )
+=======
+from .calendar_service import clear_calendar_context, parse_calendar_context
+from .db import get_gmail_link, get_outlook_link, get_user_by_id, list_stored_messages, save_messages
+>>>>>>> 197cbed (WIP: local changes before syncing main)
 from .gmail_service import list_new_messages, list_recent_messages
 from .outlook_service import list_new_outlook_messages, list_recent_outlook_messages
 
@@ -44,8 +49,8 @@ from pipeline.models import (
 )
 from pipeline.services.pipeline import PriorityPipeline
 from pipeline.storage.db import create_engine_from_url, create_schema
-from pipeline.storage.repositories import SqlAlchemyPipelineRepository
-from pipeline.utils.text import normalize_entity_name
+from pipeline.storage.repositories import SqlAlchemyPipelineRepository, compute_priority_adjustment
+from pipeline.utils.tags import dedupe_tags, merge_tag_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +248,64 @@ def sync_onboarding_context(user_id: int, preferences: str | None = None) -> dic
     return updated.model_dump(mode="json")
 
 
+def get_onboarding_context_snapshot(user_id: int) -> dict:
+    repository = get_pipeline_repository()
+    pipeline_user_id = str(user_id)
+    context = repository.get_onboarding_context(pipeline_user_id) or OnboardingContext(user_id=pipeline_user_id)
+    user = get_user_by_id(user_id)
+    if user and user.get("preferences"):
+        static_preferences = dict(context.static_preferences)
+        static_preferences["focus_preference"] = user["preferences"]
+        context = context.model_copy(update={"static_preferences": static_preferences})
+        repository.save_onboarding_context(context)
+    return context.model_dump(mode="json")
+
+
+def save_calendar_context(user_id: int, *, filename: str, file_bytes: bytes) -> dict:
+    repository = get_pipeline_repository()
+    pipeline_user_id = str(user_id)
+    current = repository.get_onboarding_context(pipeline_user_id) or OnboardingContext(user_id=pipeline_user_id)
+    parsed = parse_calendar_context(
+        filename=filename,
+        file_bytes=file_bytes,
+        timezone_name=current.timezone or "Asia/Singapore",
+    )
+    updated = current.model_copy(
+        update={
+            "busy_windows": parsed["busy_windows"],
+            "recurring_task_notes": parsed["recurring_task_notes"],
+            "timetable_summary": parsed["timetable_summary"],
+            "calendar_source": parsed["calendar_source"],
+        }
+    )
+    repository.save_onboarding_context(updated)
+    _invalidate_dashboard_cache(user_id)
+    return updated.model_dump(mode="json")
+
+
+def remove_calendar_context(user_id: int) -> dict:
+    repository = get_pipeline_repository()
+    pipeline_user_id = str(user_id)
+    current = repository.get_onboarding_context(pipeline_user_id) or OnboardingContext(user_id=pipeline_user_id)
+    cleared = clear_calendar_context()
+    updated = current.model_copy(
+        update={
+            "busy_windows": cleared["busy_windows"],
+            "recurring_task_notes": cleared["recurring_task_notes"],
+            "timetable_summary": cleared["timetable_summary"],
+            "calendar_source": cleared["calendar_source"],
+        }
+    )
+    repository.save_onboarding_context(updated)
+    _invalidate_dashboard_cache(user_id)
+    return updated.model_dump(mode="json")
+
+
+def get_available_tags(user_id: int) -> list[str]:
+    repository = get_pipeline_repository()
+    return merge_tag_catalog(repository.get_custom_tags(str(user_id)))
+
+
 def list_prioritized_tasks(user_id: int) -> list[dict]:
     cached = _get_cached_value(_TASK_CACHE, user_id)
     if cached is not None:
@@ -256,10 +319,17 @@ def list_prioritized_tasks(user_id: int) -> list[dict]:
 
 def remove_prioritized_task(user_id: int, canonical_task_id: str) -> dict:
     repository = get_pipeline_repository()
-    removed = repository.dismiss_task_card(str(user_id), canonical_task_id)
-    if removed:
-        _update_cached_tasks_after_remove(user_id, canonical_task_id)
-    return {"success": removed, "canonicalTaskId": canonical_task_id}
+    feedback_context = repository.get_feedback_update_context(str(user_id), canonical_task_id)
+    if feedback_context is None:
+        return {"success": False, "canonicalTaskId": canonical_task_id}
+    action = (
+        FeedbackAction.REJECT
+        if feedback_context.task.status.value == "pending_review"
+        else FeedbackAction.DELETE
+    )
+    repository.apply_task_action(str(user_id), canonical_task_id, action=action)
+    _invalidate_dashboard_cache(user_id)
+    return {"success": True, "canonicalTaskId": canonical_task_id, "action": action.value}
 
 
 def get_profile_snapshot(user_id: int) -> dict:
@@ -433,8 +503,9 @@ def create_manual_task(
     task_type: str | None = None,
     deadline_at: str | None = None,
     entity_name: str | None = None,
+    tags: list[str] | None = None,
 ) -> dict:
-    pipeline = get_priority_pipeline()
+    repository = get_pipeline_repository()
     cleaned_title = title.strip()
     if not cleaned_title:
         raise ValueError("title is required")
@@ -442,6 +513,7 @@ def create_manual_task(
     parsed_task_type = TaskType(task_type or TaskType.ADMIN.value)
     resolved_entity_name = (entity_name or cleaned_title).strip()
     deadline_iso = _normalize_manual_deadline(deadline_at)
+    normalized_tags = dedupe_tags(tags or [])
 
     user = get_user_by_id(user_id)
     source_id = f"manual-{uuid4().hex}"
@@ -465,20 +537,15 @@ def create_manual_task(
                             "entity_name": resolved_entity_name,
                             "entity_type": EntityType.TOPIC.value,
                             "deadline_iso": deadline_iso,
+                            "tags": normalized_tags,
                         }
                     }
                 },
             }
         ],
     )
-    pipeline.register_manual_task(
-        user_id=str(user_id),
-        task_type=parsed_task_type,
-        entity_key=normalize_entity_name(resolved_entity_name),
-        entity_name=resolved_entity_name,
-        entity_type=EntityType.TOPIC,
-        deadline_hours=_deadline_hours_from_iso(deadline_iso),
-    )
+    if normalized_tags:
+        repository.upsert_custom_tags(str(user_id), normalized_tags)
     result = _run_pipeline_from_stored_messages(user_id, refresh_sources=False)
     result["manualTaskSourceId"] = source_id
     result["profile"] = get_profile_snapshot(user_id)
@@ -527,6 +594,7 @@ def _run_pipeline_from_stored_messages(
         "taskCardCount": len(bundle.task_cards),
         "emailSync": email_sync,
         "items": card_payloads,
+        "availableTags": get_available_tags(user_id),
     }
 
 
@@ -572,22 +640,35 @@ def submit_task_feedback(
         entity_type=task_context.entity_type,
         sender_hash=sender_hash,
         deadline_hours=task_context.deadline_hours,
+        task_tags=task_context.task_tags,
+        priority_before=task_context.effective_priority_tier,
     )
-    updated_profile = pipeline.apply_feedback_to_profile(profile, event)
-    _set_cached_value(_PROFILE_CACHE, user_id, updated_profile.model_dump(mode="json"))
-    items = None
     if feedback_action == FeedbackAction.WRONG_PRIORITY and feedback_direction is not None:
-        repository.shift_current_task_card_priority(
-            pipeline_user_id,
-            canonical_task_id,
+        priority_after, _, incremental_delta = compute_priority_adjustment(
+            suggested_priority_tier=task_context.suggested_priority_tier,
+            effective_priority_tier=task_context.effective_priority_tier,
+            applied_priority_delta=task_context.applied_priority_delta,
             direction=feedback_direction,
         )
-        items = [card.model_dump(mode="json") for card in repository.get_current_task_cards(pipeline_user_id)]
-        _set_cached_value(_TASK_CACHE, user_id, items)
-    if feedback_action == FeedbackAction.ALREADY_DONE:
-        repository.dismiss_task_card(pipeline_user_id, canonical_task_id)
-        _update_cached_tasks_after_remove(user_id, canonical_task_id)
-        items = _get_cached_value(_TASK_CACHE, user_id)
+        event = event.model_copy(
+            update={
+                "priority_after": priority_after,
+                "incremental_priority_delta": incremental_delta,
+            }
+        )
+    else:
+        event = event.model_copy(update={"priority_after": task_context.effective_priority_tier})
+
+    updated_profile = pipeline.apply_feedback_to_profile(profile, event)
+    _set_cached_value(_PROFILE_CACHE, user_id, updated_profile.model_dump(mode="json"))
+    repository.apply_task_action(
+        pipeline_user_id,
+        canonical_task_id,
+        action=feedback_action,
+        direction=feedback_direction,
+    )
+    items = [card.model_dump(mode="json") for card in repository.get_current_task_cards(pipeline_user_id)]
+    _set_cached_value(_TASK_CACHE, user_id, items)
     return {
         "success": True,
         "feedbackEvent": event.model_dump(mode="json"),

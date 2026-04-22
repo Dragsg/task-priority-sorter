@@ -1,5 +1,7 @@
 from pipeline.models.entities import (
+    AvailabilityWindow,
     BehaviorProfile,
+    CalendarSource,
     CanonicalTask,
     EntityAlias,
     EntityWeight,
@@ -10,7 +12,10 @@ from pipeline.models.entities import (
     RawMessage,
     SenderWeight,
     StructuredLlmOutput,
+    TagWeight,
+    TaskDecision,
     TaskSignal,
+    TaskTypeWeight,
     TopicEntity,
 )
 from pipeline.models.enums import (
@@ -21,12 +26,16 @@ from pipeline.models.enums import (
     Platform,
     PriorityTier,
     SenderRole,
+    TaskOrigin,
+    TaskStatus,
     TaskType,
 )
 
 __all__ = [
     "ActionWindow",
+    "AvailabilityWindow",
     "BehaviorProfile",
+    "CalendarSource",
     "CanonicalTask",
     "EntityAlias",
     "EntityType",
@@ -43,7 +52,12 @@ __all__ = [
     "SenderRole",
     "SenderWeight",
     "StructuredLlmOutput",
+    "TagWeight",
+    "TaskDecision",
+    "TaskOrigin",
     "TaskSignal",
+    "TaskStatus",
     "TaskType",
+    "TaskTypeWeight",
     "TopicEntity",
 ]

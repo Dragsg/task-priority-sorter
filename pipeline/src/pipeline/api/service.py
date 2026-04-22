@@ -14,7 +14,11 @@ from pipeline.models import (
     RawMessage,
 )
 from pipeline.services.pipeline import PriorityPipeline
-from pipeline.storage.repositories import PipelineRepository, PipelineRunBundle
+from pipeline.storage.repositories import (
+    PipelineRepository,
+    PipelineRunBundle,
+    compute_priority_adjustment,
+)
 
 
 class FeedbackRequest(BaseModel):
@@ -120,18 +124,40 @@ class PipelineApiService:
             entity_type=task_context.entity_type,
             sender_hash=sender_hash,
             deadline_hours=task_context.deadline_hours,
+            task_tags=task_context.task_tags,
+            priority_before=task_context.effective_priority_tier,
         )
-        updated = self.pipeline.apply_feedback_to_profile(profile, event)
-        items = None
         if action == FeedbackAction.WRONG_PRIORITY and direction is not None:
-            self.repository.shift_current_task_card_priority(
-                user_id,
-                canonical_task_id,
+            priority_after, _, incremental_delta = compute_priority_adjustment(
+                suggested_priority_tier=task_context.suggested_priority_tier,
+                effective_priority_tier=task_context.effective_priority_tier,
+                applied_priority_delta=task_context.applied_priority_delta,
                 direction=direction,
             )
-            items = self.repository.get_current_task_cards(user_id)
-        elif action == FeedbackAction.ALREADY_DONE:
-            self.repository.dismiss_task_card(user_id, canonical_task_id)
+            event = event.model_copy(
+                update={
+                    "priority_after": priority_after,
+                    "incremental_priority_delta": incremental_delta,
+                }
+            )
+        else:
+            event = event.model_copy(update={"priority_after": task_context.effective_priority_tier})
+
+        updated = self.pipeline.apply_feedback_to_profile(profile, event)
+        self.repository.apply_task_action(
+            user_id,
+            canonical_task_id,
+            action=action,
+            direction=direction,
+        )
+        items = None
+        if action in {
+            FeedbackAction.ACCEPT,
+            FeedbackAction.REJECT,
+            FeedbackAction.WRONG_PRIORITY,
+            FeedbackAction.COMPLETED,
+            FeedbackAction.DELETE,
+        }:
             items = self.repository.get_current_task_cards(user_id)
         return event, updated, items
 

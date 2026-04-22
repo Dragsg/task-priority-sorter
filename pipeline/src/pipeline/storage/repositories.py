@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -14,40 +14,37 @@ from pipeline.models import (
     BehaviorProfile,
     CanonicalTask,
     EntityAlias,
+    FeedbackAction,
+    FeedbackDirection,
     FeedbackEvent,
     LlmDecision,
     OnboardingContext,
     PrioritizedTaskCard,
     RawMessage,
-    TaskSignal,
+    TaskDecision,
+    TaskOrigin,
+    TaskStatus,
 )
-from pipeline.models.enums import EntityType, FeedbackDirection, PriorityTier, TaskType
+from pipeline.models.enums import EntityType, PriorityTier, TaskType
 from pipeline.services.postprocess import PostProcessor
-from pipeline.storage.tables import (
-    BehaviorProfileRecord,
-    CanonicalTaskRecord,
-    CurrentTaskCardRecord,
-    DismissedTaskRecord,
-    EntityAliasRecord,
-    FeedbackEventRecord,
-    LlmDecisionRecord,
-    OnboardingContextRecord,
-    PipelineRunRecord,
-    RawMessageRecord,
-    TaskCardRecord,
-    TaskSignalRecord,
-)
+from pipeline.storage.tables import PipelineTaskRecord, PipelineUserStateRecord, StoredEmailRecord
+from pipeline.utils.tags import dedupe_tags
 from pipeline.utils.time import utc_now_naive
 
 
-_PRIORITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+_SORT_PRIORITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+_LEARNING_PRIORITY_INDEX = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 _DISPLAY_POST_PROCESSOR = PostProcessor(PipelineSettings())
 
 
 def _sort_task_cards(cards: list[PrioritizedTaskCard]) -> list[PrioritizedTaskCard]:
     return sorted(
         cards,
-        key=lambda card: (_PRIORITY_ORDER.get(card.priority_tier.value, 99), card.deadline_hours or float("inf")),
+        key=lambda card: (
+            _SORT_PRIORITY_ORDER.get(card.effective_priority_tier.value, 99),
+            card.deadline_hours if card.deadline_hours is not None else float("inf"),
+            card.task_title or "",
+        ),
     )
 
 
@@ -69,30 +66,21 @@ def _shift_priority_tier(
     return ordered_tiers[next_index]
 
 
-def _enrich_canonical_task(task: CanonicalTask, signals: list[TaskSignal]) -> CanonicalTask:
-    if not signals:
-        return task
+def compute_priority_adjustment(
+    *,
+    suggested_priority_tier: PriorityTier,
+    effective_priority_tier: PriorityTier,
+    applied_priority_delta: int,
+    direction: FeedbackDirection,
+) -> tuple[PriorityTier, int, int]:
+    new_effective = _shift_priority_tier(effective_priority_tier, direction)
+    new_delta = _LEARNING_PRIORITY_INDEX[new_effective.value] - _LEARNING_PRIORITY_INDEX[suggested_priority_tier.value]
+    incremental_delta = new_delta - applied_priority_delta
+    return new_effective, new_delta, incremental_delta
 
-    representative = max(
-        signals,
-        key=lambda signal: (
-            1 if signal.subject and signal.subject.lower() != "(no subject)" else 0,
-            1 if signal.snippet else 0,
-            1 if signal.body_excerpt else 0,
-            signal.urgency_word_count + (1 if signal.deadline_hours is not None else 0),
-        ),
-    )
 
-    return task.model_copy(
-        update={
-            "representative_source_id": task.representative_source_id or representative.source_id,
-            "representative_subject": task.representative_subject or representative.subject,
-            "representative_snippet": task.representative_snippet or representative.snippet,
-            "representative_body_excerpt": task.representative_body_excerpt or representative.body_excerpt,
-            "representative_sender_display": task.representative_sender_display or representative.sender_display,
-            "representative_timestamp": task.representative_timestamp or representative.timestamp,
-        }
-    )
+def _enrich_canonical_task(task: CanonicalTask) -> CanonicalTask:
+    return task
 
 
 def _enrich_task_card(card: PrioritizedTaskCard, task: CanonicalTask) -> PrioritizedTaskCard:
@@ -156,10 +144,103 @@ def _task_card_needs_hydration(card: PrioritizedTaskCard) -> bool:
     return False
 
 
+def _payload_for_task(
+    *,
+    task_card: PrioritizedTaskCard,
+    canonical_task: CanonicalTask,
+    llm_decision: LlmDecision | None,
+) -> dict[str, Any]:
+    return {
+        "task_card": task_card.model_dump(mode="json"),
+        "canonical_task": canonical_task.model_dump(mode="json"),
+        "llm_decision": None if llm_decision is None else llm_decision.model_dump(mode="json"),
+    }
+
+
+def _parse_payload_card(payload: dict[str, Any]) -> PrioritizedTaskCard | None:
+    task_card_payload = payload.get("task_card") if isinstance(payload, dict) else None
+    if not isinstance(task_card_payload, dict):
+        return None
+    return PrioritizedTaskCard.model_validate(task_card_payload)
+
+
+def _parse_payload_task(payload: dict[str, Any]) -> CanonicalTask | None:
+    task_payload = payload.get("canonical_task") if isinstance(payload, dict) else None
+    if not isinstance(task_payload, dict):
+        return None
+    return CanonicalTask.model_validate(task_payload)
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _stored_email_to_raw_message(row: StoredEmailRecord) -> RawMessage:
+    return RawMessage(
+        user_id=str(row.user_id),
+        platform=row.platform,
+        source_id=row.source_id,
+        thread_id=row.thread_id,
+        timestamp_iso=row.timestamp_iso.isoformat() if row.timestamp_iso else None,
+        label_ids=row.label_ids or [],
+        sender_id=row.sender_id,
+        sender_display=row.sender_display,
+        sender_email=row.sender_email,
+        sender_domain=row.sender_domain,
+        subject=row.subject,
+        snippet=row.snippet,
+        body_text=row.body_text or "",
+        body_html_present=bool(row.body_html_present),
+        attachments_present=bool(row.attachments_present),
+        mime_parts=row.mime_parts or [],
+        provider_metadata=row.provider_metadata or {},
+        from_raw=row.from_raw,
+        to_raw=row.to_raw,
+        cc_raw=row.cc_raw,
+        bcc_raw=row.bcc_raw,
+    )
+
+
+def _row_to_card(row: PipelineTaskRecord) -> PrioritizedTaskCard | None:
+    card = _parse_payload_card(row.payload or {})
+    if card is None:
+        return None
+    return card.model_copy(
+        update={
+            "status": TaskStatus(row.status),
+            "priority_tier": PriorityTier(row.effective_priority_tier),
+            "suggested_priority_tier": PriorityTier(row.suggested_priority_tier),
+            "effective_priority_tier": PriorityTier(row.effective_priority_tier),
+            "applied_priority_delta": row.applied_priority_delta,
+            "tags": dedupe_tags(row.tags or card.tags),
+            "confidence": row.confidence,
+        }
+    )
+
+
+def _row_to_task(row: PipelineTaskRecord) -> CanonicalTask | None:
+    task = _parse_payload_task(row.payload or {})
+    if task is None:
+        return None
+    return _enrich_canonical_task(task)
+
+
+def _has_user_priority_edit(row: PipelineTaskRecord) -> bool:
+    if row.applied_priority_delta != 0:
+        return True
+    history = row.decision_history or []
+    return any(entry.get("action") == FeedbackAction.WRONG_PRIORITY.value for entry in history if isinstance(entry, dict))
+
+
 @dataclass
 class PipelineRunBundle:
     run_id: str
-    signals: list[TaskSignal]
+    signals: list
     canonical_tasks: list[CanonicalTask]
     decisions: list[LlmDecision]
     task_cards: list[PrioritizedTaskCard]
@@ -176,22 +257,17 @@ class FeedbackTaskContext:
     entity_type: EntityType
     sender_ids: list[str]
     deadline_hours: float | None
+    task_tags: list[str]
+    status: TaskStatus
+    suggested_priority_tier: PriorityTier
+    effective_priority_tier: PriorityTier
+    applied_priority_delta: int
 
 
 @dataclass
 class FeedbackUpdateContext:
     task: FeedbackTaskContext
     profile: BehaviorProfile | None
-
-
-def _bundle_user_id(bundle: PipelineRunBundle) -> str | None:
-    if bundle.profile is not None:
-        return bundle.profile.user_id
-    for collection_name in ("task_cards", "canonical_tasks", "signals"):
-        collection = getattr(bundle, collection_name, [])
-        if collection:
-            return collection[0].user_id
-    return None
 
 
 class PipelineRepository(Protocol):
@@ -215,7 +291,13 @@ class PipelineRepository(Protocol):
 
     def upsert_entity_aliases(self, user_id: str, aliases: list[EntityAlias]) -> None: ...
 
+    def get_custom_tags(self, user_id: str) -> list[str]: ...
+
+    def upsert_custom_tags(self, user_id: str, tags: list[str]) -> list[str]: ...
+
     def get_current_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]: ...
+
+    def get_accepted_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]: ...
 
     def get_current_task_card(self, user_id: str, canonical_task_id: str) -> PrioritizedTaskCard | None: ...
 
@@ -224,6 +306,15 @@ class PipelineRepository(Protocol):
     def get_feedback_task_context(self, user_id: str, canonical_task_id: str) -> FeedbackTaskContext | None: ...
 
     def get_feedback_update_context(self, user_id: str, canonical_task_id: str) -> FeedbackUpdateContext | None: ...
+
+    def apply_task_action(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        action: FeedbackAction,
+        direction: FeedbackDirection | None = None,
+    ) -> PrioritizedTaskCard | None: ...
 
     def shift_current_task_card_priority(
         self,
@@ -249,10 +340,11 @@ class InMemoryPipelineRepository:
         self.profiles: dict[str, BehaviorProfile] = {}
         self.onboarding: dict[str, OnboardingContext] = {}
         self.aliases: dict[str, dict[str, EntityAlias]] = {}
+        self.custom_tags: dict[str, list[str]] = {}
         self.feedback_events: list[FeedbackEvent] = []
         self.bundles: list[PipelineRunBundle] = []
+        self.task_rows: dict[tuple[str, str], dict[str, Any]] = {}
         self.current_cards: dict[str, PrioritizedTaskCard] = {}
-        self.dismissed_cards: set[tuple[str, str]] = set()
 
     def create_run(self, user_id: str) -> str:
         run_id = uuid4().hex
@@ -272,8 +364,8 @@ class InMemoryPipelineRepository:
     def upsert_raw_messages(self, messages: list[RawMessage]) -> None:
         for message in messages:
             bucket = self.raw_messages.setdefault(message.user_id, [])
-            existing = {item.source_id: item for item in bucket}
-            existing[message.source_id] = message
+            existing = {(item.platform.value, item.source_id): item for item in bucket}
+            existing[(message.platform.value, message.source_id)] = message
             self.raw_messages[message.user_id] = list(existing.values())
 
     def get_behavior_profile(self, user_id: str) -> BehaviorProfile | None:
@@ -296,54 +388,93 @@ class InMemoryPipelineRepository:
         for alias in aliases:
             user_aliases[alias.alias_key] = alias
 
+    def get_custom_tags(self, user_id: str) -> list[str]:
+        return list(self.custom_tags.get(user_id, []))
+
+    def upsert_custom_tags(self, user_id: str, tags: list[str]) -> list[str]:
+        merged = dedupe_tags([*self.custom_tags.get(user_id, []), *tags])
+        self.custom_tags[user_id] = merged
+        return merged
+
     def get_current_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
         cards = [
-            card
-            for card in self.current_cards.values()
-            if card.user_id == user_id and (user_id, card.canonical_task_id) not in self.dismissed_cards
+            _row_to_card_from_memory(row)
+            for row in self.task_rows.values()
+            if row["user_id"] == user_id and row["status"] == TaskStatus.PENDING_REVIEW.value
         ]
+        cards = [card for card in cards if card is not None]
+        return cards
+
+    def get_accepted_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
+        cards = [
+            _row_to_card_from_memory(row)
+            for row in self.task_rows.values()
+            if row["user_id"] == user_id and row["status"] == TaskStatus.ACCEPTED.value
+        ]
+        cards = [card for card in cards if card is not None]
         return _sort_task_cards(cards)
 
     def get_current_task_card(self, user_id: str, canonical_task_id: str) -> PrioritizedTaskCard | None:
-        card = self.current_cards.get(canonical_task_id)
-        if card is None or card.user_id != user_id or (user_id, canonical_task_id) in self.dismissed_cards:
+        row = self.task_rows.get((user_id, canonical_task_id))
+        if row is None or row["status"] != TaskStatus.PENDING_REVIEW.value:
             return None
-        return card
+        return _row_to_card_from_memory(row)
 
     def get_current_canonical_task(self, user_id: str, canonical_task_id: str) -> CanonicalTask | None:
-        card = self.get_current_task_card(user_id, canonical_task_id)
-        if card is None:
+        row = self.task_rows.get((user_id, canonical_task_id))
+        if row is None:
             return None
-
-        for bundle in reversed(self.bundles):
-            if bundle.run_id != card.run_id:
-                continue
-            for task in bundle.canonical_tasks:
-                if task.canonical_task_id == canonical_task_id and task.user_id == user_id:
-                    return task
-        return None
+        return _parse_payload_task(row["payload"])
 
     def get_feedback_task_context(self, user_id: str, canonical_task_id: str) -> FeedbackTaskContext | None:
-        card = self.get_current_task_card(user_id, canonical_task_id)
-        task = self.get_current_canonical_task(user_id, canonical_task_id)
-        if card is None or task is None:
+        row = self.task_rows.get((user_id, canonical_task_id))
+        if row is None:
             return None
-        return FeedbackTaskContext(
-            user_id=user_id,
-            canonical_task_id=canonical_task_id,
-            task_type=task.task_type,
-            entity_key=task.topic_entity.entity_key,
-            entity_name=task.topic_entity.entity_name,
-            entity_type=task.topic_entity.entity_type,
-            sender_ids=list(task.sender_ids),
-            deadline_hours=card.deadline_hours,
-        )
+        return _feedback_context_from_memory_row(row)
 
     def get_feedback_update_context(self, user_id: str, canonical_task_id: str) -> FeedbackUpdateContext | None:
         task = self.get_feedback_task_context(user_id, canonical_task_id)
         if task is None:
             return None
         return FeedbackUpdateContext(task=task, profile=self.get_behavior_profile(user_id))
+
+    def apply_task_action(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        action: FeedbackAction,
+        direction: FeedbackDirection | None = None,
+    ) -> PrioritizedTaskCard | None:
+        row = self.task_rows.get((user_id, canonical_task_id))
+        if row is None:
+            return None
+        updated = _apply_action_to_memory_row(row, action=action, direction=direction)
+        self.task_rows[(user_id, canonical_task_id)] = updated
+        self._refresh_current_cards(user_id)
+        return _row_to_card_from_memory(updated)
+
+    def shift_current_task_card_priority(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        direction: FeedbackDirection,
+    ) -> PrioritizedTaskCard | None:
+        return self.apply_task_action(
+            user_id,
+            canonical_task_id,
+            action=FeedbackAction.WRONG_PRIORITY,
+            direction=direction,
+        )
+
+    def dismiss_task_card(self, user_id: str, canonical_task_id: str) -> bool:
+        row = self.task_rows.get((user_id, canonical_task_id))
+        if row is None:
+            return False
+        action = FeedbackAction.REJECT if row["status"] == TaskStatus.PENDING_REVIEW.value else FeedbackAction.DELETE
+        self.apply_task_action(user_id, canonical_task_id, action=action)
+        return True
 
     def save_feedback_event(self, event: FeedbackEvent) -> None:
         self.feedback_events.append(event)
@@ -352,40 +483,37 @@ class InMemoryPipelineRepository:
         self.feedback_events.append(event)
         self.profiles[profile.user_id] = profile
 
-    def shift_current_task_card_priority(
-        self,
-        user_id: str,
-        canonical_task_id: str,
-        *,
-        direction: FeedbackDirection,
-    ) -> PrioritizedTaskCard | None:
-        card = self.get_current_task_card(user_id, canonical_task_id)
-        if card is None:
-            return None
-        updated = card.model_copy(
-            update={"priority_tier": _shift_priority_tier(card.priority_tier, direction)}
-        )
-        self.current_cards[canonical_task_id] = updated
-        return updated
-
-    def dismiss_task_card(self, user_id: str, canonical_task_id: str) -> bool:
-        self.dismissed_cards.add((user_id, canonical_task_id))
-        removed = self.current_cards.pop(canonical_task_id, None)
-        return removed is not None
-
     def save_pipeline_results(self, bundle: PipelineRunBundle) -> None:
         self.bundles.append(bundle)
         if bundle.profile is not None:
             self.profiles[bundle.profile.user_id] = bundle.profile
-        user_id = _bundle_user_id(bundle)
-        if user_id is not None:
-            for canonical_task_id, card in list(self.current_cards.items()):
-                if card.user_id == user_id:
-                    self.current_cards.pop(canonical_task_id, None)
-        for card in bundle.task_cards:
-            if (card.user_id, card.canonical_task_id) in self.dismissed_cards:
+
+        decision_by_id = {decision.canonical_task_id: decision for decision in bundle.decisions}
+        task_by_id = {task.canonical_task_id: task for task in bundle.canonical_tasks}
+        ordered_task_cards = _sort_task_cards(bundle.task_cards)
+        for card in ordered_task_cards:
+            task = task_by_id.get(card.canonical_task_id)
+            if task is None:
                 continue
-            self.current_cards[card.canonical_task_id] = card
+            key = (card.user_id, card.canonical_task_id)
+            existing = self.task_rows.get(key)
+            self.task_rows[key] = _merge_memory_task_row(
+                existing=existing,
+                task_card=card,
+                canonical_task=task,
+                llm_decision=decision_by_id.get(card.canonical_task_id),
+            )
+        if ordered_task_cards:
+            self._refresh_current_cards(ordered_task_cards[0].user_id)
+
+    def _refresh_current_cards(self, user_id: str) -> None:
+        self.current_cards = {
+            canonical_task_id: card
+            for (row_user_id, canonical_task_id), row in self.task_rows.items()
+            if row_user_id == user_id
+            for card in [_row_to_card_from_memory(row)]
+            if card is not None and row["status"] == TaskStatus.PENDING_REVIEW.value
+        }
 
 
 class SqlAlchemyPipelineRepository:
@@ -393,342 +521,174 @@ class SqlAlchemyPipelineRepository:
         self.engine = engine
 
     def create_run(self, user_id: str) -> str:
-        run_id = uuid4().hex
-        with Session(self.engine) as session:
-            session.add(PipelineRunRecord(run_id=run_id, user_id=user_id))
-            session.commit()
-        return run_id
+        return uuid4().hex
 
     def mark_run_finished(self, run_id: str, *, error_text: str | None = None) -> None:
-        with Session(self.engine) as session:
-            stmt = (
-                update(PipelineRunRecord)
-                .where(PipelineRunRecord.run_id == run_id)
-                .values(
-                    status="failed" if error_text else "finished",
-                    error_text=error_text,
-                    finished_at=utc_now_naive(),
-                )
-            )
-            session.execute(stmt)
-            session.commit()
+        return None
 
     def get_raw_messages(self, user_id: str, *, limit: int | None = None) -> list[RawMessage]:
         with Session(self.engine) as session:
-            stmt = select(RawMessageRecord).where(RawMessageRecord.user_id == user_id).order_by(RawMessageRecord.id)
+            stmt = select(StoredEmailRecord).where(StoredEmailRecord.user_id == int(user_id)).order_by(StoredEmailRecord.id.desc())
             if limit is not None:
                 stmt = stmt.limit(limit)
             rows = session.scalars(stmt).all()
-            return [RawMessage.model_validate(row.payload) for row in rows]
+            return [_stored_email_to_raw_message(row) for row in rows]
 
     def upsert_raw_messages(self, messages: list[RawMessage]) -> None:
         with Session(self.engine) as session:
             for message in messages:
+                db_user_id = int(message.user_id)
                 row = session.scalar(
-                    select(RawMessageRecord).where(
-                        RawMessageRecord.user_id == message.user_id,
-                        RawMessageRecord.source_id == message.source_id,
+                    select(StoredEmailRecord).where(
+                        StoredEmailRecord.user_id == db_user_id,
+                        StoredEmailRecord.platform == message.platform.value,
+                        StoredEmailRecord.source_id == message.source_id,
                     )
                 )
                 payload = message.model_dump(mode="json")
                 if row is None:
-                    session.add(
-                        RawMessageRecord(
-                            user_id=message.user_id,
-                            source_id=message.source_id,
-                            platform=message.platform.value,
-                            payload=payload,
-                        )
+                    row = StoredEmailRecord(
+                        user_id=db_user_id,
+                        platform=message.platform.value,
+                        source_id=message.source_id,
                     )
-                else:
-                    row.platform = message.platform.value
-                    row.payload = payload
+                    session.add(row)
+
+                row.thread_id = payload.get("thread_id")
+                row.timestamp_iso = _parse_dt(payload.get("timestamp_iso"))
+                row.label_ids = payload.get("label_ids") or []
+                row.sender_id = payload.get("sender_id")
+                row.sender_display = payload.get("sender_display")
+                row.sender_email = payload.get("sender_email")
+                row.sender_domain = payload.get("sender_domain")
+                row.subject = payload.get("subject")
+                row.snippet = payload.get("snippet")
+                row.body_text = payload.get("body_text") or ""
+                row.body_html_present = bool(payload.get("body_html_present"))
+                row.attachments_present = bool(payload.get("attachments_present"))
+                row.mime_parts = payload.get("mime_parts") or []
+                row.provider_metadata = payload.get("provider_metadata") or {}
+                row.from_raw = payload.get("from_raw")
+                row.to_raw = payload.get("to_raw")
+                row.cc_raw = payload.get("cc_raw")
+                row.bcc_raw = payload.get("bcc_raw")
+                row.updated_at = utc_now_naive()
             session.commit()
 
     def get_behavior_profile(self, user_id: str) -> BehaviorProfile | None:
         with Session(self.engine) as session:
-            current_row = session.scalar(
-                select(BehaviorProfileRecord)
-                .where(BehaviorProfileRecord.user_id == user_id, BehaviorProfileRecord.is_current.is_(True))
-                .order_by(BehaviorProfileRecord.profile_version.desc())
-            )
-            latest_row = session.scalar(
-                select(BehaviorProfileRecord)
-                .where(BehaviorProfileRecord.user_id == user_id)
-                .order_by(BehaviorProfileRecord.profile_version.desc())
-            )
-            row = latest_row if latest_row is not None and (
-                current_row is None or latest_row.profile_version > current_row.profile_version
-            ) else current_row
-            return None if row is None else BehaviorProfile.model_validate(row.payload)
+            row = session.get(PipelineUserStateRecord, user_id)
+            if row is None or row.profile_payload is None:
+                return None
+            return BehaviorProfile.model_validate(row.profile_payload)
 
     def save_behavior_profile(self, profile: BehaviorProfile) -> None:
         with Session(self.engine) as session:
-            existing = session.scalar(
-                select(BehaviorProfileRecord).where(
-                    BehaviorProfileRecord.user_id == profile.user_id,
-                    BehaviorProfileRecord.profile_version == profile.profile_version,
-                )
-            )
-
-            session.execute(
-                update(BehaviorProfileRecord)
-                .where(BehaviorProfileRecord.user_id == profile.user_id, BehaviorProfileRecord.is_current.is_(True))
-                .values(is_current=False)
-            )
-
-            payload = profile.model_dump(mode="json")
-            if existing is None:
-                session.add(
-                    BehaviorProfileRecord(
-                        user_id=profile.user_id,
-                        profile_version=profile.profile_version,
-                        is_current=True,
-                        payload=payload,
-                    )
-                )
-            else:
-                existing.is_current = True
-                existing.payload = payload
+            row = self._get_or_create_user_state(session, profile.user_id)
+            row.profile_version = profile.profile_version
+            row.profile_payload = profile.model_dump(mode="json")
+            row.updated_at = utc_now_naive()
             session.commit()
 
     def get_onboarding_context(self, user_id: str) -> OnboardingContext | None:
         with Session(self.engine) as session:
-            row = session.get(OnboardingContextRecord, user_id)
-            return None if row is None else OnboardingContext.model_validate(row.payload)
+            row = session.get(PipelineUserStateRecord, user_id)
+            if row is None or row.onboarding_payload is None:
+                return None
+            return OnboardingContext.model_validate(row.onboarding_payload)
 
     def save_onboarding_context(self, context: OnboardingContext) -> None:
         with Session(self.engine) as session:
-            row = session.get(OnboardingContextRecord, context.user_id)
-            payload = context.model_dump(mode="json")
-            if row is None:
-                session.add(OnboardingContextRecord(user_id=context.user_id, payload=payload))
-            else:
-                row.payload = payload
-                row.updated_at = utc_now_naive()
+            row = self._get_or_create_user_state(session, context.user_id)
+            row.onboarding_payload = context.model_dump(mode="json")
+            row.updated_at = utc_now_naive()
             session.commit()
 
     def get_entity_aliases(self, user_id: str) -> dict[str, EntityAlias]:
         with Session(self.engine) as session:
-            rows = session.scalars(select(EntityAliasRecord).where(EntityAliasRecord.user_id == user_id)).all()
+            row = session.get(PipelineUserStateRecord, user_id)
+            payload = {} if row is None else (row.alias_payload or {})
             return {
-                row.alias_key: EntityAlias(
-                    alias_key=row.alias_key,
-                    canonical_entity_key=row.canonical_entity_key,
-                    canonical_entity_name=row.canonical_entity_name,
-                    entity_type=row.entity_type,
-                )
-                for row in rows
+                alias_key: EntityAlias.model_validate(alias_value)
+                for alias_key, alias_value in payload.items()
+                if isinstance(alias_value, dict)
             }
 
     def upsert_entity_aliases(self, user_id: str, aliases: list[EntityAlias]) -> None:
         with Session(self.engine) as session:
+            row = self._get_or_create_user_state(session, user_id)
+            current_payload = dict(row.alias_payload or {})
             for alias in aliases:
-                row = session.scalar(
-                    select(EntityAliasRecord).where(
-                        EntityAliasRecord.user_id == user_id,
-                        EntityAliasRecord.alias_key == alias.alias_key,
-                    )
-                )
-                if row is None:
-                    session.add(
-                        EntityAliasRecord(
-                            user_id=user_id,
-                            alias_key=alias.alias_key,
-                            canonical_entity_key=alias.canonical_entity_key,
-                            canonical_entity_name=alias.canonical_entity_name,
-                            entity_type=alias.entity_type.value,
-                        )
-                    )
-                else:
-                    row.canonical_entity_key = alias.canonical_entity_key
-                    row.canonical_entity_name = alias.canonical_entity_name
-                    row.entity_type = alias.entity_type.value
+                current_payload[alias.alias_key] = alias.model_dump(mode="json")
+            row.alias_payload = current_payload
+            row.updated_at = utc_now_naive()
             session.commit()
 
-    def get_current_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
+    def get_custom_tags(self, user_id: str) -> list[str]:
         with Session(self.engine) as session:
-            dismissed_ids = self._get_dismissed_task_ids(session, user_id)
-            current_rows = session.scalars(
-                select(CurrentTaskCardRecord)
-                .where(CurrentTaskCardRecord.user_id == user_id)
-                .order_by(CurrentTaskCardRecord.updated_at.desc())
-            ).all()
-            if not current_rows:
-                return []
+            row = session.get(PipelineUserStateRecord, user_id)
+            return dedupe_tags([] if row is None else (row.custom_tags or []))
 
-            task_ids = [row.task_id for row in current_rows]
-            task_rows = session.scalars(select(TaskCardRecord).where(TaskCardRecord.task_id.in_(task_ids))).all()
-            by_task_id = {row.task_id: PrioritizedTaskCard.model_validate(row.payload) for row in task_rows}
-            cards = []
-            for row in current_rows:
-                if row.canonical_task_id in dismissed_ids or row.task_id not in by_task_id:
-                    continue
-                card = by_task_id[row.task_id]
-                if _task_card_needs_hydration(card):
-                    card = self._hydrate_task_card(session, row, card)
-                cards.append(card)
-            return _sort_task_cards(cards)
+    def upsert_custom_tags(self, user_id: str, tags: list[str]) -> list[str]:
+        with Session(self.engine) as session:
+            row = self._get_or_create_user_state(session, user_id)
+            merged = dedupe_tags([*(row.custom_tags or []), *tags])
+            row.custom_tags = merged
+            row.updated_at = utc_now_naive()
+            session.commit()
+            return merged
+
+    def get_current_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
+        return self._list_task_cards_for_status(user_id, TaskStatus.PENDING_REVIEW)
+
+    def get_accepted_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
+        return self._list_task_cards_for_status(user_id, TaskStatus.ACCEPTED)
 
     def get_current_task_card(self, user_id: str, canonical_task_id: str) -> PrioritizedTaskCard | None:
         with Session(self.engine) as session:
-            dismissed_ids = self._get_dismissed_task_ids(session, user_id)
-            if canonical_task_id in dismissed_ids:
+            row = self._get_task_row(session, user_id, canonical_task_id)
+            if row is None or row.status != TaskStatus.PENDING_REVIEW.value:
                 return None
-            current = session.scalar(
-                select(CurrentTaskCardRecord).where(
-                    CurrentTaskCardRecord.user_id == user_id,
-                    CurrentTaskCardRecord.canonical_task_id == canonical_task_id,
-                )
-            )
-            if current is None:
-                return None
-            row = session.scalar(select(TaskCardRecord).where(TaskCardRecord.task_id == current.task_id))
-            if row is None:
-                return None
-            card = PrioritizedTaskCard.model_validate(row.payload)
-            if _task_card_needs_hydration(card):
-                return self._hydrate_task_card(session, current, card)
-            return card
+            return self._hydrate_card(row)
 
     def get_current_canonical_task(self, user_id: str, canonical_task_id: str) -> CanonicalTask | None:
         with Session(self.engine) as session:
-            dismissed_ids = self._get_dismissed_task_ids(session, user_id)
-            if canonical_task_id in dismissed_ids:
-                return None
-            current = session.scalar(
-                select(CurrentTaskCardRecord).where(
-                    CurrentTaskCardRecord.user_id == user_id,
-                    CurrentTaskCardRecord.canonical_task_id == canonical_task_id,
-                )
-            )
-            if current is None:
-                return None
-            row = session.scalar(
-                select(CanonicalTaskRecord).where(
-                    CanonicalTaskRecord.run_id == current.run_id,
-                    CanonicalTaskRecord.canonical_task_id == canonical_task_id,
-                    CanonicalTaskRecord.user_id == user_id,
-                )
-            )
-            if row is None:
-                return None
-            task = CanonicalTask.model_validate(row.payload)
-            signals = self._get_task_signals(session, run_id=current.run_id, user_id=user_id, source_ids=task.source_ids)
-            return _enrich_canonical_task(task, signals)
+            row = self._get_task_row(session, user_id, canonical_task_id)
+            return None if row is None else _row_to_task(row)
 
     def get_feedback_task_context(self, user_id: str, canonical_task_id: str) -> FeedbackTaskContext | None:
         with Session(self.engine) as session:
-            dismissed_ids = self._get_dismissed_task_ids(session, user_id)
-            if canonical_task_id in dismissed_ids:
+            row = self._get_task_row(session, user_id, canonical_task_id)
+            if row is None:
                 return None
-
-            current = session.scalar(
-                select(CurrentTaskCardRecord).where(
-                    CurrentTaskCardRecord.user_id == user_id,
-                    CurrentTaskCardRecord.canonical_task_id == canonical_task_id,
-                )
-            )
-            if current is None:
-                return None
-
-            canonical_row = session.scalar(
-                select(CanonicalTaskRecord).where(
-                    CanonicalTaskRecord.run_id == current.run_id,
-                    CanonicalTaskRecord.canonical_task_id == canonical_task_id,
-                    CanonicalTaskRecord.user_id == user_id,
-                )
-            )
-            if canonical_row is None:
-                return None
-
-            task_row = session.scalar(select(TaskCardRecord).where(TaskCardRecord.task_id == current.task_id))
-            canonical_payload = canonical_row.payload or {}
-            entity_payload = canonical_payload.get("topic_entity") or {}
-            sender_ids = canonical_payload.get("sender_ids") or []
-            task_type_value = canonical_payload.get("task_type")
-            entity_type_value = entity_payload.get("entity_type")
-            deadline_hours = None
-            if task_row is not None and isinstance(task_row.payload, dict):
-                deadline_hours = task_row.payload.get("deadline_hours")
-            if deadline_hours is None:
-                deadline_hours = canonical_payload.get("deadline_hours")
-
-            return FeedbackTaskContext(
-                user_id=user_id,
-                canonical_task_id=canonical_task_id,
-                task_type=TaskType(task_type_value) if task_type_value else TaskType.ADMIN,
-                entity_key=entity_payload.get("entity_key") or canonical_payload.get("entity_key") or "",
-                entity_name=entity_payload.get("entity_name") or "Unknown",
-                entity_type=EntityType(entity_type_value) if entity_type_value else EntityType.TOPIC,
-                sender_ids=[sender_id for sender_id in sender_ids if sender_id],
-                deadline_hours=deadline_hours,
-            )
+            return _feedback_context_from_row(row)
 
     def get_feedback_update_context(self, user_id: str, canonical_task_id: str) -> FeedbackUpdateContext | None:
         with Session(self.engine) as session:
-            dismissed_ids = self._get_dismissed_task_ids(session, user_id)
-            if canonical_task_id in dismissed_ids:
+            row = self._get_task_row(session, user_id, canonical_task_id)
+            if row is None:
                 return None
+            user_state = session.get(PipelineUserStateRecord, user_id)
+            profile = None if user_state is None or user_state.profile_payload is None else BehaviorProfile.model_validate(user_state.profile_payload)
+            return FeedbackUpdateContext(task=_feedback_context_from_row(row), profile=profile)
 
-            current = session.scalar(
-                select(CurrentTaskCardRecord).where(
-                    CurrentTaskCardRecord.user_id == user_id,
-                    CurrentTaskCardRecord.canonical_task_id == canonical_task_id,
-                )
-            )
-            if current is None:
+    def apply_task_action(
+        self,
+        user_id: str,
+        canonical_task_id: str,
+        *,
+        action: FeedbackAction,
+        direction: FeedbackDirection | None = None,
+    ) -> PrioritizedTaskCard | None:
+        with Session(self.engine) as session:
+            row = self._get_task_row(session, user_id, canonical_task_id)
+            if row is None:
                 return None
-
-            canonical_row = session.scalar(
-                select(CanonicalTaskRecord).where(
-                    CanonicalTaskRecord.run_id == current.run_id,
-                    CanonicalTaskRecord.canonical_task_id == canonical_task_id,
-                    CanonicalTaskRecord.user_id == user_id,
-                )
-            )
-            if canonical_row is None:
-                return None
-
-            task_row = session.scalar(select(TaskCardRecord).where(TaskCardRecord.task_id == current.task_id))
-            canonical_payload = canonical_row.payload or {}
-            entity_payload = canonical_payload.get("topic_entity") or {}
-            sender_ids = canonical_payload.get("sender_ids") or []
-            task_type_value = canonical_payload.get("task_type")
-            entity_type_value = entity_payload.get("entity_type")
-            deadline_hours = None
-            if task_row is not None and isinstance(task_row.payload, dict):
-                deadline_hours = task_row.payload.get("deadline_hours")
-            if deadline_hours is None:
-                deadline_hours = canonical_payload.get("deadline_hours")
-
-            current_profile = session.scalar(
-                select(BehaviorProfileRecord)
-                .where(BehaviorProfileRecord.user_id == user_id, BehaviorProfileRecord.is_current.is_(True))
-                .order_by(BehaviorProfileRecord.profile_version.desc())
-            )
-            latest_profile = session.scalar(
-                select(BehaviorProfileRecord)
-                .where(BehaviorProfileRecord.user_id == user_id)
-                .order_by(BehaviorProfileRecord.profile_version.desc())
-            )
-            profile_row = latest_profile if latest_profile is not None and (
-                current_profile is None or latest_profile.profile_version > current_profile.profile_version
-            ) else current_profile
-
-            return FeedbackUpdateContext(
-                task=FeedbackTaskContext(
-                    user_id=user_id,
-                    canonical_task_id=canonical_task_id,
-                    task_type=TaskType(task_type_value) if task_type_value else TaskType.ADMIN,
-                    entity_key=entity_payload.get("entity_key") or canonical_payload.get("entity_key") or "",
-                    entity_name=entity_payload.get("entity_name") or "Unknown",
-                    entity_type=EntityType(entity_type_value) if entity_type_value else EntityType.TOPIC,
-                    sender_ids=[sender_id for sender_id in sender_ids if sender_id],
-                    deadline_hours=deadline_hours,
-                ),
-                profile=None if profile_row is None else BehaviorProfile.model_validate(profile_row.payload),
-            )
+            _apply_action_to_sql_row(row, action=action, direction=direction)
+            row.updated_at = utc_now_naive()
+            session.commit()
+            session.refresh(row)
+            return self._hydrate_card(row)
 
     def shift_current_task_card_priority(
         self,
@@ -737,253 +697,408 @@ class SqlAlchemyPipelineRepository:
         *,
         direction: FeedbackDirection,
     ) -> PrioritizedTaskCard | None:
-        with Session(self.engine) as session:
-            dismissed_ids = self._get_dismissed_task_ids(session, user_id)
-            if canonical_task_id in dismissed_ids:
-                return None
-
-            current = session.scalar(
-                select(CurrentTaskCardRecord).where(
-                    CurrentTaskCardRecord.user_id == user_id,
-                    CurrentTaskCardRecord.canonical_task_id == canonical_task_id,
-                )
-            )
-            if current is None:
-                return None
-
-            row = session.scalar(select(TaskCardRecord).where(TaskCardRecord.task_id == current.task_id))
-            if row is None or not isinstance(row.payload, dict):
-                return None
-
-            card = PrioritizedTaskCard.model_validate(row.payload)
-            updated = card.model_copy(
-                update={"priority_tier": _shift_priority_tier(card.priority_tier, direction)}
-            )
-            row.payload = updated.model_dump(mode="json")
-            current.updated_at = utc_now_naive()
-            session.commit()
-            return updated
+        return self.apply_task_action(
+            user_id,
+            canonical_task_id,
+            action=FeedbackAction.WRONG_PRIORITY,
+            direction=direction,
+        )
 
     def dismiss_task_card(self, user_id: str, canonical_task_id: str) -> bool:
         with Session(self.engine) as session:
-            existing = session.scalar(
-                select(DismissedTaskRecord).where(
-                    DismissedTaskRecord.user_id == user_id,
-                    DismissedTaskRecord.canonical_task_id == canonical_task_id,
-                )
-            )
-            if existing is None:
-                session.add(DismissedTaskRecord(user_id=user_id, canonical_task_id=canonical_task_id))
-            removed = session.execute(
-                delete(CurrentTaskCardRecord).where(
-                    CurrentTaskCardRecord.user_id == user_id,
-                    CurrentTaskCardRecord.canonical_task_id == canonical_task_id,
-                )
-            )
+            row = self._get_task_row(session, user_id, canonical_task_id)
+            if row is None:
+                return False
+            action = FeedbackAction.REJECT if row.status == TaskStatus.PENDING_REVIEW.value else FeedbackAction.DELETE
+            _apply_action_to_sql_row(row, action=action, direction=None)
+            row.updated_at = utc_now_naive()
             session.commit()
-            return bool(removed.rowcount or existing is not None)
+            return True
 
     def save_feedback_event(self, event: FeedbackEvent) -> None:
-        with Session(self.engine) as session:
-            session.add(
-                FeedbackEventRecord(
-                    user_id=event.user_id,
-                    canonical_task_id=event.canonical_task_id,
-                    action=event.action.value,
-                    payload=event.model_dump(mode="json"),
-                )
-            )
-            session.commit()
+        return None
 
     def save_feedback_profile_update(self, event: FeedbackEvent, profile: BehaviorProfile) -> None:
-        with Session(self.engine) as session:
-            session.add(
-                FeedbackEventRecord(
-                    user_id=event.user_id,
-                    canonical_task_id=event.canonical_task_id,
-                    action=event.action.value,
-                    payload=event.model_dump(mode="json"),
-                )
-            )
-
-            existing = session.scalar(
-                select(BehaviorProfileRecord).where(
-                    BehaviorProfileRecord.user_id == profile.user_id,
-                    BehaviorProfileRecord.profile_version == profile.profile_version,
-                )
-            )
-
-            session.execute(
-                update(BehaviorProfileRecord)
-                .where(BehaviorProfileRecord.user_id == profile.user_id, BehaviorProfileRecord.is_current.is_(True))
-                .values(is_current=False)
-            )
-
-            payload = profile.model_dump(mode="json")
-            if existing is None:
-                session.add(
-                    BehaviorProfileRecord(
-                        user_id=profile.user_id,
-                        profile_version=profile.profile_version,
-                        is_current=True,
-                        payload=payload,
-                    )
-                )
-            else:
-                existing.is_current = True
-                existing.payload = payload
-
-            session.commit()
+        self.save_behavior_profile(profile)
 
     def save_pipeline_results(self, bundle: PipelineRunBundle) -> None:
         with Session(self.engine) as session:
-            user_id = _bundle_user_id(bundle)
-            dismissed_ids = self._get_dismissed_task_ids(session, bundle.task_cards[0].user_id) if bundle.task_cards else set()
-            if user_id is not None:
-                dismissed_ids = self._get_dismissed_task_ids(session, user_id)
-            for signal in bundle.signals:
-                session.add(
-                    TaskSignalRecord(
-                        run_id=bundle.run_id,
-                        user_id=signal.user_id,
-                        source_id=signal.source_id,
-                        entity_key=signal.topic_entity.entity_key,
-                        payload=signal.model_dump(mode="json"),
-                    )
-                )
-            for canonical_task in bundle.canonical_tasks:
-                session.add(
-                    CanonicalTaskRecord(
-                        run_id=bundle.run_id,
-                        canonical_task_id=canonical_task.canonical_task_id,
-                        user_id=canonical_task.user_id,
-                        entity_key=canonical_task.topic_entity.entity_key,
-                        payload=canonical_task.model_dump(mode="json"),
-                    )
-                )
-            for decision in bundle.decisions:
-                session.add(
-                    LlmDecisionRecord(
-                        run_id=bundle.run_id,
-                        canonical_task_id=decision.canonical_task_id,
-                        prompt_version=decision.prompt_version,
-                        schema_version_ref=decision.schema_version_ref,
-                        payload=decision.model_dump(mode="json"),
-                    )
-                )
-            if user_id is not None:
-                session.execute(delete(CurrentTaskCardRecord).where(CurrentTaskCardRecord.user_id == user_id))
-            for card in bundle.task_cards:
-                session.add(
-                    TaskCardRecord(
-                        run_id=bundle.run_id,
-                        task_id=card.task_id,
-                        canonical_task_id=card.canonical_task_id,
-                        user_id=card.user_id,
-                        payload=card.model_dump(mode="json"),
-                    )
-                )
-                if card.canonical_task_id in dismissed_ids:
+            decision_by_id = {decision.canonical_task_id: decision for decision in bundle.decisions}
+            task_by_id = {task.canonical_task_id: task for task in bundle.canonical_tasks}
+
+            ordered_task_cards = _sort_task_cards(bundle.task_cards)
+            for card in ordered_task_cards:
+                task = task_by_id.get(card.canonical_task_id)
+                if task is None:
                     continue
-                current = session.get(CurrentTaskCardRecord, card.canonical_task_id)
-                if current is None:
-                    session.add(
-                        CurrentTaskCardRecord(
-                            canonical_task_id=card.canonical_task_id,
-                            user_id=card.user_id,
-                            task_id=card.task_id,
-                            run_id=bundle.run_id,
-                            updated_at=utc_now_naive(),
-                        )
+                row = self._get_task_row(session, card.user_id, card.canonical_task_id)
+                if row is None:
+                    row = PipelineTaskRecord(
+                        user_id=card.user_id,
+                        canonical_task_id=card.canonical_task_id,
+                        created_at=utc_now_naive(),
                     )
-                else:
-                    current.user_id = card.user_id
-                    current.task_id = card.task_id
-                    current.run_id = bundle.run_id
-                    current.updated_at = utc_now_naive()
-            if bundle.profile is not None:
-                current_profile = session.scalar(
-                    select(BehaviorProfileRecord)
-                    .where(
-                        BehaviorProfileRecord.user_id == bundle.profile.user_id,
-                        BehaviorProfileRecord.is_current.is_(True),
-                    )
-                    .order_by(BehaviorProfileRecord.profile_version.desc())
+                    session.add(row)
+                _merge_sql_task_row(
+                    row=row,
+                    task_card=card,
+                    canonical_task=task,
+                    llm_decision=decision_by_id.get(card.canonical_task_id),
                 )
 
-                if current_profile is None or current_profile.profile_version <= bundle.profile.profile_version:
-                    session.execute(
-                        update(BehaviorProfileRecord)
-                        .where(
-                            BehaviorProfileRecord.user_id == bundle.profile.user_id,
-                            BehaviorProfileRecord.is_current.is_(True),
-                        )
-                        .values(is_current=False)
-                    )
-                    existing_profile = session.scalar(
-                        select(BehaviorProfileRecord).where(
-                            BehaviorProfileRecord.user_id == bundle.profile.user_id,
-                            BehaviorProfileRecord.profile_version == bundle.profile.profile_version,
-                        )
-                    )
-                    if existing_profile is None:
-                        session.add(
-                            BehaviorProfileRecord(
-                                user_id=bundle.profile.user_id,
-                                profile_version=bundle.profile.profile_version,
-                                is_current=True,
-                                payload=bundle.profile.model_dump(mode="json"),
-                            )
-                        )
-                    else:
-                        existing_profile.is_current = True
-                        existing_profile.payload = bundle.profile.model_dump(mode="json")
+            if bundle.profile is not None:
+                user_state = self._get_or_create_user_state(session, bundle.profile.user_id)
+                user_state.profile_version = bundle.profile.profile_version
+                user_state.profile_payload = bundle.profile.model_dump(mode="json")
+                user_state.updated_at = utc_now_naive()
+
             session.commit()
 
-    def _get_dismissed_task_ids(self, session: Session, user_id: str) -> set[str]:
-        rows = session.scalars(select(DismissedTaskRecord).where(DismissedTaskRecord.user_id == user_id)).all()
-        return {row.canonical_task_id for row in rows}
-
-    def _get_task_signals(
-        self,
-        session: Session,
-        *,
-        run_id: str,
-        user_id: str,
-        source_ids: list[str],
-    ) -> list[TaskSignal]:
-        if not source_ids:
-            return []
-        rows = session.scalars(
-            select(TaskSignalRecord).where(
-                TaskSignalRecord.run_id == run_id,
-                TaskSignalRecord.user_id == user_id,
-                TaskSignalRecord.source_id.in_(source_ids),
-            )
-        ).all()
-        return [TaskSignal.model_validate(row.payload) for row in rows]
-
-    def _hydrate_task_card(
-        self,
-        session: Session,
-        current_row: CurrentTaskCardRecord,
-        card: PrioritizedTaskCard,
-    ) -> PrioritizedTaskCard:
-        row = session.scalar(
-            select(CanonicalTaskRecord).where(
-                CanonicalTaskRecord.run_id == current_row.run_id,
-                CanonicalTaskRecord.canonical_task_id == current_row.canonical_task_id,
-                CanonicalTaskRecord.user_id == current_row.user_id,
-            )
-        )
+    def _get_or_create_user_state(self, session: Session, user_id: str) -> PipelineUserStateRecord:
+        row = session.get(PipelineUserStateRecord, user_id)
         if row is None:
-            return card
-        task = CanonicalTask.model_validate(row.payload)
-        signals = self._get_task_signals(
-            session,
-            run_id=current_row.run_id,
-            user_id=current_row.user_id,
-            source_ids=task.source_ids,
+            row = PipelineUserStateRecord(
+                user_id=user_id,
+                profile_version=1,
+                profile_payload=None,
+                onboarding_payload=None,
+                custom_tags=[],
+                alias_payload={},
+                updated_at=utc_now_naive(),
+            )
+            session.add(row)
+            session.flush()
+        return row
+
+    def _get_task_row(self, session: Session, user_id: str, canonical_task_id: str) -> PipelineTaskRecord | None:
+        return session.scalar(
+            select(PipelineTaskRecord).where(
+                PipelineTaskRecord.user_id == user_id,
+                PipelineTaskRecord.canonical_task_id == canonical_task_id,
+            )
         )
-        enriched_task = _enrich_canonical_task(task, signals)
-        return _enrich_task_card(card, enriched_task)
+
+    def _list_task_cards_for_status(self, user_id: str, status: TaskStatus) -> list[PrioritizedTaskCard]:
+        with Session(self.engine) as session:
+            stmt = select(PipelineTaskRecord).where(
+                    PipelineTaskRecord.user_id == user_id,
+                    PipelineTaskRecord.status == status.value,
+                )
+            if status == TaskStatus.PENDING_REVIEW:
+                stmt = stmt.order_by(PipelineTaskRecord.created_at.asc(), PipelineTaskRecord.id.asc())
+            rows = session.scalars(stmt).all()
+            cards = [self._hydrate_card(row) for row in rows]
+            hydrated_cards = [card for card in cards if card is not None]
+            if status == TaskStatus.PENDING_REVIEW:
+                return hydrated_cards
+            return _sort_task_cards(hydrated_cards)
+
+    def _hydrate_card(self, row: PipelineTaskRecord) -> PrioritizedTaskCard | None:
+        card = _row_to_card(row)
+        task = _row_to_task(row)
+        if card is None:
+            return None
+        if task is not None and _task_card_needs_hydration(card):
+            card = _enrich_task_card(card, task)
+        return card
+
+
+def _feedback_context_from_row(row: PipelineTaskRecord) -> FeedbackTaskContext:
+    task = _row_to_task(row)
+    card = _row_to_card(row)
+    if task is None or card is None:
+        raise ValueError("Task payload is incomplete.")
+    return FeedbackTaskContext(
+        user_id=row.user_id,
+        canonical_task_id=row.canonical_task_id,
+        task_type=task.task_type,
+        entity_key=task.topic_entity.entity_key,
+        entity_name=task.topic_entity.entity_name,
+        entity_type=task.topic_entity.entity_type,
+        sender_ids=list(task.sender_ids),
+        deadline_hours=row.deadline_hours,
+        task_tags=dedupe_tags(row.tags or card.tags),
+        status=TaskStatus(row.status),
+        suggested_priority_tier=PriorityTier(row.suggested_priority_tier),
+        effective_priority_tier=PriorityTier(row.effective_priority_tier),
+        applied_priority_delta=row.applied_priority_delta,
+    )
+
+
+def _feedback_context_from_memory_row(row: dict[str, Any]) -> FeedbackTaskContext:
+    task = _parse_payload_task(row["payload"])
+    card = _row_to_card_from_memory(row)
+    if task is None or card is None:
+        raise ValueError("Task payload is incomplete.")
+    return FeedbackTaskContext(
+        user_id=row["user_id"],
+        canonical_task_id=row["canonical_task_id"],
+        task_type=task.task_type,
+        entity_key=task.topic_entity.entity_key,
+        entity_name=task.topic_entity.entity_name,
+        entity_type=task.topic_entity.entity_type,
+        sender_ids=list(task.sender_ids),
+        deadline_hours=row["deadline_hours"],
+        task_tags=dedupe_tags(row["tags"] or card.tags),
+        status=TaskStatus(row["status"]),
+        suggested_priority_tier=PriorityTier(row["suggested_priority_tier"]),
+        effective_priority_tier=PriorityTier(row["effective_priority_tier"]),
+        applied_priority_delta=row["applied_priority_delta"],
+    )
+
+
+def _row_to_card_from_memory(row: dict[str, Any]) -> PrioritizedTaskCard | None:
+    card = _parse_payload_card(row["payload"])
+    if card is None:
+        return None
+    return card.model_copy(
+        update={
+            "status": TaskStatus(row["status"]),
+            "priority_tier": PriorityTier(row["effective_priority_tier"]),
+            "suggested_priority_tier": PriorityTier(row["suggested_priority_tier"]),
+            "effective_priority_tier": PriorityTier(row["effective_priority_tier"]),
+            "applied_priority_delta": row["applied_priority_delta"],
+            "tags": dedupe_tags(row["tags"] or card.tags),
+            "confidence": row["confidence"],
+        }
+    )
+
+
+def _merge_sql_task_row(
+    *,
+    row: PipelineTaskRecord,
+    task_card: PrioritizedTaskCard,
+    canonical_task: CanonicalTask,
+    llm_decision: LlmDecision | None,
+) -> None:
+    existing_status = TaskStatus(row.status) if row.status else TaskStatus.PENDING_REVIEW
+    preserve_priority = bool(row.status) and (existing_status != TaskStatus.PENDING_REVIEW or _has_user_priority_edit(row))
+
+    suggested_priority = PriorityTier(row.suggested_priority_tier) if preserve_priority and row.suggested_priority_tier else task_card.suggested_priority_tier
+    effective_priority = PriorityTier(row.effective_priority_tier) if preserve_priority and row.effective_priority_tier else task_card.effective_priority_tier
+    applied_priority_delta = row.applied_priority_delta if preserve_priority else task_card.applied_priority_delta
+    status = existing_status if row.status else task_card.status
+
+    persisted_card = task_card.model_copy(
+        update={
+            "status": status,
+            "priority_tier": effective_priority,
+            "suggested_priority_tier": suggested_priority,
+            "effective_priority_tier": effective_priority,
+            "applied_priority_delta": applied_priority_delta,
+        }
+    )
+
+    row.origin = persisted_card.origin.value
+    row.status = status.value
+    row.task_type = persisted_card.task_type.value
+    row.entity_key = persisted_card.entity_key
+    row.deadline_hours = persisted_card.deadline_hours
+    row.suggested_priority_tier = suggested_priority.value
+    row.effective_priority_tier = effective_priority.value
+    row.applied_priority_delta = applied_priority_delta
+    row.confidence = persisted_card.confidence
+    row.tags = dedupe_tags(persisted_card.tags)
+    row.payload = _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision)
+    row.decision_history = row.decision_history or []
+    row.accepted_at = row.accepted_at
+    row.rejected_at = row.rejected_at
+    row.completed_at = row.completed_at
+    row.deleted_at = row.deleted_at
+    row.updated_at = utc_now_naive()
+
+
+def _merge_memory_task_row(
+    *,
+    existing: dict[str, Any] | None,
+    task_card: PrioritizedTaskCard,
+    canonical_task: CanonicalTask,
+    llm_decision: LlmDecision | None,
+) -> dict[str, Any]:
+    existing_status = TaskStatus(existing["status"]) if existing and existing.get("status") else TaskStatus.PENDING_REVIEW
+    preserve_priority = existing is not None and (
+        existing_status != TaskStatus.PENDING_REVIEW or bool(existing.get("applied_priority_delta"))
+        or any(entry.get("action") == FeedbackAction.WRONG_PRIORITY.value for entry in existing.get("decision_history", []))
+    )
+
+    suggested_priority = PriorityTier(existing["suggested_priority_tier"]) if preserve_priority and existing else task_card.suggested_priority_tier
+    effective_priority = PriorityTier(existing["effective_priority_tier"]) if preserve_priority and existing else task_card.effective_priority_tier
+    applied_priority_delta = existing["applied_priority_delta"] if preserve_priority and existing else task_card.applied_priority_delta
+    status = existing_status if existing else task_card.status
+
+    persisted_card = task_card.model_copy(
+        update={
+            "status": status,
+            "priority_tier": effective_priority,
+            "suggested_priority_tier": suggested_priority,
+            "effective_priority_tier": effective_priority,
+            "applied_priority_delta": applied_priority_delta,
+        }
+    )
+
+    return {
+        "user_id": persisted_card.user_id,
+        "canonical_task_id": persisted_card.canonical_task_id,
+        "origin": persisted_card.origin.value,
+        "status": status.value,
+        "task_type": persisted_card.task_type.value,
+        "entity_key": persisted_card.entity_key,
+        "deadline_hours": persisted_card.deadline_hours,
+        "suggested_priority_tier": suggested_priority.value,
+        "effective_priority_tier": effective_priority.value,
+        "applied_priority_delta": applied_priority_delta,
+        "confidence": persisted_card.confidence,
+        "tags": dedupe_tags(persisted_card.tags),
+        "payload": _payload_for_task(task_card=persisted_card, canonical_task=canonical_task, llm_decision=llm_decision),
+        "decision_history": list(existing.get("decision_history", [])) if existing else [],
+        "accepted_at": existing.get("accepted_at") if existing else None,
+        "rejected_at": existing.get("rejected_at") if existing else None,
+        "completed_at": existing.get("completed_at") if existing else None,
+        "deleted_at": existing.get("deleted_at") if existing else None,
+        "created_at": existing.get("created_at") if existing else utc_now_naive(),
+        "updated_at": utc_now_naive(),
+    }
+
+
+def _apply_action_to_sql_row(
+    row: PipelineTaskRecord,
+    *,
+    action: FeedbackAction,
+    direction: FeedbackDirection | None,
+) -> None:
+    card = _row_to_card(row)
+    task = _row_to_task(row)
+    if card is None or task is None:
+        raise ValueError("Task payload is incomplete.")
+
+    before_status = TaskStatus(row.status)
+    before_priority = PriorityTier(row.effective_priority_tier)
+    after_status = before_status
+    after_priority = before_priority
+    incremental_delta = 0
+
+    if action == FeedbackAction.WRONG_PRIORITY:
+        if direction is None:
+            raise ValueError("direction is required when action is WRONG_PRIORITY")
+        after_priority, new_delta, incremental_delta = compute_priority_adjustment(
+            suggested_priority_tier=PriorityTier(row.suggested_priority_tier),
+            effective_priority_tier=PriorityTier(row.effective_priority_tier),
+            applied_priority_delta=row.applied_priority_delta,
+            direction=direction,
+        )
+        row.effective_priority_tier = after_priority.value
+        row.applied_priority_delta = new_delta
+    elif action == FeedbackAction.ACCEPT:
+        after_status = TaskStatus.ACCEPTED
+        row.accepted_at = utc_now_naive()
+    elif action == FeedbackAction.REJECT:
+        after_status = TaskStatus.REJECTED
+        row.rejected_at = utc_now_naive()
+    elif action == FeedbackAction.COMPLETED:
+        after_status = TaskStatus.COMPLETED
+        row.completed_at = utc_now_naive()
+    elif action == FeedbackAction.DELETE:
+        after_status = TaskStatus.DELETED
+        row.deleted_at = utc_now_naive()
+
+    row.status = after_status.value
+    row.tags = dedupe_tags(row.tags or card.tags)
+    updated_card = card.model_copy(
+        update={
+            "status": after_status,
+            "priority_tier": after_priority,
+            "effective_priority_tier": after_priority,
+            "applied_priority_delta": row.applied_priority_delta,
+            "tags": row.tags,
+        }
+    )
+    row.payload = _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row.payload))
+    history = list(row.decision_history or [])
+    history.append(
+        TaskDecision(
+            action=action,
+            before_status=before_status,
+            after_status=after_status,
+            before_priority=before_priority,
+            after_priority=after_priority,
+            incremental_priority_delta=incremental_delta,
+        ).model_dump(mode="json")
+    )
+    row.decision_history = history
+    row.confidence = updated_card.confidence
+
+
+def _apply_action_to_memory_row(
+    row: dict[str, Any],
+    *,
+    action: FeedbackAction,
+    direction: FeedbackDirection | None,
+) -> dict[str, Any]:
+    card = _row_to_card_from_memory(row)
+    task = _parse_payload_task(row["payload"])
+    if card is None or task is None:
+        raise ValueError("Task payload is incomplete.")
+
+    before_status = TaskStatus(row["status"])
+    before_priority = PriorityTier(row["effective_priority_tier"])
+    after_status = before_status
+    after_priority = before_priority
+    incremental_delta = 0
+
+    if action == FeedbackAction.WRONG_PRIORITY:
+        if direction is None:
+            raise ValueError("direction is required when action is WRONG_PRIORITY")
+        after_priority, new_delta, incremental_delta = compute_priority_adjustment(
+            suggested_priority_tier=PriorityTier(row["suggested_priority_tier"]),
+            effective_priority_tier=PriorityTier(row["effective_priority_tier"]),
+            applied_priority_delta=row["applied_priority_delta"],
+            direction=direction,
+        )
+        row["effective_priority_tier"] = after_priority.value
+        row["applied_priority_delta"] = new_delta
+    elif action == FeedbackAction.ACCEPT:
+        after_status = TaskStatus.ACCEPTED
+        row["accepted_at"] = utc_now_naive()
+    elif action == FeedbackAction.REJECT:
+        after_status = TaskStatus.REJECTED
+        row["rejected_at"] = utc_now_naive()
+    elif action == FeedbackAction.COMPLETED:
+        after_status = TaskStatus.COMPLETED
+        row["completed_at"] = utc_now_naive()
+    elif action == FeedbackAction.DELETE:
+        after_status = TaskStatus.DELETED
+        row["deleted_at"] = utc_now_naive()
+
+    row["status"] = after_status.value
+    row["tags"] = dedupe_tags(row["tags"] or card.tags)
+    updated_card = card.model_copy(
+        update={
+            "status": after_status,
+            "priority_tier": after_priority,
+            "effective_priority_tier": after_priority,
+            "applied_priority_delta": row["applied_priority_delta"],
+            "tags": row["tags"],
+        }
+    )
+    row["payload"] = _payload_for_task(task_card=updated_card, canonical_task=task, llm_decision=_parse_llm_decision(row["payload"]))
+    history = list(row.get("decision_history", []))
+    history.append(
+        TaskDecision(
+            action=action,
+            before_status=before_status,
+            after_status=after_status,
+            before_priority=before_priority,
+            after_priority=after_priority,
+            incremental_priority_delta=incremental_delta,
+        ).model_dump(mode="json")
+    )
+    row["decision_history"] = history
+    row["updated_at"] = utc_now_naive()
+    return row
+
+
+def _parse_llm_decision(payload: dict[str, Any]) -> LlmDecision | None:
+    llm_payload = payload.get("llm_decision") if isinstance(payload, dict) else None
+    if not isinstance(llm_payload, dict):
+        return None
+    return LlmDecision.model_validate(llm_payload)

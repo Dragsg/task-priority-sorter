@@ -15,11 +15,11 @@ def test_confidence_uses_rolling_recent_window():
     profile = build_profile()
 
     for action in [
-        FeedbackAction.GOT_IT,
-        FeedbackAction.GOT_IT,
+        FeedbackAction.ACCEPT,
+        FeedbackAction.ACCEPT,
         FeedbackAction.WRONG_PRIORITY,
-        FeedbackAction.RESCHEDULE,
-        FeedbackAction.GOT_IT,
+        FeedbackAction.REJECT,
+        FeedbackAction.ACCEPT,
     ]:
         profile = service.update_from_feedback(
             profile,
@@ -46,6 +46,7 @@ def test_wrong_priority_too_low_increases_entity_and_sender_importance():
         entity_type=EntityType.MODULE,
         sender_hash=sender_hash,
         task_type=TaskType.SUBMISSION,
+        incremental_priority_delta=1,
     )
 
     updated = service.update_from_feedback(profile, event)

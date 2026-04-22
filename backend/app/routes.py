@@ -18,12 +18,16 @@ from .db import (
 )
 from .pipeline_bridge import (
     create_manual_task,
+    get_available_tags,
+    get_onboarding_context_snapshot,
     get_pipeline_recompute_status,
     get_profile_snapshot,
     get_task_statistics_snapshot,
     list_prioritized_tasks,
     remove_prioritized_task,
+    remove_calendar_context,
     run_prioritization_for_user,
+    save_calendar_context,
     submit_task_feedback,
     sync_onboarding_context,
 )
@@ -207,6 +211,57 @@ def onboarding():
             "user": serialize_user(user),
         }
     )
+
+
+@api.get("/onboarding/context")
+def onboarding_context():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        user = get_user_by_id(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        context = get_onboarding_context_snapshot(user_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(
+        {
+            "user": serialize_user(user),
+            "onboarding": context,
+            "calendarActive": bool(context.get("calendar_source")),
+        }
+    )
+
+
+@api.post("/onboarding/calendar")
+def onboarding_calendar_upload():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        uploaded = request.files.get("file")
+        if uploaded is None:
+            raise ValueError("Calendar file is required.")
+        context = save_calendar_context(
+            user_id,
+            filename=uploaded.filename,
+            file_bytes=uploaded.read(),
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify({"success": True, "onboarding": context, "calendarActive": bool(context.get("calendar_source"))})
+
+
+@api.delete("/onboarding/calendar")
+def onboarding_calendar_delete():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        context = remove_calendar_context(user_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify({"success": True, "onboarding": context, "calendarActive": False})
 
 
 @api.get("/gmail/status")
@@ -443,6 +498,7 @@ def add_manual_task():
             task_type=data.get("taskType"),
             deadline_at=data.get("deadlineAt"),
             entity_name=data.get("entityName"),
+            tags=data.get("tags"),
         )
     except ValueError as error:
         return jsonify({"error": str(error)}), 422
@@ -482,6 +538,7 @@ def dashboard_bootstrap():
             "user": serialize_user(user),
             "items": items,
             "profile": profile,
+            "availableTags": get_available_tags(user_id),
         }
     )
 

@@ -106,6 +106,7 @@ def test_end_to_end_pipeline_and_feedback_cycle():
             entity_name="CS2103T",
             entity_type=EntityType.MODULE,
             sender_hash=sender_hash,
+            incremental_priority_delta=1,
         )
     )
 

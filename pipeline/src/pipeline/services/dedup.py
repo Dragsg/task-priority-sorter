@@ -3,7 +3,8 @@ from __future__ import annotations
 from uuid import uuid5, NAMESPACE_URL
 
 from pipeline.config import PipelineSettings
-from pipeline.models import CanonicalTask, Platform, SenderRole, TaskSignal
+from pipeline.models import CanonicalTask, Platform, SenderRole, TaskOrigin, TaskSignal
+from pipeline.utils.tags import dedupe_tags
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -91,6 +92,7 @@ class TaskDeduplicator:
             canonical_task_id=canonical_task_id,
             user_id=first.user_id,
             run_id=run_id,
+            origin=TaskOrigin.MANUAL if any(signal.origin == TaskOrigin.MANUAL for signal in cluster) else TaskOrigin.EMAIL,
             task_type=first.task_type,
             topic_entity=first.topic_entity,
             source_ids=[signal.source_id for signal in cluster],
@@ -106,6 +108,7 @@ class TaskDeduplicator:
             representative_body_excerpt=representative_body_excerpt,
             representative_sender_display=representative.sender_display,
             representative_timestamp=representative.timestamp,
+            manual_tags=dedupe_tags(tag for signal in cluster for tag in signal.manual_tags),
         )
 
     def _select_representative_signal(self, cluster: list[TaskSignal]) -> TaskSignal:

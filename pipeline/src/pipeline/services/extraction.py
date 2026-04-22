@@ -7,8 +7,9 @@ from typing import Any
 
 from dateparser.search import search_dates
 
-from pipeline.models import Platform, RawMessage, SenderRole, TaskSignal, TaskType, TopicEntity
+from pipeline.models import Platform, RawMessage, SenderRole, TaskOrigin, TaskSignal, TaskType, TopicEntity
 from pipeline.models.enums import EntityType
+from pipeline.utils.tags import dedupe_tags
 from pipeline.utils.text import normalize_entity_name
 from pipeline.utils.time import utc_now_naive
 
@@ -196,6 +197,7 @@ class SignalExtractor:
             user_id=message.user_id,
             source_id=message.source_id,
             platform=message.platform,
+            origin=TaskOrigin.MANUAL if message.platform == Platform.MANUAL else TaskOrigin.EMAIL,
             timestamp=timestamp,
             sender_id=message.sender_id or message.sender_email,
             sender_display=message.sender_display or message.sender_email or message.from_raw,
@@ -212,6 +214,7 @@ class SignalExtractor:
             deadline_at=deadline_at,
             topic_entity=topic_entity,
             platforms_seen=[message.platform],
+            manual_tags=self._manual_tags(manual_metadata),
         )
 
     def _build_text(self, message: RawMessage) -> str:
@@ -371,6 +374,14 @@ class SignalExtractor:
             return TaskType(value) if value else None
         except ValueError:
             return None
+
+    def _manual_tags(self, metadata: dict[str, Any] | None) -> list[str]:
+        if not metadata:
+            return []
+        raw_tags = metadata.get("tags")
+        if not isinstance(raw_tags, list):
+            return []
+        return dedupe_tags(raw_tags)
 
     def _manual_topic_entity(self, metadata: dict[str, Any] | None) -> TopicEntity | None:
         if not metadata:

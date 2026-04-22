@@ -8,6 +8,11 @@ class Platform(str, Enum):
     MANUAL = "manual"
 
 
+class TaskOrigin(str, Enum):
+    EMAIL = "email"
+    MANUAL = "manual"
+
+
 class TaskType(str, Enum):
     SUBMISSION = "submission"
     MEETING = "meeting"
@@ -21,6 +26,14 @@ class PriorityTier(str, Enum):
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
     LOW = "LOW"
+
+
+class TaskStatus(str, Enum):
+    PENDING_REVIEW = "pending_review"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    COMPLETED = "completed"
+    DELETED = "deleted"
 
 
 class ActionWindow(str, Enum):
@@ -48,10 +61,11 @@ class EntityType(str, Enum):
 
 
 class FeedbackAction(str, Enum):
-    GOT_IT = "GOT_IT"
-    RESCHEDULE = "RESCHEDULE"
-    ALREADY_DONE = "ALREADY_DONE"
+    ACCEPT = "ACCEPT"
+    REJECT = "REJECT"
     WRONG_PRIORITY = "WRONG_PRIORITY"
+    COMPLETED = "COMPLETED"
+    DELETE = "DELETE"
 
 
 class FeedbackDirection(str, Enum):

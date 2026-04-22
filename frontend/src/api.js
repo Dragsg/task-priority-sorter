@@ -144,6 +144,32 @@ export async function saveOnboardingPreferences(preferences) {
   });
 }
 
+export async function fetchOnboardingContext() {
+  const response = await fetch(`${API_BASE_URL}/onboarding/context`, {
+    headers: getAuthHeaders(),
+  });
+  return readJson(response);
+}
+
+export async function uploadOnboardingCalendar(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE_URL}/onboarding/calendar`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: formData,
+  });
+  return readJson(response);
+}
+
+export async function deleteOnboardingCalendar() {
+  return sendJson("/onboarding/calendar", {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+}
+
 export function getGmailLinkUrl(userId) {
   return `${API_BASE_URL}/gmail/link?user_id=${userId}`;
 }

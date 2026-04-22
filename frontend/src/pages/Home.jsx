@@ -8,7 +8,6 @@ import {
   fetchPrioritizedTasks,
   getStoredUser,
   getStoredUserId,
-  removePrioritizedTask,
   submitTaskFeedback,
   syncPrioritizedTasks,
 } from "../api";
@@ -24,9 +23,6 @@ const TASK_TYPE_OPTIONS = [
 ];
 const DASHBOARD_CACHE_VERSION = 1;
 const PRIORITY_TIERS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-const PRIORITY_ORDER = Object.fromEntries(
-  PRIORITY_TIERS.map((tier, index) => [tier, index])
-);
 
 function getDashboardCacheKey(userId) {
   return `task-priority-dashboard:v${DASHBOARD_CACHE_VERSION}:${userId}`;
@@ -100,14 +96,17 @@ function buildSyncStatus(result) {
 }
 
 function describeFeedback(action, direction) {
-  if (action === "GOT_IT") {
-    return "On it";
+  if (action === "ACCEPT") {
+    return "Accepted";
   }
-  if (action === "RESCHEDULE") {
-    return "Moved to later";
+  if (action === "REJECT") {
+    return "Rejected";
   }
-  if (action === "ALREADY_DONE") {
-    return "Marked as done";
+  if (action === "COMPLETED") {
+    return "Marked as completed";
+  }
+  if (action === "DELETE") {
+    return "Deleted";
   }
   if (action === "WRONG_PRIORITY" && direction === "too_low") {
     return "Moved up one priority level";
@@ -141,18 +140,6 @@ function createFeedbackState(action, direction, currentPriorityTier) {
   };
 }
 
-function compareTaskPriority(a, b) {
-  const priorityDelta =
-    (PRIORITY_ORDER[a.priority_tier] ?? PRIORITY_TIERS.length) -
-    (PRIORITY_ORDER[b.priority_tier] ?? PRIORITY_TIERS.length);
-
-  if (priorityDelta !== 0) {
-    return priorityDelta;
-  }
-
-  return (a.deadline_hours ?? Number.POSITIVE_INFINITY) - (b.deadline_hours ?? Number.POSITIVE_INFINITY);
-}
-
 function shiftPriorityTier(priorityTier, direction) {
   const currentIndex = PRIORITY_TIERS.indexOf(priorityTier);
   if (currentIndex === -1) {
@@ -168,10 +155,6 @@ function shiftPriorityTier(priorityTier, direction) {
   }
 
   return priorityTier;
-}
-
-function sortTasks(tasks) {
-  return [...tasks].sort(compareTaskPriority);
 }
 
 function getPriorityChangeOptions(priorityTier) {
@@ -305,14 +288,8 @@ function TaskActions({
   feedbackState,
   isBusy,
   onFeedback,
-  onRemove,
 }) {
   const feedbackLabel = feedbackState?.label ?? null;
-  const isStarted = feedbackState?.action === "GOT_IT";
-  const isLocked =
-    Boolean(feedbackState) &&
-    !isStarted &&
-    feedbackState?.action !== "WRONG_PRIORITY";
   const priorityChangeOptions = getPriorityChangeOptions(task.priority_tier);
 
   return (
@@ -320,147 +297,119 @@ function TaskActions({
       {feedbackLabel ? (
         <p className="task-feedback-note">Updated: {feedbackLabel}</p>
       ) : null}
-      {isStarted ? (
-        <>
-          <div className="task-actions">
-            <button
-              className="primary-button"
-              disabled={isBusy}
-              onClick={() => onFeedback(task.canonical_task_id, "ALREADY_DONE")}
-              type="button"
-            >
-              Completed
-            </button>
-          </div>
-          <div className="task-secondary-actions">
-            <button
-              className="inline-button task-remove-link"
-              disabled={isBusy}
-              onClick={() => onRemove(task.canonical_task_id)}
-              type="button"
-            >
-              Remove task
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="task-actions">
-            <button
-              className="primary-button"
-              disabled={isBusy || isLocked}
-              onClick={() => onFeedback(task.canonical_task_id, "GOT_IT")}
-              type="button"
-            >
-              On it
-            </button>
-            <button
-              className="secondary-button"
-              disabled={isBusy || isLocked}
-              onClick={() => onFeedback(task.canonical_task_id, "RESCHEDULE")}
-              type="button"
-            >
-              Later
-            </button>
-            <button
-              className="secondary-button"
-              disabled={isBusy || isLocked}
-              onClick={() => onFeedback(task.canonical_task_id, "ALREADY_DONE")}
-              type="button"
-            >
-              Done
-            </button>
-          </div>
-          <div className="task-secondary-actions">
-            <span className="task-secondary-label">Adjust ranking:</span>
-            <button
-              className="inline-button"
-              disabled={isBusy || isLocked || priorityChangeOptions.increaseDisabled}
-              title={
-                priorityChangeOptions.increaseDisabled
-                  ? `Already ${formatPriorityTierLabel(priorityChangeOptions.increaseTarget)}`
-                  : `Change priority to ${formatPriorityTierLabel(priorityChangeOptions.increaseTarget)}`
-              }
-              onClick={() =>
-                onFeedback(
-                  task.canonical_task_id,
-                  "WRONG_PRIORITY",
-                  "too_low",
-                  task.priority_tier
-                )
-              }
-              type="button"
-            >
-              Change priority to {formatPriorityTierLabel(priorityChangeOptions.increaseTarget)}
-            </button>
-            <button
-              className="inline-button"
-              disabled={isBusy || isLocked || priorityChangeOptions.decreaseDisabled}
-              title={
-                priorityChangeOptions.decreaseDisabled
-                  ? `Already ${formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}`
-                  : `Change priority to ${formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}`
-              }
-              onClick={() =>
-                onFeedback(
-                  task.canonical_task_id,
-                  "WRONG_PRIORITY",
-                  "too_high",
-                  task.priority_tier
-                )
-              }
-              type="button"
-            >
-              Change priority to {formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}
-            </button>
-            <button
-              className="inline-button task-remove-link"
-              disabled={isBusy}
-              onClick={() => onRemove(task.canonical_task_id)}
-              type="button"
-            >
-              Remove task
-            </button>
-          </div>
-        </>
-      )}
+      <div className="task-actions">
+        <button
+          className="primary-button"
+          disabled={isBusy}
+          onClick={() => onFeedback(task.canonical_task_id, "ACCEPT")}
+          type="button"
+        >
+          Accept
+        </button>
+        <button
+          className="secondary-button"
+          disabled={isBusy}
+          onClick={() => onFeedback(task.canonical_task_id, "REJECT")}
+          type="button"
+        >
+          Reject
+        </button>
+      </div>
+      <div className="task-secondary-actions">
+        <span className="task-secondary-label">Adjust ranking:</span>
+        <button
+          className="inline-button"
+          disabled={isBusy || priorityChangeOptions.increaseDisabled}
+          title={
+            priorityChangeOptions.increaseDisabled
+              ? `Already ${formatPriorityTierLabel(priorityChangeOptions.increaseTarget)}`
+              : `Change priority to ${formatPriorityTierLabel(priorityChangeOptions.increaseTarget)}`
+          }
+          onClick={() =>
+            onFeedback(
+              task.canonical_task_id,
+              "WRONG_PRIORITY",
+              "too_low",
+              task.priority_tier
+            )
+          }
+          type="button"
+        >
+          Change priority to {formatPriorityTierLabel(priorityChangeOptions.increaseTarget)}
+        </button>
+        <button
+          className="inline-button"
+          disabled={isBusy || priorityChangeOptions.decreaseDisabled}
+          title={
+            priorityChangeOptions.decreaseDisabled
+              ? `Already ${formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}`
+              : `Change priority to ${formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}`
+          }
+          onClick={() =>
+            onFeedback(
+              task.canonical_task_id,
+              "WRONG_PRIORITY",
+              "too_high",
+              task.priority_tier
+            )
+          }
+          type="button"
+        >
+          Change priority to {formatPriorityTierLabel(priorityChangeOptions.decreaseTarget)}
+        </button>
+      </div>
     </>
   );
 }
 
-function FocusCard({ task, feedbackState, isBusy, onFeedback, onRemove }) {
+function TaskCard({ task, feedbackState, isBusy, onFeedback, index = 0 }) {
   return (
-    <article className={`task-card task-card-focus task-card-tier-${task.priority_tier.toLowerCase()}`}>
-      <div className="task-card-top">
-        <span className={`task-tier task-tier-${task.priority_tier.toLowerCase()}`}>
-          {task.priority_tier}
-        </span>
-        {formatDeadline(task.deadline_hours) ? (
-          <span className="task-deadline-badge">{formatDeadline(task.deadline_hours)}</span>
-        ) : null}
+    <article className={`task-card task-card-queue task-card-tier-${task.priority_tier.toLowerCase()}`}>
+      <div className="task-card-top task-card-top-queue">
+        <div className="task-queue-heading">
+          <span className="task-queue-index">{String(index + 1).padStart(2, "0")}</span>
+          <div>
+            <span className={`task-tier task-tier-${task.priority_tier.toLowerCase()}`}>
+              {formatPriorityTierLabel(task.priority_tier)}
+            </span>
+            <h3 className="task-title">{cleanPreviewText(task.task_title) || "Untitled task"}</h3>
+            <p className="task-queue-window">{formatActionWindow(task.action_window)}</p>
+          </div>
+        </div>
+        <div className="task-queue-controls">
+          {formatDeadline(task.deadline_hours) ? (
+            <span className="task-queue-deadline">{formatDeadline(task.deadline_hours)}</span>
+          ) : null}
+        </div>
       </div>
-      <h2 className="task-focus-title">{cleanPreviewText(task.task_title) || "Untitled task"}</h2>
-      <p className="task-focus-window">{formatActionWindow(task.action_window)}</p>
-      {task.task_description ? (
-        <p className="task-description task-description-focus">
-          {truncateText(task.task_description, 280)}
-        </p>
-      ) : null}
-      <TaskSource task={task} />
-      <p className="task-rationale">
-        <span>Why now:</span> {cleanPreviewText(task.rationale)}
+      <p className="task-queue-summary">
+        {buildQueueSummary(task)}
       </p>
-      <div className="task-meta">
+      <div className="task-meta task-meta-compact">
         <span>Confidence {Math.round((task.confidence ?? 0) * 100)}%</span>
         <span>{task.platforms_seen?.join(", ") || "email"}</span>
       </div>
-      <TaskActions
-        feedbackState={feedbackState}
-        isBusy={isBusy}
-        onFeedback={onFeedback}
-        onRemove={onRemove}
-        task={task}
-      />
+      {task.tags?.length ? (
+        <div className="task-tag-list">
+          {task.tags.map((tag) => (
+            <span className="task-tag-chip" key={tag}>
+              {tag.replace(/_/g, " ")}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <div className="task-card-details">
+        <TaskSource compact task={task} />
+        <p className="task-rationale task-rationale-queue">
+          <span>Why now:</span> {cleanPreviewText(task.rationale)}
+        </p>
+        <TaskActions
+          feedbackState={feedbackState}
+          isBusy={isBusy}
+          onFeedback={onFeedback}
+          task={task}
+        />
+      </div>
     </article>
   );
 }
@@ -470,69 +419,39 @@ function QueueCard({
   feedbackState,
   isBusy,
   onFeedback,
-  onRemove,
   index,
-  expanded,
-  onToggle,
 }) {
   return (
-    <article className={`task-card task-card-queue${expanded ? " task-card-queue-expanded" : ""}`}>
-      <div className="task-card-top task-card-top-queue">
-        <div className="task-queue-heading">
-          <span className="task-queue-index">{String(index + 2).padStart(2, "0")}</span>
-          <div>
-            <h3 className="task-title">{cleanPreviewText(task.task_title) || "Untitled task"}</h3>
-            <p className="task-queue-window">{formatActionWindow(task.action_window)}</p>
-          </div>
-        </div>
-        <div className="task-queue-controls">
-          {formatDeadline(task.deadline_hours) ? (
-            <span className="task-queue-deadline">{formatDeadline(task.deadline_hours)}</span>
-          ) : null}
-          <button className="inline-button task-expand-button" onClick={() => onToggle(task.canonical_task_id)} type="button">
-            {expanded ? "Hide details" : "Expand"}
-          </button>
-        </div>
-      </div>
-      <p className="task-queue-summary">{buildQueueSummary(task)}</p>
-      <div className="task-meta task-meta-compact">
-        <span>{task.platforms_seen?.join(", ") || "email"}</span>
-        <span>Confidence {Math.round((task.confidence ?? 0) * 100)}%</span>
-      </div>
-      {expanded ? (
-        <div className="task-card-details">
-          <TaskSource compact task={task} />
-          <p className="task-rationale task-rationale-queue">
-            <span>Why now:</span> {cleanPreviewText(task.rationale)}
-          </p>
-          <TaskActions
-            feedbackState={feedbackState}
-            isBusy={isBusy}
-            onFeedback={onFeedback}
-            onRemove={onRemove}
-            task={task}
-          />
-        </div>
-      ) : null}
-    </article>
+    <TaskCard
+      feedbackState={feedbackState}
+      index={index}
+      isBusy={isBusy}
+      onFeedback={onFeedback}
+      task={task}
+    />
   );
 }
 
 export default function Home() {
   const navigate = useNavigate();
+<<<<<<< HEAD
   const cachedUserId = getStoredUserId();
   const cachedDashboard = readDashboardCache(cachedUserId);
   const [user, setUser] = useState(() => cachedDashboard?.user ?? getStoredUser());
   const [tasks, setTasks] = useState(() => cachedDashboard?.tasks ?? []);
   const [pipelineProfile, setPipelineProfile] = useState(() => cachedDashboard?.profile ?? null);
+=======
+  const [user, setUser] = useState(null);
+  const [tasks, setTasks] = useState([]);
+  const [pipelineProfile, setPipelineProfile] = useState(null);
+  const [availableTags, setAvailableTags] = useState([]);
+>>>>>>> 197cbed (WIP: local changes before syncing main)
   const [taskFeedbackStates, setTaskFeedbackStates] = useState({});
   const [taskError, setTaskError] = useState("");
   const [taskStatus, setTaskStatus] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [feedbackQueue, setFeedbackQueue] = useState([]);
   const [isProcessingFeedbackQueue, setIsProcessingFeedbackQueue] = useState(false);
-  const [removingTaskId, setRemovingTaskId] = useState(null);
-  const [expandedTaskIds, setExpandedTaskIds] = useState({});
   const [isManualFormOpen, setIsManualFormOpen] = useState(false);
   const [isCreatingManualTask, setIsCreatingManualTask] = useState(false);
   const [manualTask, setManualTask] = useState({
@@ -541,6 +460,7 @@ export default function Home() {
     taskType: "admin",
     deadlineAt: "",
     entityName: "",
+    tagsText: "",
   });
 
   useEffect(() => {
@@ -560,6 +480,7 @@ export default function Home() {
         setUser(dashboard.user);
         setTasks(dashboard.items ?? []);
         setPipelineProfile(dashboard.profile ?? null);
+        setAvailableTags(dashboard.availableTags ?? []);
       } catch {
         if (cached) {
           setTaskError("Using your last saved dashboard while fresh data is temporarily unavailable.");
@@ -573,8 +494,6 @@ export default function Home() {
     loadDashboard();
   }, [navigate]);
 
-  const focusTask = tasks[0] ?? null;
-  const queueTasks = useMemo(() => tasks.slice(1), [tasks]);
   const priorityCounts = useMemo(() => {
     const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
     tasks.forEach((task) => {
@@ -589,16 +508,6 @@ export default function Home() {
     }
     writeDashboardCache(user.userId, user, tasks, pipelineProfile);
   }, [pipelineProfile, tasks, user]);
-
-  useEffect(() => {
-    setExpandedTaskIds((current) =>
-      Object.fromEntries(
-        Object.entries(current).filter(([canonicalTaskId]) =>
-          tasks.some((task) => task.canonical_task_id === canonicalTaskId)
-        )
-      )
-    );
-  }, [tasks]);
 
   useEffect(() => {
     if (isProcessingFeedbackQueue || feedbackQueue.length === 0) {
@@ -631,11 +540,13 @@ export default function Home() {
           setTasks(result.items);
         }
         setTaskStatus(
-          next.action === "RESCHEDULE"
-            ? "Marked for later. Your profile was updated."
-            : next.action === "WRONG_PRIORITY"
-              ? "Priority updated. Your profile was updated."
-              : "Feedback saved. Your profile was updated."
+          next.action === "WRONG_PRIORITY"
+            ? "Priority updated. Your profile was updated."
+            : next.action === "ACCEPT"
+              ? "Task accepted and removed from review."
+              : next.action === "REJECT"
+                ? "Task rejected and removed from review."
+                : "Feedback saved. Your profile was updated."
         );
       } catch (error) {
         if (cancelled) {
@@ -688,6 +599,9 @@ export default function Home() {
     if (result?.profile) {
       setPipelineProfile(result.profile);
     }
+    if (result?.availableTags) {
+      setAvailableTags(result.availableTags);
+    }
   }
 
   function applyLocalFeedback(canonicalTaskId, action, direction) {
@@ -697,24 +611,17 @@ export default function Home() {
         return current;
       }
 
-      if (action === "ALREADY_DONE") {
-        return current.filter((task) => task.canonical_task_id !== canonicalTaskId);
-      }
-
-      if (action === "RESCHEDULE") {
+      if (action === "ACCEPT" || action === "REJECT") {
         return [
           ...current.filter((task) => task.canonical_task_id !== canonicalTaskId),
-          selectedTask,
         ];
       }
 
       if (action === "WRONG_PRIORITY" && direction) {
-        return sortTasks(
-          current.map((task) =>
-            task.canonical_task_id === canonicalTaskId
-              ? { ...task, priority_tier: shiftPriorityTier(task.priority_tier, direction) }
-              : task
-          )
+        return current.map((task) =>
+          task.canonical_task_id === canonicalTaskId
+            ? { ...task, priority_tier: shiftPriorityTier(task.priority_tier, direction) }
+            : task
         );
       }
 
@@ -729,6 +636,7 @@ export default function Home() {
     try {
       const result = await syncPrioritizedTasks();
       setTasks(result.items ?? []);
+      setAvailableTags(result.availableTags ?? []);
       setTaskFeedbackStates({});
       const latestProfile = await fetchPipelineProfile();
       setPipelineProfile(latestProfile);
@@ -748,38 +656,18 @@ export default function Home() {
     }));
     applyLocalFeedback(canonicalTaskId, action, direction);
     setTaskStatus(
-      action === "RESCHEDULE"
-        ? "Marked for later. Saving feedback in the background."
-        : action === "WRONG_PRIORITY"
-          ? "Updating priority and profile in the background."
-          : "Feedback saved. Updating your profile in the background."
+      action === "WRONG_PRIORITY"
+        ? "Updating priority and profile in the background."
+        : action === "ACCEPT"
+          ? "Accepting task and updating your profile in the background."
+          : action === "REJECT"
+            ? "Rejecting task and updating your profile in the background."
+            : "Feedback saved. Updating your profile in the background."
     );
     setFeedbackQueue((current) => [
       ...current,
       { canonicalTaskId, action, direction: direction ?? null },
     ]);
-  }
-
-  async function handleRemoveTask(canonicalTaskId) {
-    setRemovingTaskId(canonicalTaskId);
-    setTaskError("");
-    setTaskStatus("");
-    try {
-      await removePrioritizedTask(canonicalTaskId);
-      setTasks((current) =>
-        current.filter((task) => task.canonical_task_id !== canonicalTaskId)
-      );
-      setTaskFeedbackStates((current) => {
-        const next = { ...current };
-        delete next[canonicalTaskId];
-        return next;
-      });
-      setTaskStatus("Task removed from your active queue.");
-    } catch (error) {
-      setTaskError(error.message);
-    } finally {
-      setRemovingTaskId(null);
-    }
   }
 
   async function handleCreateManualTask(event) {
@@ -794,6 +682,10 @@ export default function Home() {
         taskType: manualTask.taskType,
         deadlineAt: manualTask.deadlineAt || null,
         entityName: manualTask.entityName || null,
+        tags: manualTask.tagsText
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
       });
       updateTaskListFromResponse(result);
       if (!result.profile) {
@@ -806,6 +698,7 @@ export default function Home() {
         taskType: "admin",
         deadlineAt: "",
         entityName: "",
+        tagsText: "",
       });
       setIsManualFormOpen(false);
       setTaskStatus("Manual task added and queued for prioritization.");
@@ -823,11 +716,16 @@ export default function Home() {
     }));
   }
 
+<<<<<<< HEAD
   function toggleTaskExpansion(canonicalTaskId) {
     setExpandedTaskIds((current) => ({
       ...current,
       [canonicalTaskId]: !current[canonicalTaskId],
     }));
+=======
+  if (!user) {
+    return <main className="simple-shell">Loading your dashboard...</main>;
+>>>>>>> 197cbed (WIP: local changes before syncing main)
   }
 
   return (
@@ -953,6 +851,17 @@ export default function Home() {
               </label>
             </div>
             <label className="field-group">
+              <span>Tags</span>
+              <input
+                className="auth-input"
+                list="available-task-tags"
+                onChange={(event) => updateManualTask("tagsText", event.target.value)}
+                placeholder="Comma separated, e.g. assignment, urgent, group_work"
+                type="text"
+                value={manualTask.tagsText}
+              />
+            </label>
+            <label className="field-group">
               <span>Details</span>
               <textarea
                 className="auth-input auth-textarea"
@@ -970,6 +879,18 @@ export default function Home() {
                 Manual tasks are written into the same pipeline flow and also update your learned profile.
               </p>
             </div>
+            {availableTags.length ? (
+              <>
+                <datalist id="available-task-tags">
+                  {availableTags.map((tag) => (
+                    <option key={tag} value={tag} />
+                  ))}
+                </datalist>
+                <p className="panel-copy">
+                  Available tags: {availableTags.join(", ")}
+                </p>
+              </>
+            ) : null}
           </form>
         ) : null}
 
@@ -977,23 +898,19 @@ export default function Home() {
         {taskError ? <p className="error-text">{taskError}</p> : null}
 
         <section className="tasks-section">
-          <div className="tasks-heading">
-            <div>
-              <p className="panel-title">Focus on this first</p>
-              <p className="panel-copy">
-                One top-priority card gets the most space. Everything else stays in the queue below.
-              </p>
+          {tasks.length ? (
+            <div className="task-card-list">
+              {tasks.map((task, index) => (
+                <QueueCard
+                  feedbackState={taskFeedbackStates[task.canonical_task_id]}
+                  index={index}
+                  isBusy={false}
+                  key={task.canonical_task_id}
+                  onFeedback={handleFeedback}
+                  task={task}
+                />
+              ))}
             </div>
-          </div>
-
-          {focusTask ? (
-            <FocusCard
-              feedbackState={taskFeedbackStates[focusTask.canonical_task_id]}
-              isBusy={removingTaskId === focusTask.canonical_task_id}
-              onFeedback={handleFeedback}
-              onRemove={handleRemoveTask}
-              task={focusTask}
-            />
           ) : (
             <div className="task-card task-card-empty">
               <p className="summary-value">No prioritized tasks yet.</p>
@@ -1002,34 +919,6 @@ export default function Home() {
               </p>
             </div>
           )}
-
-          {queueTasks.length ? (
-            <div className="queue-section">
-              <div className="tasks-heading">
-                <div>
-                  <p className="panel-title">Up next</p>
-                  <p className="panel-copy">
-                    These items stay visible, but they are intentionally less prominent than the focus card.
-                  </p>
-                </div>
-              </div>
-              <div className="task-card-list task-card-list-queue">
-                {queueTasks.map((task, index) => (
-                  <QueueCard
-                    expanded={Boolean(expandedTaskIds[task.canonical_task_id])}
-                    feedbackState={taskFeedbackStates[task.canonical_task_id]}
-                    index={index}
-                    isBusy={removingTaskId === task.canonical_task_id}
-                    key={task.canonical_task_id}
-                    onFeedback={handleFeedback}
-                    onRemove={handleRemoveTask}
-                    onToggle={toggleTaskExpansion}
-                    task={task}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : null}
         </section>
       </section>
     </main>

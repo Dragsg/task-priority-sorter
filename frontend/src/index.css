@@ -683,6 +683,7 @@ select {
   margin-top: 18px;
 }
 
+<<<<<<< HEAD
 .tracker-actions {
   display: flex;
   flex-wrap: wrap;
@@ -701,6 +702,41 @@ select {
 
 .stats-top-grid {
   margin-top: 16px;
+=======
+.calendar-panel {
+  margin-top: 28px;
+  padding: 22px 24px;
+  border: 1px solid var(--border-soft);
+  border-radius: 28px;
+  background: rgba(252, 246, 238, 0.75);
+}
+
+.calendar-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.calendar-summary,
+.calendar-notes {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: rgba(255, 251, 244, 0.68);
+}
+
+.calendar-upload-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.auth-file-input {
+  padding: 12px 16px;
+>>>>>>> 197cbed (WIP: local changes before syncing main)
 }
 
 .home-link {
@@ -733,11 +769,11 @@ select {
   border-radius: 26px;
   border: 1px solid var(--border-soft);
   background: rgba(255, 251, 244, 0.9);
+  box-shadow: none;
 }
 
 .task-card-focus {
-  padding: 28px;
-  box-shadow: 0 20px 45px rgba(90, 63, 42, 0.12);
+  padding: 24px;
 }
 
 .task-card-tier-critical {
@@ -932,6 +968,10 @@ select {
 
 .task-tier {
   border: 1px solid transparent;
+}
+
+.task-queue-heading .task-tier {
+  margin-bottom: 8px;
 }
 
 .task-tier-critical {
@@ -1147,6 +1187,28 @@ select {
 
 .task-meta-compact {
   margin-bottom: 0;
+}
+
+.task-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.task-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(111, 88, 67, 0.16);
+  background: rgba(255, 248, 239, 0.92);
+  color: var(--accent-strong);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: lowercase;
 }
 
 .queue-section {

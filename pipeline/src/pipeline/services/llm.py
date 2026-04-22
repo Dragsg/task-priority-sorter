@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
 from typing import Any
 
 from pipeline.config import PipelineSettings
@@ -17,8 +16,9 @@ from pipeline.models import (
     SenderWeight,
     StructuredLlmOutput,
 )
-from pipeline.models.enums import FeedbackDirection
+from pipeline.models.enums import TaskType
 from pipeline.utils.env import load_dotenv_value
+from pipeline.utils.tags import filter_allowed_tags, infer_tags_from_text, merge_tag_catalog
 from pipeline.utils.time import current_hour_for_timezone
 
 try:
@@ -34,11 +34,11 @@ You receive a structured task object, a generic pre-scored priority tier, user p
 Rules:
 - Start from the pre-scored tier and only adjust it when can_personalize is true.
 - If can_personalize is false, preserve the pre-scored tier and explain why personalization was not applied.
-- Use entity_priority_multiplier, sender_weight, entity_avg_start_lead_hours, task_type_start_lead_hours, and observation counts only when they are present.
-- If the user appears to be inside their usual start buffer, escalating one tier is reasonable.
-- If an entity is often deferred, mention the risk in the rationale, but do not lower the tier unless the structured context clearly supports it.
+- Use task_type_priority_multiplier, entity_priority_multiplier, sender_weight, tag preferences, and start-lead signals only when they are present.
 - Timetable context can affect action timing and rationale, but must not directly change the priority tier.
-- Keep the rationale compact and specific. Prefer 1 short sentence, use 2 only when needed.
+- Return up to 3 tags.
+- Tags must come only from available_tags.
+- Keep the rationale compact and specific.
 - Return only valid JSON matching the provided schema.
 """
 
@@ -54,9 +54,11 @@ FEW_SHOT_EXAMPLES = [
                 "signal_count": 4,
                 "pre_scored_tier": "HIGH",
                 "score_reasons": ["deadline under 24 hours", "mentioned 4 times across platforms", "graded submission"],
+                "manual_tags": [],
             },
             "user_context": {
                 "task_type_start_lead_hours": 10.0,
+                "task_type_priority_multiplier": 1.3,
                 "entity_priority_multiplier": 1.45,
                 "entity_defer_rate": 0.05,
                 "entity_avg_start_lead_hours": 9.2,
@@ -64,6 +66,7 @@ FEW_SHOT_EXAMPLES = [
                 "sender_response_rate": 0.92,
                 "sender_weight": 1.55,
                 "sender_observation_count": 10,
+                "tag_preferences": [{"tag": "assignment", "accept_rate": 0.9, "priority_multiplier": 1.4}],
                 "peak_action_hour": 21,
                 "low_energy_hours": [13, 14, 15],
                 "current_hour": 20,
@@ -75,38 +78,43 @@ FEW_SHOT_EXAMPLES = [
                 "timetable_summary": "Evening work session available",
                 "busy_windows": [],
                 "recurring_task_notes": [],
+                "available_tags": ["assignment", "deadline", "urgent", "project"],
             },
         },
         "output": {
             "priority_tier": "CRITICAL",
             "action_window": "NOW",
-            "rationale": "Due in 8 hours and repeated across Gmail and Teams; the user usually starts this kind of work about 10 hours ahead, so this is already inside their normal buffer.",
+            "rationale": "Due in 8 hours and already inside the user's normal start buffer for this kind of work.",
             "confidence": 0.93,
             "profile_adjustment_made": True,
-            "adjustment_reason": "Escalated from HIGH because can_personalize is true and the remaining time is below the user's typical start lead for this task.",
+            "adjustment_reason": "Escalated from HIGH because the remaining time is below the user's typical start lead.",
+            "tags": ["assignment", "deadline", "urgent"],
         },
     },
     {
         "input": {
             "task": {
-                "type": "reading",
+                "type": "admin",
                 "deadline_hours": 48.0,
-                "entity_name": "History reading",
+                "entity_name": "Registrar",
                 "entity_type": "topic",
                 "platforms_seen": ["gmail"],
                 "signal_count": 1,
                 "pre_scored_tier": "MEDIUM",
-                "score_reasons": ["deadline within 3 days", "from lecturer", "reading task"],
+                "score_reasons": ["deadline within 3 days", "from institution"],
+                "manual_tags": [],
             },
             "user_context": {
                 "task_type_start_lead_hours": None,
-                "entity_priority_multiplier": 0.85,
+                "task_type_priority_multiplier": 1.0,
+                "entity_priority_multiplier": 0.9,
                 "entity_defer_rate": 0.78,
                 "entity_avg_start_lead_hours": None,
                 "entity_observation_count": 9,
                 "sender_response_rate": 0.66,
                 "sender_weight": 1.02,
                 "sender_observation_count": 7,
+                "tag_preferences": [{"tag": "admin", "accept_rate": 0.8, "priority_multiplier": 1.1}],
                 "peak_action_hour": 21,
                 "low_energy_hours": [13, 14, 15],
                 "current_hour": 10,
@@ -118,15 +126,17 @@ FEW_SHOT_EXAMPLES = [
                 "timetable_summary": "Afternoon classes, evening free",
                 "busy_windows": [],
                 "recurring_task_notes": [],
+                "available_tags": ["admin", "deadline", "optional"],
             },
         },
         "output": {
             "priority_tier": "MEDIUM",
             "action_window": "TODAY",
-            "rationale": "Keep this at MEDIUM: the deadline is still about 48 hours away, but the high defer rate makes it worth surfacing today.",
+            "rationale": "Keep this at MEDIUM because the deadline is still about 48 hours away, but it is worth handling today.",
             "confidence": 0.82,
             "profile_adjustment_made": False,
-            "adjustment_reason": "High defer history was noted in the rationale, but the tier was preserved because the remaining time and evidence did not justify escalation.",
+            "adjustment_reason": "The evidence did not justify a tier change.",
+            "tags": ["admin", "deadline"],
         },
     },
     {
@@ -140,9 +150,11 @@ FEW_SHOT_EXAMPLES = [
                 "signal_count": 1,
                 "pre_scored_tier": "MEDIUM",
                 "score_reasons": ["deadline under 24 hours", "scheduled meeting"],
+                "manual_tags": [],
             },
             "user_context": {
                 "task_type_start_lead_hours": None,
+                "task_type_priority_multiplier": None,
                 "entity_priority_multiplier": None,
                 "entity_defer_rate": None,
                 "entity_avg_start_lead_hours": None,
@@ -150,6 +162,7 @@ FEW_SHOT_EXAMPLES = [
                 "sender_response_rate": None,
                 "sender_weight": None,
                 "sender_observation_count": 0,
+                "tag_preferences": [],
                 "peak_action_hour": 21,
                 "low_energy_hours": [13, 14, 15],
                 "current_hour": 14,
@@ -167,15 +180,17 @@ FEW_SHOT_EXAMPLES = [
                     }
                 ],
                 "recurring_task_notes": [],
+                "available_tags": ["group_work", "announcement", "optional"],
             },
         },
         "output": {
             "priority_tier": "MEDIUM",
             "action_window": "TODAY",
-            "rationale": "Keep the pre-scored MEDIUM tier because there is not enough reliable history to personalize yet; the calendar says TODAY is a better fit than NOW.",
+            "rationale": "Keep the pre-scored MEDIUM tier because there is not enough reliable history to personalize yet.",
             "confidence": 0.78,
             "profile_adjustment_made": False,
             "adjustment_reason": "No profile-based adjustment was made because profile confidence and observation counts are too low.",
+            "tags": ["group_work", "announcement"],
         },
     },
 ]
@@ -195,6 +210,7 @@ class PriorityReasoner:
         entity_context: EntityWeight | None,
         sender_context: SenderWeight | None,
         can_personalize: bool,
+        available_tags: list[str] | None = None,
         current_hour: int | None = None,
     ) -> dict[str, Any]:
         timezone_name = onboarding.timezone or self.settings.provider_timezone_fallback
@@ -203,19 +219,57 @@ class PriorityReasoner:
             if current_hour is not None
             else current_hour_for_timezone(timezone_name, fallback=self.settings.provider_timezone_fallback)
         )
+        task_type_context = profile.task_type_weights.get(task.task_type)
+        tag_preferences = [
+            {
+                "tag": tag,
+                "accept_rate": profile.tag_weights[tag].accept_rate,
+                "priority_multiplier": profile.tag_weights[tag].priority_multiplier,
+                "observation_count": profile.tag_weights[tag].observation_count,
+            }
+            for tag in task.manual_tags
+            if tag in profile.tag_weights
+        ]
+        if not tag_preferences:
+            top_tags = sorted(
+                profile.tag_weights.items(),
+                key=lambda item: (
+                    item[1].priority_multiplier,
+                    item[1].accept_rate or 0.0,
+                    item[1].observation_count,
+                ),
+                reverse=True,
+            )[:5]
+            tag_preferences = [
+                {
+                    "tag": tag,
+                    "accept_rate": weight.accept_rate,
+                    "priority_multiplier": weight.priority_multiplier,
+                    "observation_count": weight.observation_count,
+                }
+                for tag, weight in top_tags
+            ]
+
         return {
             "task": {
                 "type": task.task_type.value,
                 "deadline_hours": task.deadline_hours,
                 "entity_name": task.topic_entity.entity_name,
                 "entity_type": task.topic_entity.entity_type.value,
+                "subject": task.representative_subject,
+                "preview": task.representative_body_excerpt or task.representative_snippet,
                 "platforms_seen": [platform.value for platform in task.platforms_seen],
                 "signal_count": task.signal_count,
                 "pre_scored_tier": task.priority_tier.value if task.priority_tier else PriorityTier.LOW.value,
                 "score_reasons": task.score_reasons,
+                "manual_tags": task.manual_tags,
+                "origin": task.origin.value,
             },
             "user_context": {
                 "task_type_start_lead_hours": profile.task_type_start_leads.get(task.task_type),
+                "task_type_accept_rate": task_type_context.accept_rate if task_type_context else None,
+                "task_type_priority_multiplier": task_type_context.priority_multiplier if task_type_context else None,
+                "task_type_observation_count": task_type_context.observation_count if task_type_context else 0,
                 "entity_priority_multiplier": entity_context.priority_multiplier if entity_context else None,
                 "entity_defer_rate": entity_context.defer_rate if entity_context else None,
                 "entity_avg_start_lead_hours": entity_context.avg_start_lead_hours if entity_context else None,
@@ -223,6 +277,7 @@ class PriorityReasoner:
                 "sender_response_rate": sender_context.response_rate if sender_context else None,
                 "sender_weight": sender_context.weight if sender_context else None,
                 "sender_observation_count": sender_context.observation_count if sender_context else 0,
+                "tag_preferences": tag_preferences,
                 "peak_action_hour": profile.peak_action_hour,
                 "low_energy_hours": profile.low_energy_hours,
                 "current_hour": now_hour,
@@ -234,6 +289,7 @@ class PriorityReasoner:
                 "timetable_summary": onboarding.timetable_summary,
                 "busy_windows": [window.model_dump(mode="json") for window in onboarding.busy_windows],
                 "recurring_task_notes": onboarding.recurring_task_notes,
+                "available_tags": merge_tag_catalog(available_tags),
             },
         }
 
@@ -250,7 +306,7 @@ class PriorityReasoner:
             "schema": self._response_schema(),
         }
 
-        output = self._call_openai(request_payload)
+        output = self._sanitize_output(self._call_openai(request_payload), llm_input)
         decision = LlmDecision(
             run_id=run_id,
             canonical_task_id=task.canonical_task_id,
@@ -261,6 +317,11 @@ class PriorityReasoner:
             response_payload=output.model_dump(mode="json"),
         )
         return output, decision
+
+    def _sanitize_output(self, output: StructuredLlmOutput, llm_input: dict[str, Any]) -> StructuredLlmOutput:
+        available_tags = llm_input.get("calendar_context", {}).get("available_tags", [])
+        tags = filter_allowed_tags(output.tags, available_tags, max_count=3)
+        return output.model_copy(update={"tags": tags})
 
     def _call_openai(self, request_payload: dict[str, Any]) -> StructuredLlmOutput:
         api_key = os.environ.get("OPENAI_API_KEY") or load_dotenv_value("OPENAI_API_KEY")
@@ -329,10 +390,11 @@ class PriorityReasoner:
                 "confidence": {"type": "number"},
                 "profile_adjustment_made": {"type": "boolean"},
                 "adjustment_reason": {
-                    "anyOf": [
-                        {"type": "string"},
-                        {"type": "null"},
-                    ]
+                    "anyOf": [{"type": "string"}, {"type": "null"}]
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
                 },
             },
             "required": [
@@ -342,12 +404,14 @@ class PriorityReasoner:
                 "confidence",
                 "profile_adjustment_made",
                 "adjustment_reason",
+                "tags",
             ],
         }
 
     def _fallback_reasoning(self, llm_input: dict[str, Any]) -> StructuredLlmOutput:
         task = llm_input["task"]
         user = llm_input["user_context"]
+        calendar = llm_input["calendar_context"]
         tier = PriorityTier(task["pre_scored_tier"])
         adjustment_reason = None
         adjusted = False
@@ -356,12 +420,20 @@ class PriorityReasoner:
             entity_multiplier = user.get("entity_priority_multiplier")
             sender_weight = user.get("sender_weight")
             task_type_lead = user.get("task_type_start_lead_hours")
+            task_type_priority_multiplier = user.get("task_type_priority_multiplier")
             deadline_hours = task.get("deadline_hours")
 
-            if deadline_hours is not None and task_type_lead is not None and deadline_hours < task_type_lead and tier != PriorityTier.CRITICAL:
+            if (
+                deadline_hours is not None
+                and task_type_lead is not None
+                and deadline_hours < task_type_lead
+                and tier != PriorityTier.CRITICAL
+            ):
                 tier = self._raise_tier(tier)
                 adjusted = True
-                adjustment_reason = "Escalated because personal start-lead behavior shows the task is already inside the user's normal buffer."
+                adjustment_reason = (
+                    "Escalated because personal start-lead behavior shows the task is already inside the user's normal buffer."
+                )
             elif entity_multiplier is not None and entity_multiplier <= 0.75 and tier in {PriorityTier.HIGH, PriorityTier.MEDIUM}:
                 tier = self._lower_tier(tier)
                 adjusted = True
@@ -370,10 +442,31 @@ class PriorityReasoner:
                 tier = self._raise_tier(tier)
                 adjusted = True
                 adjustment_reason = "Escalated because the user responds quickly to this sender."
+            elif task_type_priority_multiplier is not None and task_type_priority_multiplier >= 1.4 and tier != PriorityTier.CRITICAL:
+                tier = self._raise_tier(tier)
+                adjusted = True
+                adjustment_reason = "Escalated because this task type usually matters more for this user."
 
-        action_window = self._choose_action_window(task=task, user=user, calendar_context=llm_input["calendar_context"])
+        action_window = self._choose_action_window(task=task, user=user, calendar_context=calendar)
         rationale = self._build_rationale(task=task, user=user, action_window=action_window)
         confidence = 0.75 if user["can_personalize"] else max(0.45, user.get("profile_confidence", 0.0))
+
+        task_text = " ".join(
+            [
+                task.get("subject") or "",
+                task.get("preview") or "",
+                task.get("entity_name") or "",
+                " ".join(task.get("score_reasons") or []),
+                task.get("type") or "",
+            ]
+        )
+        tags = infer_tags_from_text(
+            text=task_text,
+            task_type=TaskType(task["type"]) if task.get("type") else None,
+            available_tags=calendar.get("available_tags", []),
+            manual_tags=task.get("manual_tags", []),
+            max_count=3,
+        )
 
         return StructuredLlmOutput(
             priority_tier=tier,
@@ -382,6 +475,7 @@ class PriorityReasoner:
             confidence=round(min(0.95, confidence), 2),
             profile_adjustment_made=adjusted,
             adjustment_reason=adjustment_reason,
+            tags=tags,
         )
 
     def _choose_action_window(self, *, task: dict[str, Any], user: dict[str, Any], calendar_context: dict[str, Any]) -> ActionWindow:

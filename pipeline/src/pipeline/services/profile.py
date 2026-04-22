@@ -13,7 +13,9 @@ from pipeline.models import (
     FeedbackDirection,
     FeedbackEvent,
     SenderWeight,
+    TagWeight,
     TaskType,
+    TaskTypeWeight,
 )
 
 
@@ -42,12 +44,18 @@ class ProfileService:
 
         self._update_confidence(updated, event.action)
 
-        if event.task_type is not None and event.deadline_hours is not None and event.action == FeedbackAction.GOT_IT:
+        if event.task_type is not None:
+            self._update_task_type_weight(updated, event)
+
+        if event.task_type is not None and event.deadline_hours is not None and event.action == FeedbackAction.ACCEPT:
             current = updated.task_type_start_leads.get(event.task_type)
             updated.task_type_start_leads[event.task_type] = self.update_metric_ewma(current, event.deadline_hours)
             updated.action_hours.append(event.occurred_at.hour)
             updated.action_hours = updated.action_hours[-50:]
             self._recompute_action_patterns(updated)
+
+        for tag in event.task_tags:
+            self._update_tag_weight(updated, tag, event)
 
         if event.entity_key and event.entity_name and event.entity_type:
             self._update_entity_weight(updated, event)
@@ -68,6 +76,7 @@ class ProfileService:
         entity_type: EntityType,
         deadline_hours: float | None,
         occurred_at: datetime | None = None,
+        tags: list[str] | None = None,
     ) -> BehaviorProfile:
         updated = profile.model_copy(deep=True)
         updated.profile_version += 1
@@ -80,26 +89,19 @@ class ProfileService:
             updated.action_hours = updated.action_hours[-50:]
             self._recompute_action_patterns(updated)
 
-        entry = updated.entity_weights.get(entity_key)
-        if entry is None:
-            entry = EntityWeight(
-                entity_name=entity_name,
-                entity_key=entity_key,
-                entity_type=entity_type,
-                defer_rate=0.2,
-                priority_multiplier=1.3,
-            )
-
-        entry.observation_count += 1
-        entry.defer_rate = self.update_metric_ewma(entry.defer_rate, 0.0)
-
-        if deadline_hours is not None:
-            entry.avg_start_lead_hours = self.update_metric_ewma(entry.avg_start_lead_hours, deadline_hours)
-
-        multiplier = 1.5 - (entry.defer_rate if entry.defer_rate is not None else 0.2)
-        entry.priority_multiplier = round(min(1.8, max(0.4, multiplier)), 2)
-        updated.entity_weights[entity_key] = entry
-        return updated
+        event = FeedbackEvent(
+            user_id=updated.user_id,
+            canonical_task_id="manual",
+            action=FeedbackAction.ACCEPT,
+            occurred_at=occurred,
+            task_type=task_type,
+            entity_key=entity_key,
+            entity_name=entity_name,
+            entity_type=entity_type,
+            deadline_hours=deadline_hours,
+            task_tags=tags or [],
+        )
+        return self.update_from_feedback(updated.model_copy(update={"profile_version": updated.profile_version - 1}), event)
 
     def can_personalize(
         self,
@@ -107,28 +109,74 @@ class ProfileService:
         *,
         entity_observation_count: int = 0,
         sender_observation_count: int = 0,
+        task_type_observation_count: int = 0,
+        tag_observation_count: int = 0,
     ) -> bool:
         if profile.confidence < self.settings.profile_confidence_threshold:
             return False
-        return (
-            entity_observation_count >= self.settings.minimum_personalization_observations
-            or sender_observation_count >= self.settings.minimum_personalization_observations
+        threshold = self.settings.minimum_personalization_observations
+        return any(
+            count >= threshold
+            for count in (
+                entity_observation_count,
+                sender_observation_count,
+                task_type_observation_count,
+                tag_observation_count,
+            )
         )
 
     def _update_confidence(self, profile: BehaviorProfile, action: FeedbackAction) -> None:
         values = deque(profile.decision_window, maxlen=self.settings.decision_window_size)
-        if action == FeedbackAction.GOT_IT:
-            values.append(1.0)
-        elif action == FeedbackAction.ALREADY_DONE:
-            values.append(0.5)
-        else:
-            values.append(0.0)
+        values.append(self._decision_window_target(action))
         profile.decision_window = list(values)
+
+    def _decision_window_target(self, action: FeedbackAction) -> float:
+        if action == FeedbackAction.ACCEPT:
+            return 0.75
+        if action == FeedbackAction.COMPLETED:
+            return 1.0
+        if action in {FeedbackAction.REJECT, FeedbackAction.DELETE}:
+            return 0.0
+        return 0.5
 
     def _current_confidence(self, profile: BehaviorProfile) -> float:
         if len(profile.decision_window) < 3:
             return 0.0
         return max(0.15, sum(profile.decision_window) / len(profile.decision_window))
+
+    def _update_task_type_weight(self, profile: BehaviorProfile, event: FeedbackEvent) -> None:
+        if event.task_type is None:
+            return
+        entry = profile.task_type_weights.get(event.task_type)
+        if entry is None:
+            entry = TaskTypeWeight()
+
+        entry.observation_count += 1
+        accept_target = self._accept_target(event.action)
+        if accept_target is not None:
+            entry.accept_rate = self.update_metric_ewma(entry.accept_rate, accept_target)
+
+        priority_delta = self._priority_delta_from_event(event)
+        if event.action == FeedbackAction.WRONG_PRIORITY and priority_delta:
+            entry.priority_multiplier = self._apply_priority_delta(entry.priority_multiplier, priority_delta)
+
+        profile.task_type_weights[event.task_type] = entry
+
+    def _update_tag_weight(self, profile: BehaviorProfile, tag: str, event: FeedbackEvent) -> None:
+        entry = profile.tag_weights.get(tag)
+        if entry is None:
+            entry = TagWeight()
+
+        entry.observation_count += 1
+        accept_target = self._accept_target(event.action)
+        if accept_target is not None:
+            entry.accept_rate = self.update_metric_ewma(entry.accept_rate, accept_target)
+
+        priority_delta = self._priority_delta_from_event(event)
+        if event.action == FeedbackAction.WRONG_PRIORITY and priority_delta:
+            entry.priority_multiplier = self._apply_priority_delta(entry.priority_multiplier, priority_delta)
+
+        profile.tag_weights[tag] = entry
 
     def _update_entity_weight(self, profile: BehaviorProfile, event: FeedbackEvent) -> None:
         entry = profile.entity_weights.get(event.entity_key)
@@ -140,19 +188,20 @@ class ProfileService:
             )
 
         entry.observation_count += 1
+        defer_target = self._defer_target(event.action)
+        if defer_target is not None:
+            entry.defer_rate = self.update_metric_ewma(entry.defer_rate, defer_target)
 
-        defer_signal = self._feedback_to_defer_signal(event)
-        entry.defer_rate = self.update_metric_ewma(entry.defer_rate, defer_signal)
-
-        if event.action == FeedbackAction.GOT_IT and event.deadline_hours is not None:
+        if event.action == FeedbackAction.ACCEPT and event.deadline_hours is not None:
             entry.avg_start_lead_hours = self.update_metric_ewma(entry.avg_start_lead_hours, event.deadline_hours)
 
-        multiplier = 1.5 - (entry.defer_rate if entry.defer_rate is not None else 0.5)
-        if event.action == FeedbackAction.WRONG_PRIORITY and event.direction == FeedbackDirection.TOO_LOW:
-            multiplier += 0.1
-        if event.action == FeedbackAction.WRONG_PRIORITY and event.direction == FeedbackDirection.TOO_HIGH:
-            multiplier -= 0.1
-        entry.priority_multiplier = round(min(1.8, max(0.3, multiplier)), 2)
+        priority_delta = self._priority_delta_from_event(event)
+        if event.action == FeedbackAction.WRONG_PRIORITY and priority_delta:
+            entry.priority_multiplier = self._apply_priority_delta(entry.priority_multiplier, priority_delta)
+        else:
+            baseline = 1.5 - (entry.defer_rate if entry.defer_rate is not None else 0.5)
+            entry.priority_multiplier = round(min(1.8, max(0.3, baseline)), 2)
+
         profile.entity_weights[event.entity_key] = entry
 
     def _update_sender_weight(self, profile: BehaviorProfile, event: FeedbackEvent) -> None:
@@ -165,44 +214,67 @@ class ProfileService:
             entry = SenderWeight(sender_hash=sender_hash, label="sender")
 
         entry.observation_count += 1
-        response_signal = self._feedback_to_response_signal(event)
-        entry.response_rate = self.update_metric_ewma(entry.response_rate, response_signal)
+        response_target = self._response_target(event.action)
+        if response_target is not None:
+            entry.response_rate = self.update_metric_ewma(entry.response_rate, response_target)
 
-        if event.action == FeedbackAction.GOT_IT and event.deadline_hours is not None:
+        if event.action == FeedbackAction.ACCEPT and event.deadline_hours is not None:
             entry.avg_response_lead_hours = self.update_metric_ewma(entry.avg_response_lead_hours, event.deadline_hours)
 
-        weight = 0.6 + ((entry.response_rate if entry.response_rate is not None else 0.5) * 0.9)
-        if event.action == FeedbackAction.WRONG_PRIORITY and event.direction == FeedbackDirection.TOO_LOW:
-            weight += 0.1
-        if event.action == FeedbackAction.WRONG_PRIORITY and event.direction == FeedbackDirection.TOO_HIGH:
-            weight -= 0.1
-        entry.weight = round(min(1.8, max(0.3, weight)), 2)
+        priority_delta = self._priority_delta_from_event(event)
+        if event.action == FeedbackAction.WRONG_PRIORITY and priority_delta:
+            entry.weight = self._apply_priority_delta(entry.weight, priority_delta)
+        else:
+            baseline = 0.6 + ((entry.response_rate if entry.response_rate is not None else 0.5) * 0.9)
+            entry.weight = round(min(1.8, max(0.3, baseline)), 2)
+
         profile.sender_weights[sender_hash] = entry
+
+    def _accept_target(self, action: FeedbackAction) -> float | None:
+        if action == FeedbackAction.ACCEPT:
+            return 0.75
+        if action == FeedbackAction.COMPLETED:
+            return 1.0
+        if action in {FeedbackAction.REJECT, FeedbackAction.DELETE}:
+            return 0.0
+        return None
+
+    def _defer_target(self, action: FeedbackAction) -> float | None:
+        if action == FeedbackAction.ACCEPT:
+            return 0.25
+        if action == FeedbackAction.COMPLETED:
+            return 0.0
+        if action in {FeedbackAction.REJECT, FeedbackAction.DELETE}:
+            return 1.0
+        return None
+
+    def _response_target(self, action: FeedbackAction) -> float | None:
+        if action == FeedbackAction.ACCEPT:
+            return 0.75
+        if action == FeedbackAction.COMPLETED:
+            return 1.0
+        if action in {FeedbackAction.REJECT, FeedbackAction.DELETE}:
+            return 0.0
+        return None
+
+    def _apply_priority_delta(self, current_value: float, incremental_delta: int) -> float:
+        adjusted = current_value + (0.1 * incremental_delta)
+        return round(min(1.8, max(0.3, adjusted)), 2)
+
+    def _priority_delta_from_event(self, event: FeedbackEvent) -> int:
+        if event.action != FeedbackAction.WRONG_PRIORITY:
+            return 0
+        if event.incremental_priority_delta:
+            return event.incremental_priority_delta
+        if event.direction == FeedbackDirection.TOO_LOW:
+            return 1
+        if event.direction == FeedbackDirection.TOO_HIGH:
+            return -1
+        return 0
 
     def _recompute_action_patterns(self, profile: BehaviorProfile) -> None:
         if len(profile.action_hours) >= 5:
             counter = Counter(profile.action_hours)
             profile.peak_action_hour = counter.most_common(1)[0][0]
-
             low_frequency_hours = [hour for hour, count in counter.items() if count <= 1]
             profile.low_energy_hours = sorted(low_frequency_hours)[:5]
-
-    def _feedback_to_defer_signal(self, event: FeedbackEvent) -> float:
-        if event.action == FeedbackAction.RESCHEDULE:
-            return 1.0
-        if event.action == FeedbackAction.WRONG_PRIORITY and event.direction == FeedbackDirection.TOO_HIGH:
-            return 1.0
-        if event.action == FeedbackAction.WRONG_PRIORITY and event.direction == FeedbackDirection.TOO_LOW:
-            return 0.0
-        if event.action == FeedbackAction.ALREADY_DONE:
-            return 0.4
-        return 0.0
-
-    def _feedback_to_response_signal(self, event: FeedbackEvent) -> float:
-        if event.action == FeedbackAction.GOT_IT:
-            return 1.0
-        if event.action == FeedbackAction.ALREADY_DONE:
-            return 0.5
-        if event.action == FeedbackAction.WRONG_PRIORITY and event.direction == FeedbackDirection.TOO_LOW:
-            return 1.0
-        return 0.0

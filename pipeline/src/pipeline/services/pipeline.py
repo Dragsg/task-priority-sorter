@@ -47,6 +47,7 @@ class PriorityPipeline:
             profile = self.repository.get_behavior_profile(user_id) or self.profile_service.create_default_profile(user_id)
             onboarding = self.repository.get_onboarding_context(user_id) or OnboardingContext(user_id=user_id)
             aliases = self.repository.get_entity_aliases(user_id)
+            custom_tags = self.repository.get_custom_tags(user_id)
 
             signals = []
             for message in messages:
@@ -68,10 +69,17 @@ class PriorityPipeline:
             for task in canonical_tasks:
                 entity_context = profile.entity_weights.get(task.topic_entity.entity_key)
                 sender_context = self._resolve_sender_context(profile, task)
+                task_type_context = profile.task_type_weights.get(task.task_type)
+                tag_observation_count = max(
+                    (profile.tag_weights.get(tag).observation_count for tag in task.manual_tags if tag in profile.tag_weights),
+                    default=0,
+                )
                 can_personalize = self.profile_service.can_personalize(
                     profile,
                     entity_observation_count=entity_context.observation_count if entity_context else 0,
                     sender_observation_count=sender_context.observation_count if sender_context else 0,
+                    task_type_observation_count=task_type_context.observation_count if task_type_context else 0,
+                    tag_observation_count=tag_observation_count,
                 )
                 llm_input = self.reasoner.build_llm_input(
                     task=task,
@@ -80,6 +88,7 @@ class PriorityPipeline:
                     entity_context=entity_context,
                     sender_context=sender_context,
                     can_personalize=can_personalize,
+                    available_tags=custom_tags,
                 )
                 llm_output, decision = self.reasoner.reason_task(run_id=run_id, task=task, llm_input=llm_input)
                 decisions.append(decision)

@@ -5,7 +5,8 @@ import re
 from uuid import uuid4
 
 from pipeline.config import PipelineSettings
-from pipeline.models import CanonicalTask, PrioritizedTaskCard, StructuredLlmOutput
+from pipeline.models import CanonicalTask, PrioritizedTaskCard, StructuredLlmOutput, TaskStatus
+from pipeline.utils.tags import dedupe_tags
 
 
 class PostProcessor:
@@ -22,12 +23,21 @@ class PostProcessor:
     ) -> PrioritizedTaskCard:
         task_title = self._build_task_title(task)
         task_description = self._build_task_description(task, task_title=task_title)
+        persisted_llm_tags = llm_output.tags if llm_output.confidence >= self.settings.profile_confidence_threshold else []
+        task_tags = dedupe_tags([*task.manual_tags, *persisted_llm_tags])
         return PrioritizedTaskCard(
             task_id=uuid4().hex,
             canonical_task_id=task.canonical_task_id,
             user_id=task.user_id,
             run_id=run_id,
+            status=TaskStatus.PENDING_REVIEW,
+            origin=task.origin,
+            task_type=task.task_type,
+            entity_key=task.topic_entity.entity_key,
             priority_tier=llm_output.priority_tier,
+            suggested_priority_tier=llm_output.priority_tier,
+            effective_priority_tier=llm_output.priority_tier,
+            applied_priority_delta=0,
             action_window=llm_output.action_window,
             rationale=llm_output.rationale,
             confidence=llm_output.confidence,
@@ -49,6 +59,8 @@ class PostProcessor:
             profile_version=profile_version,
             prompt_version=self.settings.llm_prompt_version,
             schema_version_ref=self.settings.llm_schema_version,
+            sender_ids=task.sender_ids,
+            tags=task_tags,
         )
 
     def _build_task_title(self, task: CanonicalTask) -> str:

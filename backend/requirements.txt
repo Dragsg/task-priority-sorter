@@ -9,5 +9,7 @@ PyJWT>=2.8.0
 pydantic>=2.7.0
 sqlalchemy>=2.0.30
 dateparser>=1.2.0
+python-dateutil>=2.9.0
+icalendar>=6.1.0
 openai>=1.76.0
 spacy>=3.7.0
