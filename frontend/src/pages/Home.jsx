@@ -6,6 +6,7 @@ import {
   fetchDashboardBootstrap,
   fetchPipelineProfile,
   fetchPrioritizedTasks,
+  getStoredUser,
   getStoredUserId,
   removePrioritizedTask,
   submitTaskFeedback,
@@ -519,9 +520,11 @@ function QueueCard({
 
 export default function Home() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [tasks, setTasks] = useState([]);
-  const [pipelineProfile, setPipelineProfile] = useState(null);
+  const cachedUserId = getStoredUserId();
+  const cachedDashboard = readDashboardCache(cachedUserId);
+  const [user, setUser] = useState(() => cachedDashboard?.user ?? getStoredUser());
+  const [tasks, setTasks] = useState(() => cachedDashboard?.tasks ?? []);
+  const [pipelineProfile, setPipelineProfile] = useState(() => cachedDashboard?.profile ?? null);
   const [taskFeedbackStates, setTaskFeedbackStates] = useState({});
   const [taskError, setTaskError] = useState("");
   const [taskStatus, setTaskStatus] = useState("");
@@ -542,8 +545,8 @@ export default function Home() {
 
   useEffect(() => {
     async function loadDashboard() {
-      const cachedUserId = getStoredUserId();
-      const cached = readDashboardCache(cachedUserId);
+      const currentUserId = getStoredUserId();
+      const cached = readDashboardCache(currentUserId);
       if (cached) {
         if (cached.user) {
           setUser(cached.user);
@@ -827,10 +830,6 @@ export default function Home() {
     }));
   }
 
-  if (!user) {
-    return <main className="simple-shell">Loading your dashboard...</main>;
-  }
-
   return (
     <main className="simple-shell">
       <PageNav />
@@ -846,11 +845,13 @@ export default function Home() {
         <div className="summary-grid summary-grid-wide">
           <article className="summary-card">
             <p className="summary-label">Signed in as</p>
-            <p className="summary-value">{user.email}</p>
+            <p className="summary-value">{user?.email ?? "Refreshing your account..."}</p>
           </article>
           <article className="summary-card">
             <p className="summary-label">Current focus</p>
-            <p className="summary-value">{getPreferenceLabel(user.preferences)}</p>
+            <p className="summary-value">
+              {getPreferenceLabel(user?.preferences) ?? "Loading preference..."}
+            </p>
           </article>
           <article className="summary-card">
             <p className="summary-label">Profile confidence</p>

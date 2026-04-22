@@ -3,14 +3,16 @@ import { useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
   fetchCurrentUser,
+  getStoredUser,
   saveOnboardingPreferences,
+  storeUser,
 } from "../api";
 import PageNav from "../components/PageNav";
 import { PREFERENCE_OPTIONS } from "../preferences";
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => getStoredUser());
   const [preferences, setPreferences] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -43,16 +45,17 @@ export default function Onboarding() {
       setBusy(true);
       setError("");
       await saveOnboardingPreferences(preferences);
+      if (user) {
+        const updatedUser = { ...user, preferences };
+        setUser(updatedUser);
+        storeUser(updatedUser);
+      }
       navigate("/home");
     } catch (submitError) {
       setError(submitError.message);
     } finally {
       setBusy(false);
     }
-  }
-
-  if (!user) {
-    return <main className="simple-shell">Loading your setup...</main>;
   }
 
   return (
@@ -62,8 +65,8 @@ export default function Onboarding() {
         <p className="auth-eyebrow">Onboarding</p>
         <h1 className="simple-title">Pick the workspace that fits your day</h1>
         <p className="simple-copy">
-          You&apos;re signed in as <strong>{user.email}</strong>. Choose the context
-          you want this workspace to support first.
+          You&apos;re signed in as <strong>{user?.email ?? "your account"}</strong>.
+          Choose the context you want this workspace to support first.
         </p>
         <p className="simple-note">
           Think of this as your starting mode. You can update it later whenever your work changes.
