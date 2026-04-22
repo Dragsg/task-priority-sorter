@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { getStoredToken } from "./api";
 import Home from "./pages/Home";
+import Kanban from "./pages/Kanban";
 import Linking from "./pages/Linking";
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
@@ -36,6 +37,14 @@ export default function App() {
             </ProtectedRoute>
           }
           path="/home"
+        />
+        <Route
+          element={
+            <ProtectedRoute>
+              <Kanban />
+            </ProtectedRoute>
+          }
+          path="/kanban"
         />
         <Route
           element={
