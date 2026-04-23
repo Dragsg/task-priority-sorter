@@ -25,10 +25,14 @@ FIXED_TAG_CATALOG = [
     "finance",
     "career",
     "event",
-    "newsletter",
+    "newsletters",
     "announcement",
     "promotion",
 ]
+
+_TAG_ALIASES = {
+    "newsletter": "newsletters",
+}
 
 _NORMALIZE_PATTERN = re.compile(r"[^a-z0-9]+")
 _TAG_HINTS: list[tuple[str, tuple[str, ...]]] = [
@@ -49,7 +53,7 @@ _TAG_HINTS: list[tuple[str, tuple[str, ...]]] = [
     ("finance", ("invoice", "payment", "billing", "reimbursement", "claim", "fee")),
     ("career", ("interview", "career", "recruit", "internship", "resume")),
     ("event", ("event", "webinar", "workshop", "orientation", "fair", "session", "talk")),
-    ("newsletter", ("newsletter", "digest", "roundup")),
+    ("newsletters", ("newsletter", "newsletters", "digest", "roundup")),
     ("announcement", ("announcement", "notice", "update", "released")),
     ("promotion", ("promotion", "offer", "sale", "discount")),
     ("action_required", ("action required", "please", "need to", "required", "complete", "submit")),
@@ -60,6 +64,7 @@ def normalize_tag(value: str | None) -> str | None:
     if value is None:
         return None
     normalized = _NORMALIZE_PATTERN.sub("_", value.strip().lower()).strip("_")
+    normalized = _TAG_ALIASES.get(normalized, normalized)
     return normalized or None
 
 

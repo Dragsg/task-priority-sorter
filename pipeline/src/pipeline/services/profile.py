@@ -17,6 +17,7 @@ from pipeline.models import (
     TaskType,
     TaskTypeWeight,
 )
+from pipeline.utils.time import utc_now_naive
 
 
 class ProfileService:
@@ -80,7 +81,7 @@ class ProfileService:
     ) -> BehaviorProfile:
         updated = profile.model_copy(deep=True)
         updated.profile_version += 1
-        occurred = occurred_at or datetime.now()
+        occurred = occurred_at or utc_now_naive()
 
         if deadline_hours is not None:
             current = updated.task_type_start_leads.get(task_type)

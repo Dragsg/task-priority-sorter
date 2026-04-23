@@ -5,6 +5,7 @@ import {
   fetchDashboardBootstrap,
   getStoredUser,
   getStoredUserId,
+  LIVE_REFRESH_INTERVAL_MS,
   removePrioritizedTask,
   updatePrioritizedTask,
 } from "../api";
@@ -542,6 +543,7 @@ function KanbanCard({
     task.task_description || task.source_snippet || task.source_subject,
     150
   );
+  const sourcePreview = truncateText(task.source_snippet, 110);
   const sourceContext = cleanPreviewText(task.source_subject || task.source_sender);
   const isCompleted = getTaskWorkflowStatus(task) === "COMPLETED";
 
@@ -567,7 +569,17 @@ function KanbanCard({
           {cleanPreviewText(task.task_title) || "Untitled task"}
         </h3>
         {sourceContext ? <p className="kanban-card-context">{sourceContext}</p> : null}
-        {preview ? <p className="kanban-card-preview">{preview}</p> : null}
+        {preview ? (
+          <div className="kanban-card-summary-block">
+            <p className="task-summary-label">Summary</p>
+            <p className="kanban-card-preview">{preview}</p>
+          </div>
+        ) : null}
+        {sourcePreview && sourcePreview !== preview ? (
+          <p className="kanban-card-email-note">
+            <span>Original email:</span> {sourcePreview}
+          </p>
+        ) : null}
       </div>
 
       <div className="kanban-card-footer">
@@ -727,6 +739,47 @@ export default function Kanban() {
     }
     writeKanbanCache(user.userId, user, tasks, availableTags);
   }, [availableTags, tasks, user]);
+
+  const hasEditInFlight = Object.values(editStates).some((state) => state?.isSaving);
+  const hasTaskSaveInFlight = Object.keys(savingStates).length > 0;
+  const isLiveRefreshPaused =
+    editingTaskId !== null ||
+    dragState.taskId !== null ||
+    hasEditInFlight ||
+    hasTaskSaveInFlight;
+
+  useEffect(() => {
+    let isCancelled = false;
+    let refreshInFlight = false;
+
+    async function refreshBoardQuietly() {
+      if (document.hidden || refreshInFlight || isLiveRefreshPaused) {
+        return;
+      }
+
+      refreshInFlight = true;
+      try {
+        const dashboard = await fetchDashboardBootstrap();
+        if (isCancelled) {
+          return;
+        }
+        setUser(dashboard.user);
+        setTasks(dashboard.items ?? []);
+        setAvailableTags(dashboard.availableTags ?? []);
+      } catch {
+        // Keep the current board visible if an automatic refresh misses a cycle.
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+
+    const intervalId = window.setInterval(refreshBoardQuietly, LIVE_REFRESH_INTERVAL_MS);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isLiveRefreshPaused]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {

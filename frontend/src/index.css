@@ -7,7 +7,7 @@
   font-family: Georgia, "Times New Roman", serif;
   line-height: 1.5;
   font-weight: 400;
-  --page-edge: min(1120px, calc(100% - 40px));
+  --page-edge: min(1400px, calc(100% - 48px));
   --paper: rgba(255, 252, 246, 0.74);
   --paper-strong: rgba(255, 251, 244, 0.92);
   --border-soft: rgba(110, 90, 70, 0.14);
@@ -995,6 +995,23 @@ select {
   line-height: 1.45;
 }
 
+.task-summary-block {
+  padding: 14px 16px;
+  border: 1px solid rgba(111, 88, 67, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 252, 247, 0.9);
+}
+
+.task-summary-label {
+  margin: 0 0 8px;
+  color: var(--ink-muted);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .task-source {
   margin: 0 0 12px;
   padding: 10px 12px;
@@ -1411,11 +1428,28 @@ select {
   cursor: wait;
 }
 
+.task-tag-inline-action-near {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px dashed rgba(111, 88, 67, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 248, 239, 0.76);
+}
+
 .task-tag-empty {
   margin: 0;
   color: var(--ink-muted);
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   font-size: 0.88rem;
+}
+
+.task-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 .task-tag-list {
@@ -1727,6 +1761,15 @@ select {
   text-transform: uppercase;
 }
 
+.kanban-card-summary-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid rgba(111, 88, 67, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 252, 247, 0.9);
+}
+
 .kanban-card-footer {
   display: grid;
   gap: 12px;
@@ -1740,6 +1783,19 @@ select {
   font-size: 0.92rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.kanban-card-email-note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.kanban-card-email-note span {
+  color: var(--accent-strong);
+  font-weight: 700;
 }
 
 .kanban-card-meta {
@@ -1905,7 +1961,7 @@ select {
   }
 
   .kanban-board {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
   }
 
   .kanban-filter-bar {

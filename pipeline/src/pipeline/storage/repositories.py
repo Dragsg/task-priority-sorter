@@ -368,6 +368,43 @@ def _has_user_priority_edit(row: PipelineTaskRecord) -> bool:
     return any(entry.get("action") == FeedbackAction.WRONG_PRIORITY.value for entry in history if isinstance(entry, dict))
 
 
+def _source_ids_for_match(
+    *,
+    canonical_task: CanonicalTask | None = None,
+    task_card: PrioritizedTaskCard | None = None,
+    payload: dict[str, Any] | None = None,
+) -> set[str]:
+    source_ids: list[str] = []
+
+    if canonical_task is not None:
+        source_ids.extend(str(source_id) for source_id in canonical_task.source_ids if source_id)
+    if task_card is not None:
+        source_ids.extend(str(source_id) for source_id in task_card.evidence_source_ids if source_id)
+
+    if payload:
+        payload_task = _parse_payload_task(payload)
+        if payload_task is not None:
+            source_ids.extend(str(source_id) for source_id in payload_task.source_ids if source_id)
+        payload_card = _parse_payload_card(payload)
+        if payload_card is not None:
+            source_ids.extend(str(source_id) for source_id in payload_card.evidence_source_ids if source_id)
+
+    return {source_id for source_id in source_ids if source_id}
+
+
+def _task_rows_match_by_sources(
+    *,
+    canonical_task: CanonicalTask,
+    task_card: PrioritizedTaskCard,
+    existing_payload: dict[str, Any] | None,
+) -> bool:
+    new_source_ids = _source_ids_for_match(canonical_task=canonical_task, task_card=task_card)
+    existing_source_ids = _source_ids_for_match(payload=existing_payload)
+    if not new_source_ids or not existing_source_ids:
+        return False
+    return bool(new_source_ids & existing_source_ids)
+
+
 @dataclass
 class PipelineRunBundle:
     run_id: str
@@ -686,12 +723,28 @@ class InMemoryPipelineRepository:
                 continue
             key = (card.user_id, card.canonical_task_id)
             existing = self.task_rows.get(key)
+            matched_key = key
+            if existing is None:
+                for existing_key, existing_row in self.task_rows.items():
+                    row_user_id, existing_canonical_task_id = existing_key
+                    if row_user_id != card.user_id or existing_canonical_task_id == card.canonical_task_id:
+                        continue
+                    if _task_rows_match_by_sources(
+                        canonical_task=task,
+                        task_card=card,
+                        existing_payload=existing_row.get("payload", {}),
+                    ):
+                        existing = existing_row
+                        matched_key = existing_key
+                        break
             self.task_rows[key] = _merge_memory_task_row(
                 existing=existing,
                 task_card=card,
                 canonical_task=task,
                 llm_decision=decision_by_id.get(card.canonical_task_id),
             )
+            if matched_key != key:
+                self.task_rows.pop(matched_key, None)
         if ordered_task_cards:
             self._refresh_current_cards(ordered_task_cards[0].user_id)
 
@@ -959,12 +1012,21 @@ class SqlAlchemyPipelineRepository:
                     continue
                 row = self._get_task_row(session, card.user_id, card.canonical_task_id)
                 if row is None:
+                    row = self._find_task_row_by_sources(
+                        session,
+                        user_id=card.user_id,
+                        canonical_task=task,
+                        task_card=card,
+                    )
+                if row is None:
                     row = PipelineTaskRecord(
                         user_id=card.user_id,
                         canonical_task_id=card.canonical_task_id,
                         created_at=utc_now_naive(),
                     )
                     session.add(row)
+                else:
+                    row.canonical_task_id = card.canonical_task_id
                 _merge_sql_task_row(
                     row=row,
                     task_card=card,
@@ -1003,6 +1065,28 @@ class SqlAlchemyPipelineRepository:
                 PipelineTaskRecord.canonical_task_id == canonical_task_id,
             )
         )
+
+    def _find_task_row_by_sources(
+        self,
+        session: Session,
+        *,
+        user_id: str,
+        canonical_task: CanonicalTask,
+        task_card: PrioritizedTaskCard,
+    ) -> PipelineTaskRecord | None:
+        rows = session.scalars(
+            select(PipelineTaskRecord).where(PipelineTaskRecord.user_id == user_id)
+        ).all()
+        for row in rows:
+            if row.canonical_task_id == task_card.canonical_task_id:
+                continue
+            if _task_rows_match_by_sources(
+                canonical_task=canonical_task,
+                task_card=task_card,
+                existing_payload=row.payload or {},
+            ):
+                return row
+        return None
 
     def _list_task_cards_for_status(self, user_id: str, status: TaskStatus) -> list[PrioritizedTaskCard]:
         with Session(self.engine) as session:

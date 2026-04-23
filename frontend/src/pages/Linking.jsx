@@ -91,6 +91,10 @@ export default function Linking() {
     last_success_at: null,
     gmail_users_checked: 0,
     outlook_users_checked: 0,
+    linked_users_checked: 0,
+    users_refreshed: 0,
+    users_failed: 0,
+    last_total_task_cards: 0,
   });
 
   useEffect(() => {
@@ -320,16 +324,28 @@ export default function Linking() {
 
       <section className="status-card dual-status-card sync-status-card">
         <div>
-          <h2>Background sync</h2>
+          <h2>Automatic task refresh</h2>
           <p className="status-copy">
             Last run: {formatSyncTimestamp(backgroundSyncStatus.last_run_at)}
           </p>
           <p className="status-copy">
-            Last successful sync: {formatSyncTimestamp(backgroundSyncStatus.last_success_at)}
+            Last completed refresh: {formatSyncTimestamp(backgroundSyncStatus.last_success_at)}
           </p>
           <p className="status-copy">
-            Checked {backgroundSyncStatus.gmail_users_checked} Gmail links and{" "}
-            {backgroundSyncStatus.outlook_users_checked} Outlook links in the latest cycle.
+            Checked {backgroundSyncStatus.linked_users_checked} linked account
+            {backgroundSyncStatus.linked_users_checked === 1 ? "" : "s"} across{" "}
+            {backgroundSyncStatus.gmail_users_checked} Gmail link
+            {backgroundSyncStatus.gmail_users_checked === 1 ? "" : "s"} and{" "}
+            {backgroundSyncStatus.outlook_users_checked} Outlook link
+            {backgroundSyncStatus.outlook_users_checked === 1 ? "" : "s"} in the latest cycle.
+          </p>
+          <p className="status-copy">
+            Refreshed {backgroundSyncStatus.users_refreshed} account
+            {backgroundSyncStatus.users_refreshed === 1 ? "" : "s"}, rebuilt{" "}
+            {backgroundSyncStatus.last_total_task_cards} task card
+            {backgroundSyncStatus.last_total_task_cards === 1 ? "" : "s"}, and hit{" "}
+            {backgroundSyncStatus.users_failed} failure
+            {backgroundSyncStatus.users_failed === 1 ? "" : "s"}.
           </p>
         </div>
         <p className="status-pill">
@@ -351,6 +367,8 @@ export default function Linking() {
         <p className="helper-text">
           After Google sends the user back here, you can load a selected number
           of recent emails and then check for newer emails that arrive after linking.
+          The automatic 15-minute job now refreshes the full task pipeline, not just
+          the raw email cache.
         </p>
 
         {gmailFlash ? <p className="success-text">{gmailFlash}</p> : null}
@@ -414,8 +432,8 @@ export default function Linking() {
         <p className="helper-text">
           Microsoft account selection happens on the Microsoft sign-in screen.
           After linking, the backend stores the refresh token in the Outlook
-          table and can reuse it on refresh. Background syncing will keep checking
-          linked inboxes every 15 minutes while the backend is running.
+          table and can reuse it on refresh. The backend now reruns email fetch
+          plus task prioritization every 15 minutes while it is running.
         </p>
 
         {outlookFlash ? <p className="success-text">{outlookFlash}</p> : null}

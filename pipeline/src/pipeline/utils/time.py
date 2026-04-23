@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+SINGAPORE_TIMEZONE_NAME = "Asia/Singapore"
+SINGAPORE_TIMEZONE = ZoneInfo(SINGAPORE_TIMEZONE_NAME)
+
+
+def singapore_now() -> datetime:
+    return datetime.now(SINGAPORE_TIMEZONE)
 
 
 def utc_now_naive() -> datetime:
-    """Return a UTC timestamp without tzinfo for storage in naive UTC columns."""
+    """Return a Singapore-local timestamp without tzinfo for naive timestamp columns."""
 
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return singapore_now().replace(tzinfo=None)
 
 
 def current_hour_for_timezone(timezone_name: str, *, fallback: str = "Asia/Singapore") -> int:
@@ -18,4 +25,4 @@ def current_hour_for_timezone(timezone_name: str, *, fallback: str = "Asia/Singa
             return datetime.now(ZoneInfo(candidate)).hour
         except ZoneInfoNotFoundError:
             continue
-    return datetime.now(timezone.utc).hour
+    return singapore_now().hour

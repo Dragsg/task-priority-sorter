@@ -13,6 +13,7 @@ from .db import (
     save_outlook_link,
     update_outlook_last_received_at,
 )
+from .time_utils import to_sgt
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ def parse_graph_datetime(value: str | None):
     if not value:
         return None
 
-    return normalize_expiry(datetime.fromisoformat(value.replace("Z", "+00:00")))
+    return to_sgt(datetime.fromisoformat(value.replace("Z", "+00:00")))
 
 
 def build_microsoft_authorize_url(state: str) -> str:
