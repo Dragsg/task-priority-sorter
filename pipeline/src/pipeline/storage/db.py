@@ -28,9 +28,17 @@ _LEGACY_TABLES = [
 
 
 def create_engine_from_url(url: str, *, echo: bool = False) -> Engine:
+    connect_args: dict[str, str] = {}
     if url.startswith("postgresql://") and "+psycopg" not in url:
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
-    return create_engine(url, echo=echo, future=True)
+    if url.startswith("postgresql+psycopg://") or url.startswith("postgresql://"):
+        connect_args["options"] = "-c timezone=Asia/Singapore"
+    return create_engine(
+        url,
+        echo=echo,
+        future=True,
+        connect_args=connect_args,
+    )
 
 
 def create_schema(engine: Engine) -> None:

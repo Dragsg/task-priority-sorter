@@ -146,6 +146,60 @@ def test_dismissed_task_card_stays_hidden_from_current_queue():
     assert repository.get_current_task_cards("user-2") == []
 
 
+def test_accepted_task_stays_hidden_when_rerun_changes_canonical_id():
+    repository = InMemoryPipelineRepository()
+    settings = PipelineSettings(profile_confidence_threshold=0.65)
+    pipeline = PriorityPipeline(repository, settings=settings)
+
+    repository.upsert_raw_messages(
+        [
+            RawMessage(
+                user_id="user-accepted",
+                platform=Platform.GMAIL,
+                source_id="msg-accepted-1",
+                subject="CS2103T project due tonight",
+                snippet="Submit the CS2103T project by tonight 11:59pm.",
+                body_text="Submit the CS2103T project by tonight 11:59pm.",
+                sender_display="Prof Chen",
+                sender_email="chen@school.edu",
+                sender_domain="school.edu",
+            )
+        ]
+    )
+
+    first_bundle = pipeline.run_for_user("user-accepted")
+    first_card = first_bundle.task_cards[0]
+    repository.apply_task_action(
+        "user-accepted",
+        first_card.canonical_task_id,
+        action=FeedbackAction.ACCEPT,
+    )
+
+    repository.upsert_raw_messages(
+        [
+            RawMessage(
+                user_id="user-accepted",
+                platform=Platform.GMAIL,
+                source_id="msg-accepted-1",
+                subject="Action required: CS2103T project due tonight",
+                snippet="Submit the CS2103T project by tonight 11:59pm on Canvas.",
+                body_text="Submit the CS2103T project by tonight 11:59pm on Canvas.",
+                sender_display="Prof Chen",
+                sender_email="chen@school.edu",
+                sender_domain="school.edu",
+            )
+        ]
+    )
+
+    second_bundle = pipeline.run_for_user("user-accepted")
+
+    assert first_card.canonical_task_id != second_bundle.task_cards[0].canonical_task_id
+    assert repository.get_current_task_cards("user-accepted") == []
+    accepted_cards = repository.get_accepted_task_cards("user-accepted")
+    assert len(accepted_cards) == 1
+    assert accepted_cards[0].source_subject == "Action required: CS2103T project due tonight"
+
+
 def test_removed_task_tag_stays_removed_after_rerun():
     repository = InMemoryPipelineRepository()
     settings = PipelineSettings(profile_confidence_threshold=0.65)

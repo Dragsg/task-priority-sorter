@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import logging
 import sys
-from datetime import datetime
 from pathlib import Path
 from threading import RLock, Thread
 from time import monotonic
@@ -22,6 +21,7 @@ from .db import (
 )
 from .gmail_service import list_new_messages, list_recent_messages
 from .outlook_service import list_new_outlook_messages, list_recent_outlook_messages
+from .time_utils import now_sgt, parse_iso_to_sgt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PIPELINE_ROOT = PROJECT_ROOT / "pipeline"
@@ -61,10 +61,11 @@ _DASHBOARD_CACHE_TTL_SECONDS = 60.0
 _ALLOWED_TASK_PATCH_FIELDS = {"title", "description", "deadlineAt", "priorityTier", "status", "tags"}
 _ALLOWED_PRIORITY_TIERS = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
 _ALLOWED_TASK_STATUSES = {"OPEN", "COMPLETED"}
+_LEARNING_PRIORITY_INDEX = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 
 
 def _state_now_iso() -> str:
-    return datetime.now().isoformat()
+    return now_sgt().isoformat()
 
 
 def _get_cached_value(cache: dict[int, dict], user_id: int):
@@ -333,6 +334,82 @@ def list_prioritized_tasks(user_id: int) -> list[dict]:
     return _build_dashboard_items(repository, user_id)
 
 
+def _resolve_feedback_profile_inputs(user_id: int, feedback_context) -> tuple[PriorityPipeline, str, object, str | None]:
+    pipeline = get_priority_pipeline()
+    pipeline_user_id = str(user_id)
+    profile = feedback_context.profile or pipeline.profile_service.create_default_profile(pipeline_user_id)
+    sender_hash = None
+    for sender_id in feedback_context.task.sender_ids:
+        if sender_id:
+            sender_hash = pipeline.profile_service.hash_identity(
+                user_salt=profile.user_salt,
+                identifier=sender_id,
+            )
+            break
+    return pipeline, pipeline_user_id, profile, sender_hash
+
+
+def _apply_profile_feedback(
+    user_id: int,
+    feedback_context,
+    *,
+    action: FeedbackAction,
+    direction: FeedbackDirection | None = None,
+    priority_after=None,
+    incremental_priority_delta: int = 0,
+    profile=None,
+):
+    pipeline, pipeline_user_id, current_profile, sender_hash = _resolve_feedback_profile_inputs(
+        user_id,
+        feedback_context,
+    )
+    if profile is not None:
+        current_profile = profile
+
+    task_context = feedback_context.task
+    event = FeedbackEvent(
+        user_id=pipeline_user_id,
+        canonical_task_id=task_context.canonical_task_id,
+        action=action,
+        direction=direction,
+        task_type=task_context.task_type,
+        entity_key=task_context.entity_key,
+        entity_name=task_context.entity_name,
+        entity_type=task_context.entity_type,
+        sender_hash=sender_hash,
+        deadline_hours=task_context.deadline_hours,
+        task_tags=task_context.task_tags,
+        priority_before=task_context.effective_priority_tier,
+        priority_after=priority_after or task_context.effective_priority_tier,
+        incremental_priority_delta=incremental_priority_delta,
+    )
+    updated_profile = pipeline.apply_feedback_to_profile(current_profile, event)
+    _set_cached_value(_PROFILE_CACHE, user_id, updated_profile.model_dump(mode="json"))
+    return updated_profile, event
+
+
+def _priority_feedback_change(task_context, target_priority_tier: str):
+    current_priority = task_context.effective_priority_tier.value
+    if target_priority_tier == current_priority:
+        return None
+
+    current_index = _LEARNING_PRIORITY_INDEX[current_priority]
+    target_index = _LEARNING_PRIORITY_INDEX[target_priority_tier]
+    suggested_index = _LEARNING_PRIORITY_INDEX[task_context.suggested_priority_tier.value]
+    direction = (
+        FeedbackDirection.TOO_LOW
+        if target_index > current_index
+        else FeedbackDirection.TOO_HIGH
+    )
+    new_delta = target_index - suggested_index
+    incremental_delta = new_delta - task_context.applied_priority_delta
+    return {
+        "direction": direction,
+        "priority_after": task_context.effective_priority_tier.__class__(target_priority_tier),
+        "incremental_priority_delta": incremental_delta,
+    }
+
+
 def remove_prioritized_task(user_id: int, canonical_task_id: str) -> dict:
     repository = get_pipeline_repository()
     feedback_context = repository.get_feedback_update_context(str(user_id), canonical_task_id)
@@ -343,9 +420,19 @@ def remove_prioritized_task(user_id: int, canonical_task_id: str) -> dict:
         if feedback_context.task.status.value == "pending_review"
         else FeedbackAction.DELETE
     )
+    updated_profile, _ = _apply_profile_feedback(
+        user_id,
+        feedback_context,
+        action=action,
+    )
     repository.apply_task_action(str(user_id), canonical_task_id, action=action)
     _invalidate_dashboard_cache(user_id)
-    return {"success": True, "canonicalTaskId": canonical_task_id, "action": action.value}
+    return {
+        "success": True,
+        "canonicalTaskId": canonical_task_id,
+        "action": action.value,
+        "profile": updated_profile.model_dump(mode="json"),
+    }
 
 
 def update_prioritized_task_tags(
@@ -443,6 +530,38 @@ def update_prioritized_task(
         normalized_updates["tags"] = dedupe_tags(tags)
 
     repository = get_pipeline_repository()
+    feedback_context = repository.get_feedback_update_context(str(user_id), canonical_task_id)
+    if feedback_context is None:
+        raise LookupError("Task card not found for this user.")
+
+    updated_profile = None
+    if "priority_tier" in normalized_updates:
+        priority_feedback = _priority_feedback_change(
+            feedback_context.task,
+            str(normalized_updates["priority_tier"]),
+        )
+        if priority_feedback is not None:
+            updated_profile, _ = _apply_profile_feedback(
+                user_id,
+                feedback_context,
+                action=FeedbackAction.WRONG_PRIORITY,
+                direction=priority_feedback["direction"],
+                priority_after=priority_feedback["priority_after"],
+                incremental_priority_delta=priority_feedback["incremental_priority_delta"],
+                profile=updated_profile,
+            )
+
+    if (
+        normalized_updates.get("status") == "COMPLETED"
+        and feedback_context.task.status.value != "completed"
+    ):
+        updated_profile, _ = _apply_profile_feedback(
+            user_id,
+            feedback_context,
+            action=FeedbackAction.COMPLETED,
+            profile=updated_profile,
+        )
+
     updated_card = repository.update_task(
         str(user_id),
         canonical_task_id,
@@ -455,7 +574,11 @@ def update_prioritized_task(
         repository.upsert_custom_tags(str(user_id), normalized_updates["tags"])
 
     items = _build_dashboard_items(repository, user_id)
-    profile = get_profile_snapshot(user_id)
+    profile = (
+        updated_profile.model_dump(mode="json")
+        if updated_profile is not None
+        else get_profile_snapshot(user_id)
+    )
     return {
         "success": True,
         "taskId": canonical_task_id,
@@ -559,10 +682,10 @@ def refresh_linked_email_sources(user_id: int, *, recent_limit: int = 20) -> dic
         summary["gmail"]["linked"] = True
         try:
             if gmail_link.get("history_id"):
-                result = list_new_messages(user_id)
+                result = list_new_messages(user_id, link=gmail_link)
                 summary["gmail"]["mode"] = "new"
             else:
-                result = list_recent_messages(user_id, limit=recent_limit)
+                result = list_recent_messages(user_id, limit=recent_limit, link=gmail_link)
                 summary["gmail"]["mode"] = "recent"
             summary["gmail"]["fetchedCount"] = len(result.get("messages", []))
         except Exception as exc:
@@ -585,6 +708,14 @@ def refresh_linked_email_sources(user_id: int, *, recent_limit: int = 20) -> dic
             summary["outlook"]["error"] = str(exc)
 
     return summary
+
+
+def _email_sync_has_new_messages(summary: dict) -> bool:
+    for provider in ("gmail", "outlook"):
+        provider_summary = summary.get(provider) or {}
+        if int(provider_summary.get("fetchedCount") or 0) > 0:
+            return True
+    return False
 
 
 def _build_distribution_rows(items: list[dict], get_label) -> list[dict]:
@@ -629,6 +760,32 @@ def run_prioritization_for_user(user_id: int, limit: int | None = None) -> dict:
     return _run_pipeline_from_stored_messages(user_id, limit=limit, refresh_sources=True)
 
 
+def run_background_refresh_for_user(user_id: int, limit: int | None = None) -> dict:
+    email_sync = refresh_linked_email_sources(user_id, recent_limit=limit or 20)
+    if not _email_sync_has_new_messages(email_sync):
+        return {
+            "pipelineRan": False,
+            "skipReason": "no_new_messages",
+            "runId": None,
+            "rawMessageCount": 0,
+            "signalCount": 0,
+            "canonicalTaskCount": 0,
+            "taskCardCount": 0,
+            "emailSync": email_sync,
+            "items": list_prioritized_tasks(user_id),
+            "availableTags": get_available_tags(user_id),
+        }
+
+    result = _run_pipeline_from_stored_messages(
+        user_id,
+        limit=limit,
+        refresh_sources=False,
+    )
+    result["pipelineRan"] = True
+    result["emailSync"] = email_sync
+    return result
+
+
 def create_manual_task(
     user_id: int,
     *,
@@ -658,7 +815,7 @@ def create_manual_task(
                 "platform": "manual",
                 "source_id": source_id,
                 "thread_id": source_id,
-                "timestamp_iso": datetime.now().isoformat(),
+                "timestamp_iso": now_sgt().isoformat(),
                 "sender_display": user["name"] if user else "You",
                 "sender_email": user["email"] if user else None,
                 "subject": cleaned_title,
@@ -737,7 +894,6 @@ def submit_task_feedback(
     action: str,
     direction: str | None = None,
 ) -> dict:
-    pipeline = get_priority_pipeline()
     repository = get_pipeline_repository()
     pipeline_user_id = str(user_id)
 
@@ -751,30 +907,6 @@ def submit_task_feedback(
         raise LookupError("Task card not found for this user.")
 
     task_context = feedback_context.task
-    profile = feedback_context.profile or pipeline.profile_service.create_default_profile(pipeline_user_id)
-    sender_hash = None
-    for sender_id in task_context.sender_ids:
-        if sender_id:
-            sender_hash = pipeline.profile_service.hash_identity(
-                user_salt=profile.user_salt,
-                identifier=sender_id,
-            )
-            break
-
-    event = FeedbackEvent(
-        user_id=pipeline_user_id,
-        canonical_task_id=canonical_task_id,
-        action=feedback_action,
-        direction=feedback_direction,
-        task_type=task_context.task_type,
-        entity_key=task_context.entity_key,
-        entity_name=task_context.entity_name,
-        entity_type=task_context.entity_type,
-        sender_hash=sender_hash,
-        deadline_hours=task_context.deadline_hours,
-        task_tags=task_context.task_tags,
-        priority_before=task_context.effective_priority_tier,
-    )
     if feedback_action == FeedbackAction.WRONG_PRIORITY and feedback_direction is not None:
         priority_after, _, incremental_delta = compute_priority_adjustment(
             suggested_priority_tier=task_context.suggested_priority_tier,
@@ -782,17 +914,21 @@ def submit_task_feedback(
             applied_priority_delta=task_context.applied_priority_delta,
             direction=feedback_direction,
         )
-        event = event.model_copy(
-            update={
-                "priority_after": priority_after,
-                "incremental_priority_delta": incremental_delta,
-            }
+        updated_profile, event = _apply_profile_feedback(
+            user_id,
+            feedback_context,
+            action=feedback_action,
+            direction=feedback_direction,
+            priority_after=priority_after,
+            incremental_priority_delta=incremental_delta,
         )
     else:
-        event = event.model_copy(update={"priority_after": task_context.effective_priority_tier})
-
-    updated_profile = pipeline.apply_feedback_to_profile(profile, event)
-    _set_cached_value(_PROFILE_CACHE, user_id, updated_profile.model_dump(mode="json"))
+        updated_profile, event = _apply_profile_feedback(
+            user_id,
+            feedback_context,
+            action=feedback_action,
+            direction=feedback_direction,
+        )
     repository.apply_task_action(
         pipeline_user_id,
         canonical_task_id,
@@ -821,7 +957,8 @@ def _normalize_manual_deadline(value: str | None) -> str | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
+        parsed = parse_iso_to_sgt(value)
+        return parsed.isoformat() if parsed else None
     except ValueError as exc:
         raise ValueError("deadlineAt must be a valid ISO datetime") from exc
 
@@ -829,6 +966,8 @@ def _normalize_manual_deadline(value: str | None) -> str | None:
 def _deadline_hours_from_iso(value: str | None) -> float | None:
     if not value:
         return None
-    deadline = datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
-    delta = deadline - datetime.now()
+    deadline = parse_iso_to_sgt(value)
+    if deadline is None:
+        return None
+    delta = deadline - now_sgt()
     return max(0.0, delta.total_seconds() / 3600)

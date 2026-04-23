@@ -96,5 +96,5 @@ def test_retag_pipeline_tasks_backfills_tags_in_row_and_payload():
     with Session(engine) as session:
         row = session.scalar(select(PipelineTaskRecord).where(PipelineTaskRecord.canonical_task_id == "canon-1"))
         assert row is not None
-        assert row.tags == ["newsletter", "announcement"]
-        assert row.payload["task_card"]["tags"] == ["newsletter", "announcement"]
+        assert row.tags == ["newsletters", "announcement"]
+        assert row.payload["task_card"]["tags"] == ["newsletters", "announcement"]

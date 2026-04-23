@@ -10,6 +10,7 @@ from googleapiclient.errors import HttpError
 
 from config import Config
 from .db import get_gmail_link, save_gmail_link, save_messages, update_gmail_history
+from .time_utils import SINGAPORE_TIMEZONE
 
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -47,12 +48,18 @@ def build_google_flow() -> Flow:
     return flow
 
 
-def build_credentials(user_id: int) -> Credentials:
-    link = get_gmail_link(user_id)
+def _require_gmail_link(user_id: int, link: dict | None = None) -> dict:
+    link = link or get_gmail_link(user_id)
 
     if not link:
         logger.info("No saved Gmail link available for user_id=%s", user_id)
         raise RuntimeError("No Gmail account is linked for this user yet.")
+
+    return link
+
+
+def build_credentials(user_id: int, *, link: dict | None = None) -> Credentials:
+    link = _require_gmail_link(user_id, link)
 
     expiry = normalize_expiry(link["token_expiry"])
 
@@ -82,8 +89,8 @@ def build_credentials(user_id: int) -> Credentials:
     return credentials
 
 
-def build_gmail_client(user_id: int):
-    credentials = build_credentials(user_id)
+def build_gmail_client(user_id: int, *, link: dict | None = None):
+    credentials = build_credentials(user_id, link=link)
     return build("gmail", "v1", credentials=credentials)
 
 
@@ -194,7 +201,7 @@ def map_gmail_message_for_storage(message: dict) -> dict:
         timestamp_iso = datetime.fromtimestamp(
             int(internal_date) / 1000,
             tz=timezone.utc,
-        )
+        ).astimezone(SINGAPORE_TIMEZONE)
 
     return {
         "platform": "gmail",
@@ -253,8 +260,9 @@ def get_existing_message_details(service, message_ids: list[str]) -> list[dict]:
     return messages
 
 
-def list_recent_messages(user_id: int, limit: int = 5) -> dict:
-    service = build_gmail_client(user_id)
+def list_recent_messages(user_id: int, limit: int = 5, *, link: dict | None = None) -> dict:
+    link = _require_gmail_link(user_id, link)
+    service = build_gmail_client(user_id, link=link)
     response = (
         service.users()
         .messages()
@@ -282,15 +290,12 @@ def list_recent_messages(user_id: int, limit: int = 5) -> dict:
     }
 
 
-def list_new_messages(user_id: int) -> dict:
-    link = get_gmail_link(user_id)
-    if not link:
-        raise RuntimeError("No Gmail account is linked for this user yet.")
-
+def list_new_messages(user_id: int, *, link: dict | None = None) -> dict:
+    link = _require_gmail_link(user_id, link)
     if not link["history_id"]:
         return {"messages": [], "historyId": None}
 
-    service = build_gmail_client(user_id)
+    service = build_gmail_client(user_id, link=link)
 
     try:
         response = (

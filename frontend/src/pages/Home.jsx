@@ -8,6 +8,7 @@ import {
   fetchPrioritizedTasks,
   getStoredUser,
   getStoredUserId,
+  LIVE_REFRESH_INTERVAL_MS,
   submitTaskFeedback,
   syncPrioritizedTasks,
   updatePrioritizedTask,
@@ -410,9 +411,33 @@ function TaskTags({ task, isBusy = false, availableTags = [], onChangeTags }) {
     <div className="task-tag-block">
       <div className="task-tag-header">
         <span className="task-tag-label">Tags</span>
+      </div>
+      <div className="task-tag-row">
+        {tags.length ? (
+          <div className="task-tag-list">
+            {tags.map((tag) => (
+              <span className="task-tag-chip task-tag-chip-editable" key={tag}>
+                <span className="task-tag-chip-text">{tag.replace(/_/g, " ")}</span>
+                {onChangeTags ? (
+                  <button
+                    aria-label={`Remove ${tag} tag`}
+                    className="task-tag-chip-remove"
+                    disabled={isBusy}
+                    onClick={() => removeTag(tag)}
+                    type="button"
+                  >
+                    &times;
+                  </button>
+                ) : null}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="task-tag-empty">No tags yet.</p>
+        )}
         {onChangeTags ? (
           <button
-            className="task-tag-inline-action"
+            className="task-tag-inline-action task-tag-inline-action-near"
             disabled={isBusy}
             onClick={() => setIsComposerOpen((current) => !current)}
             type="button"
@@ -421,36 +446,14 @@ function TaskTags({ task, isBusy = false, availableTags = [], onChangeTags }) {
           </button>
         ) : null}
       </div>
-      {tags.length ? (
-        <div className="task-tag-list">
-          {tags.map((tag) => (
-            <span className="task-tag-chip task-tag-chip-editable" key={tag}>
-              <span className="task-tag-chip-text">{tag.replace(/_/g, " ")}</span>
-              {onChangeTags ? (
-                <button
-                  aria-label={`Remove ${tag} tag`}
-                  className="task-tag-chip-remove"
-                  disabled={isBusy}
-                  onClick={() => removeTag(tag)}
-                  type="button"
-                >
-                  ×
-                </button>
-              ) : null}
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="task-tag-empty">No tags yet.</p>
-      )}
       {isComposerOpen ? (
-          <div className="task-tag-editor">
-            <div className="manual-tag-input-shell task-tag-input-shell">
-              <input
-                autoFocus
-                className="manual-tag-input"
-                disabled={isBusy}
-                onBlur={() => {
+        <div className="task-tag-editor">
+          <div className="manual-tag-input-shell task-tag-input-shell">
+            <input
+              autoFocus
+              className="manual-tag-input"
+              disabled={isBusy}
+              onBlur={() => {
                 commitTag(tagInput);
                 setIsComposerOpen(false);
               }}
@@ -495,6 +498,8 @@ function TaskSource({ task, compact = false }) {
     return null;
   }
 
+  const previewLabel = task.source_snippet ? "Original email:" : "Email:";
+
   return (
     <div className={`task-source${compact ? " task-source-compact" : ""}`}>
       {subject ? (
@@ -509,7 +514,7 @@ function TaskSource({ task, compact = false }) {
       ) : null}
       {preview ? (
         <p className="task-source-line task-source-preview">
-          <span>Email:</span> {preview}
+          <span>{previewLabel}</span> {preview}
         </p>
       ) : null}
       {received && !compact ? (
@@ -867,9 +872,12 @@ function TaskCard({
           </button>
         </div>
       </div>
-      <p className="task-queue-summary">
-        {buildQueueSummary(task)}
-      </p>
+      <div className="task-summary-block">
+        <p className="task-summary-label">Summary</p>
+        <p className="task-queue-summary">
+          {buildQueueSummary(task)}
+        </p>
+      </div>
       <TaskTags
         availableTags={availableTags}
         isBusy={isBusy}
@@ -881,6 +889,7 @@ function TaskCard({
         <span>{task.platforms_seen?.join(", ") || "email"}</span>
       </div>
       <div className="task-card-details">
+        <p className="task-summary-label">Source email</p>
         <TaskSource compact task={task} />
         {isEditing ? (
           <TaskEditForm
@@ -1008,12 +1017,57 @@ export default function Home() {
     return counts;
   }, [tasks]);
 
+  const hasPendingTaskTagUpdates = Object.keys(taskTagUpdateStates).length > 0;
+  const hasTaskEditInFlight = Object.values(taskEditStates).some((state) => state?.isSaving);
+  const isLiveRefreshPaused =
+    isSyncing ||
+    isProcessingFeedbackQueue ||
+    feedbackQueue.length > 0 ||
+    isCreatingManualTask ||
+    editingTaskId !== null ||
+    hasPendingTaskTagUpdates ||
+    hasTaskEditInFlight;
+
   useEffect(() => {
     if (!user?.userId) {
       return;
     }
     writeDashboardCache(user.userId, user, tasks, pipelineProfile);
   }, [pipelineProfile, tasks, user]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    let refreshInFlight = false;
+
+    async function refreshDashboardQuietly() {
+      if (document.hidden || refreshInFlight || isLiveRefreshPaused) {
+        return;
+      }
+
+      refreshInFlight = true;
+      try {
+        const dashboard = await fetchDashboardBootstrap();
+        if (isCancelled) {
+          return;
+        }
+        setUser(dashboard.user);
+        setTasks(dashboard.items ?? []);
+        setPipelineProfile(dashboard.profile ?? null);
+        setAvailableTags(dashboard.availableTags ?? []);
+      } catch {
+        // Keep the current UI steady if the background refresh misses a cycle.
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+
+    const intervalId = window.setInterval(refreshDashboardQuietly, LIVE_REFRESH_INTERVAL_MS);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isLiveRefreshPaused]);
 
   useEffect(() => {
     if (isProcessingFeedbackQueue || feedbackQueue.length === 0) {

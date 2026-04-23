@@ -5,6 +5,7 @@ import {
   fetchStatisticsSnapshot,
   getStoredUser,
   getStoredUserId,
+  LIVE_REFRESH_INTERVAL_MS,
 } from "../api";
 import PageNav from "../components/PageNav";
 import { getPreferenceLabel } from "../preferences";
@@ -215,6 +216,41 @@ export default function Statistics() {
       strongestSignals,
     });
   }, [distributions, nearestDeadlines, strongestSignals, summary, user]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    let refreshInFlight = false;
+
+    async function refreshStatisticsQuietly() {
+      if (document.hidden || refreshInFlight) {
+        return;
+      }
+
+      refreshInFlight = true;
+      try {
+        const statistics = await fetchStatisticsSnapshot();
+        if (isCancelled) {
+          return;
+        }
+        setUser(statistics.user);
+        setSummary(statistics.summary ?? EMPTY_SUMMARY);
+        setDistributions(statistics.distributions ?? EMPTY_DISTRIBUTIONS);
+        setNearestDeadlines(statistics.nearestDeadlines ?? []);
+        setStrongestSignals(statistics.strongestSignals ?? []);
+      } catch {
+        // Keep the latest rendered snapshot if the periodic refresh misses a cycle.
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+
+    const intervalId = window.setInterval(refreshStatisticsQuietly, LIVE_REFRESH_INTERVAL_MS);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   return (
     <main className="simple-shell">

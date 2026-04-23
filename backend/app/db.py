@@ -8,6 +8,7 @@ from psycopg.types.json import Jsonb
 from config import Config
 
 logger = logging.getLogger(__name__)
+DATABASE_TIMEZONE = "Asia/Singapore"
 
 
 @contextmanager
@@ -15,7 +16,11 @@ def get_connection():
     if not Config.DATABASE_URL:
         raise RuntimeError("DATABASE_URL is missing from backend/.env")
 
-    with psycopg.connect(Config.DATABASE_URL, row_factory=dict_row) as connection:
+    with psycopg.connect(
+        Config.DATABASE_URL,
+        row_factory=dict_row,
+        options=f"-c timezone={DATABASE_TIMEZONE}",
+    ) as connection:
         yield connection
 
 

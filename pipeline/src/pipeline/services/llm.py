@@ -450,7 +450,12 @@ class PriorityReasoner:
 
         action_window = self._choose_action_window(task=task, user=user, calendar_context=calendar)
         rationale = self._build_rationale(task=task, user=user, action_window=action_window)
-        confidence = 0.75 if user["can_personalize"] else max(0.45, user.get("profile_confidence", 0.0))
+        confidence = self._estimate_fallback_confidence(
+            task=task,
+            user=user,
+            action_window=action_window,
+            adjusted=adjusted,
+        )
 
         tags = synthesize_task_tags(
             task_type=TaskType(task["type"]) if task.get("type") else None,
@@ -472,11 +477,73 @@ class PriorityReasoner:
             priority_tier=tier,
             action_window=action_window,
             rationale=rationale,
-            confidence=round(min(0.95, confidence), 2),
+            confidence=confidence,
             profile_adjustment_made=adjusted,
             adjustment_reason=adjustment_reason,
             tags=tags,
         )
+
+    def _estimate_fallback_confidence(
+        self,
+        *,
+        task: dict[str, Any],
+        user: dict[str, Any],
+        action_window: ActionWindow,
+        adjusted: bool,
+    ) -> float:
+        confidence = 0.22
+        deadline_hours = task.get("deadline_hours")
+        signal_count = int(task.get("signal_count") or 0)
+        score_reasons = task.get("score_reasons") or []
+        profile_confidence = float(user.get("profile_confidence") or 0.0)
+        pre_scored_tier = str(task.get("pre_scored_tier") or PriorityTier.LOW.value)
+
+        if deadline_hours is not None:
+            if deadline_hours <= 6:
+                confidence += 0.18
+            elif deadline_hours <= 24:
+                confidence += 0.15
+            elif deadline_hours <= 72:
+                confidence += 0.1
+            else:
+                confidence += 0.05
+
+        confidence += min(signal_count, 4) * 0.07
+        confidence += min(len(score_reasons), 3) * 0.05
+
+        if task.get("subject"):
+            confidence += 0.03
+        if task.get("preview"):
+            confidence += 0.04
+
+        if pre_scored_tier == PriorityTier.CRITICAL.value:
+            confidence += 0.12
+        elif pre_scored_tier == PriorityTier.HIGH.value:
+            confidence += 0.08
+        elif pre_scored_tier == PriorityTier.MEDIUM.value:
+            confidence += 0.04
+
+        if action_window == ActionWindow.NOW:
+            confidence += 0.05
+        elif action_window == ActionWindow.TODAY:
+            confidence += 0.03
+
+        if user.get("can_personalize"):
+            confidence += min(profile_confidence, 1.0) * 0.12
+            if (user.get("entity_observation_count") or 0) >= 3:
+                confidence += 0.03
+            if (user.get("sender_observation_count") or 0) >= 3:
+                confidence += 0.03
+            if (user.get("task_type_observation_count") or 0) >= 3:
+                confidence += 0.03
+            if adjusted:
+                confidence += 0.04
+        else:
+            confidence += min(profile_confidence, 0.4) * 0.08
+            if deadline_hours is None and signal_count <= 1 and len(score_reasons) <= 1:
+                confidence -= 0.06
+
+        return round(max(0.3, min(0.95, confidence)), 2)
 
     def _choose_action_window(self, *, task: dict[str, Any], user: dict[str, Any], calendar_context: dict[str, Any]) -> ActionWindow:
         deadline_hours = task.get("deadline_hours")
