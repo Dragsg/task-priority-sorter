@@ -5,6 +5,7 @@ import Kanban from "./pages/Kanban";
 import Linking from "./pages/Linking";
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
+import Preferences from "./pages/Preferences";
 import Statistics from "./pages/Statistics";
 
 function ProtectedRoute({ children }) {
@@ -29,6 +30,14 @@ export default function App() {
             </ProtectedRoute>
           }
           path="/onboarding"
+        />
+        <Route
+          element={
+            <ProtectedRoute>
+              <Preferences />
+            </ProtectedRoute>
+          }
+          path="/preferences"
         />
         <Route
           element={

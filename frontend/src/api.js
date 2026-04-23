@@ -95,19 +95,19 @@ async function sendJson(path, options = {}) {
   return readJson(response);
 }
 
-export async function signUp({ email, password, name }) {
+export async function signUp({ username, password, name }) {
   return sendJson("/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, name }),
+    body: JSON.stringify({ username, password, name }),
   });
 }
 
-export async function signIn({ email, password }) {
+export async function signIn({ username, password }) {
   return sendJson("/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ username, password }),
   });
 }
 
@@ -137,11 +137,15 @@ export async function fetchStatisticsSnapshot() {
   return payload;
 }
 
-export async function saveOnboardingPreferences(preferences) {
+export async function saveOnboardingAnswers({
+  performanceTime,
+  importantTopic,
+  prioritiseBy,
+}) {
   return sendJson("/onboarding", {
     method: "PUT",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ preferences }),
+    body: JSON.stringify({ performanceTime, importantTopic, prioritiseBy }),
   });
 }
 
@@ -149,7 +153,9 @@ export async function fetchOnboardingContext() {
   const response = await fetch(`${API_BASE_URL}/onboarding/context`, {
     headers: getAuthHeaders(),
   });
-  return readJson(response);
+  const payload = await readJson(response);
+  storeUser(payload.user);
+  return payload;
 }
 
 export async function uploadOnboardingCalendar(file) {

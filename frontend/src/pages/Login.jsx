@@ -8,26 +8,30 @@ import {
   signIn,
   signUp,
 } from "../api";
+import {
+  grantOnboardingAccess,
+  revokeOnboardingAccess,
+} from "../onboardingOptions";
 
 const HIGHLIGHTS = [
   "Create an account and get into your workspace quickly.",
-  "Save a focus preference so the app feels more tailored from the start.",
+  "Answer a few onboarding questions so the app can adapt earlier.",
   "Return to your dashboard without repeating setup steps.",
 ];
 
 export default function Login() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const trimmedEmail = email.trim();
+  const trimmedUsername = username.trim();
   const trimmedName = name.trim();
   const canSubmit = isSignUp
-    ? trimmedEmail && password.length >= 8 && trimmedName.length >= 2
-    : trimmedEmail && password;
+    ? trimmedUsername && password.length >= 8 && trimmedName.length >= 2
+    : trimmedUsername && password;
 
   useEffect(() => {
     async function checkExistingSession() {
@@ -38,7 +42,8 @@ export default function Login() {
 
       try {
         const user = await fetchCurrentUser();
-        navigate(user.preferences ? "/home" : "/onboarding", { replace: true });
+        revokeOnboardingAccess();
+        navigate("/home", { replace: true });
       } catch {
         clearStoredToken();
       }
@@ -54,15 +59,21 @@ export default function Login() {
 
     try {
       const payload = isSignUp
-        ? await signUp({ email, password, name })
-        : await signIn({ email, password });
+        ? await signUp({ username, password, name })
+        : await signIn({ username, password });
       const nextUser = payload.user ?? null;
 
       localStorage.setItem("token", payload.token);
       if (nextUser) {
         storeUser(nextUser);
       }
-      navigate(isSignUp || !nextUser?.preferences ? "/onboarding" : "/home");
+      if (isSignUp && nextUser?.userId) {
+        grantOnboardingAccess(nextUser.userId);
+        navigate("/onboarding");
+      } else {
+        revokeOnboardingAccess();
+        navigate("/home");
+      }
     } catch (submitError) {
       setError(submitError.message);
     } finally {
@@ -78,7 +89,7 @@ export default function Login() {
           <h1>{isSignUp ? "A calmer place to sort what matters" : "Welcome back"}</h1>
           <p className="auth-subtitle">
             {isSignUp
-              ? "Set up your account, choose your focus, and step into a workspace that feels quieter and more intentional."
+              ? "Set up your account, answer a few quick questions, and step into a workspace that feels quieter and more intentional."
               : "Pick up where you left off, review your setup, and move back into your workspace without friction."}
           </p>
 
@@ -98,21 +109,23 @@ export default function Login() {
             <p className="auth-card-copy">
               {isSignUp
                 ? "A few details and you are in."
-                : "Use the details you signed up with."}
+                : "Use the username and password you signed up with."}
             </p>
           </div>
 
           <form className="auth-form" onSubmit={handleSubmit}>
             <label className="field-group">
-              <span>Email</span>
+              <span>Username</span>
               <input
                 className="auth-input"
                 disabled={busy}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                type="email"
-                value={email}
-                autoComplete="email"
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder={isSignUp ? "Choose a username" : "Enter your username"}
+                type="text"
+                value={username}
+                autoComplete="username"
+                minLength={3}
+                maxLength={40}
                 required
               />
             </label>

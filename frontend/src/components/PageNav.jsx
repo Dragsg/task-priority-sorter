@@ -5,7 +5,7 @@ const LINKS = [
   { to: "/kanban", label: "Kanban" },
   { to: "/statistics", label: "Statistics" },
   { to: "/linking", label: "Linking" },
-  { to: "/onboarding", label: "Preferences" },
+  { to: "/preferences", label: "Preferences" },
 ];
 
 export default function PageNav() {

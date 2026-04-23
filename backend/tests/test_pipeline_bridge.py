@@ -30,7 +30,7 @@ class PipelineBridgeTestCase(unittest.TestCase):
 
         summary = refresh_linked_email_sources(11, recent_limit=25)
 
-        list_new_messages.assert_called_once_with(11)
+        list_new_messages.assert_called_once_with(11, link={"history_id": "123"})
         list_recent_outlook_messages.assert_called_once_with(11, limit=25)
         list_recent_messages.assert_not_called()
         list_new_outlook_messages.assert_not_called()

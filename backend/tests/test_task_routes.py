@@ -49,8 +49,11 @@ class TaskRoutesTestCase(unittest.TestCase):
         get_user_by_id.return_value = {
             "user_id": 7,
             "name": "Avery",
-            "email": "avery@example.com",
+            "username": "avery",
             "preferences": "School",
+            "performance_time": "Evening",
+            "important_topic": "Classes and assignments",
+            "prioritise_by": "Urgency",
         }
         list_prioritized_tasks.return_value = [{"canonical_task_id": "canon-1"}]
         get_profile_snapshot.return_value = {"profile_version": 5}
@@ -75,8 +78,11 @@ class TaskRoutesTestCase(unittest.TestCase):
         get_user_by_id.return_value = {
             "user_id": 7,
             "name": "Avery",
-            "email": "avery@example.com",
+            "username": "avery",
             "preferences": "School",
+            "performance_time": "Evening",
+            "important_topic": "Classes and assignments",
+            "prioritise_by": "Urgency",
         }
         get_task_statistics_snapshot.return_value = {
             "summary": {
@@ -166,14 +172,21 @@ class TaskRoutesTestCase(unittest.TestCase):
         get_user_by_id.return_value = {
             "user_id": 7,
             "name": "Avery",
-            "email": "avery@example.com",
+            "username": "avery",
             "preferences": "School",
+            "performance_time": "Evening",
+            "important_topic": "Classes and assignments",
+            "prioritise_by": "Urgency",
         }
         get_onboarding_context_snapshot.return_value = {
             "timezone": "Asia/Singapore",
             "busy_windows": [],
             "recurring_task_notes": [],
-            "static_preferences": {"focus_preference": "School"},
+            "static_preferences": {
+                "performance_time": "Evening",
+                "important_topic": "Classes and assignments",
+                "prioritise_by": "Urgency",
+            },
             "calendar_source": None,
         }
 
@@ -182,7 +195,43 @@ class TaskRoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["user"]["userId"], 7)
+        self.assertEqual(payload["user"]["performanceTime"], "Evening")
         self.assertFalse(payload["calendarActive"])
+
+    @patch("app.routes.update_user_onboarding_answers")
+    @patch("app.routes.sync_onboarding_context")
+    def test_onboarding_route_saves_new_answers(self, sync_onboarding_context, update_user_onboarding_answers):
+        update_user_onboarding_answers.return_value = {
+            "user_id": 7,
+            "name": "Avery",
+            "username": "avery",
+            "preferences": "School",
+            "performance_time": "Evening",
+            "important_topic": "Classes and assignments",
+            "prioritise_by": "Urgency",
+        }
+
+        response = self.client.put(
+            "/api/onboarding",
+            json={
+                "performanceTime": "Evening",
+                "importantTopic": "Classes and assignments",
+                "prioritiseBy": "Urgency",
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["user"]["performanceTime"], "Evening")
+        update_user_onboarding_answers.assert_called_once_with(
+            7,
+            performance_time="Evening",
+            important_topic="Classes and assignments",
+            prioritise_by="Urgency",
+        )
+        sync_onboarding_context.assert_called_once_with(7)
 
     @patch("app.routes.save_calendar_context")
     def test_onboarding_calendar_upload_route_returns_payload(self, save_calendar_context):

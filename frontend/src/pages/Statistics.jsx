@@ -8,11 +8,11 @@ import {
   LIVE_REFRESH_INTERVAL_MS,
 } from "../api";
 import PageNav from "../components/PageNav";
-import { getPreferenceLabel } from "../preferences";
+import { IMPORTANT_TOPIC_OPTIONS, getOnboardingAnswerLabel } from "../onboardingOptions";
 
 const SUMMARY_CARD_HELP = {
   signedIn: "The account whose task queue and profile are being summarized here.",
-  focus: "Your saved onboarding preference, which influences how the system frames your task context.",
+  focus: "The topic area you said matters most right now, which helps anchor the queue's context.",
   totalTasks: "The number of prioritized tasks currently returned in your dashboard queue.",
   averageConfidence:
     "The average confidence across all queued tasks. Higher means the queue is being ranked with more certainty overall.",
@@ -268,13 +268,13 @@ export default function Statistics() {
         <div className="summary-grid summary-grid-wide">
           <article className="summary-card">
             <p className="summary-label">Signed in as</p>
-            <p className="summary-value">{user?.email ?? "Refreshing your account..."}</p>
+            <p className="summary-value">{user?.username ?? "Refreshing your account..."}</p>
             <p className="stats-help-copy">{SUMMARY_CARD_HELP.signedIn}</p>
           </article>
           <article className="summary-card">
-            <p className="summary-label">Focus setting</p>
+            <p className="summary-label">Important topic</p>
             <p className="summary-value">
-              {getPreferenceLabel(user?.preferences) ?? "Loading preference..."}
+              {getOnboardingAnswerLabel(IMPORTANT_TOPIC_OPTIONS, user?.importantTopic)}
             </p>
             <p className="stats-help-copy">{SUMMARY_CARD_HELP.focus}</p>
           </article>
