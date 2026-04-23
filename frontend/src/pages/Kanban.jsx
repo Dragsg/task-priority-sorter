@@ -1028,7 +1028,7 @@ export default function Kanban() {
         <div className="summary-grid summary-grid-wide">
           <article className="summary-card">
             <p className="summary-label">Signed in as</p>
-            <p className="summary-value">{user?.email ?? "Refreshing your account..."}</p>
+            <p className="summary-value">{user?.username ?? "Refreshing your account..."}</p>
           </article>
           <article className="summary-card">
             <p className="summary-label">Visible tasks</p>

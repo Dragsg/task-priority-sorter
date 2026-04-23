@@ -225,18 +225,29 @@ def get_priority_pipeline() -> PriorityPipeline:
         return _PRIORITY_PIPELINE
 
 
-def sync_onboarding_context(user_id: int, preferences: str | None = None) -> dict:
+def _build_static_onboarding_preferences(user: dict | None) -> dict:
+    if not user:
+        return {}
+
+    static_preferences = {}
+    if user.get("performance_time"):
+        static_preferences["performance_time"] = user["performance_time"]
+    if user.get("important_topic"):
+        static_preferences["important_topic"] = user["important_topic"]
+    if user.get("prioritise_by"):
+        static_preferences["prioritise_by"] = user["prioritise_by"]
+    return static_preferences
+
+
+def sync_onboarding_context(user_id: int) -> dict:
     repository = get_pipeline_repository()
     pipeline_user_id = str(user_id)
     current = repository.get_onboarding_context(pipeline_user_id) or OnboardingContext(user_id=pipeline_user_id)
-    static_preferences = dict(current.static_preferences)
-
-    if preferences is None:
-        user = get_user_by_id(user_id)
-        preferences = user["preferences"] if user else None
-
-    if preferences:
-        static_preferences["focus_preference"] = preferences
+    user = get_user_by_id(user_id)
+    static_preferences = {
+        **dict(current.static_preferences),
+        **_build_static_onboarding_preferences(user),
+    }
 
     updated = current.model_copy(
         update={
@@ -254,12 +265,13 @@ def get_onboarding_context_snapshot(user_id: int, *, user: dict[str, Any] | None
     pipeline_user_id = str(user_id)
     context = repository.get_onboarding_context(pipeline_user_id) or OnboardingContext(user_id=pipeline_user_id)
     user = user or get_user_by_id(user_id)
-    if user and user.get("preferences"):
-        static_preferences = dict(context.static_preferences)
-        if static_preferences.get("focus_preference") != user["preferences"]:
-            static_preferences["focus_preference"] = user["preferences"]
-            context = context.model_copy(update={"static_preferences": static_preferences})
-            repository.save_onboarding_context(context)
+    expected_static_preferences = {
+        **dict(context.static_preferences),
+        **_build_static_onboarding_preferences(user),
+    }
+    if expected_static_preferences != dict(context.static_preferences):
+        context = context.model_copy(update={"static_preferences": expected_static_preferences})
+        repository.save_onboarding_context(context)
     return context.model_dump(mode="json")
 
 
@@ -823,7 +835,7 @@ def create_manual_task(
                 "thread_id": source_id,
                 "timestamp_iso": now_sgt().isoformat(),
                 "sender_display": user["name"] if user else "You",
-                "sender_email": user["email"] if user else None,
+                "sender_email": None,
                 "subject": cleaned_title,
                 "snippet": cleaned_description or cleaned_title,
                 "body_text": "\n".join(part for part in [cleaned_title, cleaned_description] if part),

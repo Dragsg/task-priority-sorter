@@ -14,8 +14,8 @@ import {
   updatePrioritizedTask,
   updateTaskTags,
 } from "../api";
+import { PRIORITISE_BY_OPTIONS, getOnboardingAnswerLabel } from "../onboardingOptions";
 import PageNav from "../components/PageNav";
-import { getPreferenceLabel } from "../preferences";
 
 const TASK_TYPE_OPTIONS = [
   { value: "submission", label: "Submission" },
@@ -1472,12 +1472,12 @@ export default function Home() {
         <div className="summary-grid summary-grid-wide">
           <article className="summary-card">
             <p className="summary-label">Signed in as</p>
-            <p className="summary-value">{user?.email ?? "Refreshing your account..."}</p>
+            <p className="summary-value">{user?.username ?? "Refreshing your account..."}</p>
           </article>
           <article className="summary-card">
-            <p className="summary-label">Current focus</p>
+            <p className="summary-label">Prioritise by</p>
             <p className="summary-value">
-              {getPreferenceLabel(user?.preferences) ?? "Loading preference..."}
+              {getOnboardingAnswerLabel(PRIORITISE_BY_OPTIONS, user?.prioritiseBy)}
             </p>
           </article>
           <article className="summary-card">
@@ -1518,8 +1518,8 @@ export default function Home() {
           <Link className="secondary-button home-link" to="/linking">
             Manage linked accounts
           </Link>
-          <Link className="secondary-button home-link" to="/onboarding">
-            Update preference
+          <Link className="secondary-button home-link" to="/preferences">
+            Open preferences
           </Link>
           <button
             className="inline-button danger-button"

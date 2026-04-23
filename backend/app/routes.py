@@ -12,9 +12,9 @@ from .db import (
     create_user,
     get_gmail_link,
     get_outlook_link,
-    get_user_by_email,
+    get_user_by_username,
     get_user_by_id,
-    update_user_preferences,
+    update_user_onboarding_answers,
 )
 from .pipeline_bridge import (
     create_manual_task,
@@ -34,14 +34,18 @@ from .pipeline_bridge import (
     update_prioritized_task_tags,
 )
 from .account_utils import (
-    normalize_email,
+    normalize_username,
+    normalize_important_topic,
     normalize_name,
-    normalize_preference,
+    normalize_performance_time,
+    normalize_prioritise_by,
     serialize_user,
-    validate_email,
+    validate_username,
+    validate_important_topic,
     validate_name,
     validate_password,
-    validate_preference,
+    validate_performance_time,
+    validate_prioritise_by,
 )
 from .gmail_service import (
     build_google_flow,
@@ -108,23 +112,23 @@ def get_recent_limit() -> int:
 def signup():
     try:
         data = request.get_json() or {}
-        email = normalize_email(data.get("email"))
+        username = normalize_username(data.get("username"))
         password = data.get("password") or ""
         name = normalize_name(data.get("name"))
 
-        validate_email(email)
+        validate_username(username)
         validate_password(password)
         validate_name(name)
 
-        existing_user = get_user_by_email(email)
+        existing_user = get_user_by_username(username)
         if existing_user:
-            return jsonify({"success": False, "error": "Email already exists"}), 409
+            return jsonify({"success": False, "error": "Username already exists"}), 409
 
         password_hash = bcrypt.hashpw(
             password.encode("utf-8"),
             bcrypt.gensalt(),
         ).decode("utf-8")
-        user = create_user(name=name, email=email, password_hash=password_hash)
+        user = create_user(name=name, username=username, password_hash=password_hash)
         token = build_token(user["user_id"])
     except ValueError as error:
         return jsonify({"success": False, "error": str(error)}), 422
@@ -144,23 +148,23 @@ def signup():
 def login():
     try:
         data = request.get_json() or {}
-        email = normalize_email(data.get("email"))
+        username = normalize_username(data.get("username"))
         password = data.get("password") or ""
 
-        validate_email(email)
+        validate_username(username)
         if not password:
             raise ValueError("Password is required.")
 
-        user = get_user_by_email(email)
+        user = get_user_by_username(username)
         if not user:
-            return jsonify({"success": False, "error": "Invalid email or password"}), 401
+            return jsonify({"success": False, "error": "Invalid username or password"}), 401
 
         is_valid_password = bcrypt.checkpw(
             password.encode("utf-8"),
             user["password"].encode("utf-8"),
         )
         if not is_valid_password:
-            return jsonify({"success": False, "error": "Invalid email or password"}), 401
+            return jsonify({"success": False, "error": "Invalid username or password"}), 401
 
         token = build_token(user["user_id"])
     except ValueError as error:
@@ -195,13 +199,23 @@ def onboarding():
     try:
         user_id = get_authenticated_user_id(required=True)
         data = request.get_json() or {}
-        preferences = normalize_preference(data.get("preferences"))
-        validate_preference(preferences)
+        performance_time = normalize_performance_time(data.get("performanceTime"))
+        important_topic = normalize_important_topic(data.get("importantTopic"))
+        prioritise_by = normalize_prioritise_by(data.get("prioritiseBy"))
 
-        user = update_user_preferences(user_id, preferences)
+        validate_performance_time(performance_time)
+        validate_important_topic(important_topic)
+        validate_prioritise_by(prioritise_by)
+
+        user = update_user_onboarding_answers(
+            user_id,
+            performance_time=performance_time,
+            important_topic=important_topic,
+            prioritise_by=prioritise_by,
+        )
         if not user:
             return jsonify({"error": "User not found"}), 404
-        sync_onboarding_context(user_id, preferences)
+        sync_onboarding_context(user_id)
     except ValueError as error:
         return jsonify({"error": str(error)}), 422
     except Exception as error:

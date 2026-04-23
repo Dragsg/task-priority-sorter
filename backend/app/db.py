@@ -529,7 +529,7 @@ def update_outlook_last_received_at(user_id: int, last_received_at):
     )
 
 
-def get_user_by_email(email: str) -> DbRow | None:
+def get_user_by_username(username: str):
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -537,13 +537,16 @@ def get_user_by_email(email: str) -> DbRow | None:
                 SELECT
                     user_id,
                     name,
-                    email,
+                    username,
                     password,
-                    preferences
+                    preferences,
+                    performance_time,
+                    important_topic,
+                    prioritise_by
                 FROM public.user_details
-                WHERE email = %s
+                WHERE username = %s
                 """,
-                (email,),
+                (username,),
             )
             return cast(DbRow | None, cursor.fetchone())
 
@@ -556,8 +559,11 @@ def get_user_by_id(user_id: int) -> DbRow | None:
                 SELECT
                     user_id,
                     name,
-                    email,
-                    preferences
+                    username,
+                    preferences,
+                    performance_time,
+                    important_topic,
+                    prioritise_by
                 FROM public.user_details
                 WHERE user_id = %s
                 """,
@@ -566,28 +572,28 @@ def get_user_by_id(user_id: int) -> DbRow | None:
             return cast(DbRow | None, cursor.fetchone())
 
 
-def create_user(name: str, email: str, password_hash: str) -> DbRow:
+def create_user(name: str, username: str, password_hash: str):
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO public.user_details (name, email, password)
+                INSERT INTO public.user_details (name, username, password)
                 VALUES (%s, %s, %s)
                 RETURNING
                     user_id,
                     name,
-                    email,
-                    preferences
+                    username,
+                    preferences,
+                    performance_time,
+                    important_topic,
+                    prioritise_by
                 """,
-                (name, email, password_hash),
+                (name, username, password_hash),
             )
             user = cast(DbRow | None, cursor.fetchone())
         connection.commit()
 
-    if user is None:
-        raise RuntimeError("Failed to create user_details row.")
-
-    logger.info("Created user_details row for user_id=%s email=%s", user["user_id"], email)
+    logger.info("Created user_details row for user_id=%s username=%s", user["user_id"], username)
     return user
 
 
@@ -602,8 +608,11 @@ def update_user_preferences(user_id: int, preferences: str) -> DbRow:
                 RETURNING
                     user_id,
                     name,
-                    email,
-                    preferences
+                    username,
+                    preferences,
+                    performance_time,
+                    important_topic,
+                    prioritise_by
                 """,
                 (preferences, user_id),
             )
@@ -617,5 +626,45 @@ def update_user_preferences(user_id: int, preferences: str) -> DbRow:
         "Updated onboarding preferences for user_id=%s preferences=%s",
         user_id,
         preferences,
+    )
+    return user
+
+
+def update_user_onboarding_answers(
+    user_id: int,
+    *,
+    performance_time: str,
+    important_topic: str,
+    prioritise_by: str,
+):
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE public.user_details
+                SET performance_time = %s,
+                    important_topic = %s,
+                    prioritise_by = %s
+                WHERE user_id = %s
+                RETURNING
+                    user_id,
+                    name,
+                    username,
+                    preferences,
+                    performance_time,
+                    important_topic,
+                    prioritise_by
+                """,
+                (performance_time, important_topic, prioritise_by, user_id),
+            )
+            user = cursor.fetchone()
+        connection.commit()
+
+    logger.info(
+        "Updated onboarding answers for user_id=%s performance_time=%s important_topic=%s prioritise_by=%s",
+        user_id,
+        performance_time,
+        important_topic,
+        prioritise_by,
     )
     return user
