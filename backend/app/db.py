@@ -1,5 +1,6 @@
 import logging
 from contextlib import contextmanager
+from typing import Any, TypeAlias, cast
 
 import psycopg
 from psycopg.rows import dict_row
@@ -9,6 +10,7 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 DATABASE_TIMEZONE = "Asia/Singapore"
+DbRow: TypeAlias = dict[str, Any]
 
 
 @contextmanager
@@ -18,7 +20,7 @@ def get_connection():
 
     with psycopg.connect(
         Config.DATABASE_URL,
-        row_factory=dict_row,
+        row_factory=cast(Any, dict_row),
         options=f"-c timezone={DATABASE_TIMEZONE}",
     ) as connection:
         yield connection
@@ -163,7 +165,7 @@ def save_messages(user_id: int, messages: list):
     )
 
 
-def list_stored_messages(user_id: int, limit: int | None = None) -> list[dict]:
+def list_stored_messages(user_id: int, limit: int | None = None) -> list[DbRow]:
     ensure_stored_emails_table()
 
     query = """
@@ -201,12 +203,12 @@ def list_stored_messages(user_id: int, limit: int | None = None) -> list[dict]:
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows = cast(list[DbRow], cursor.fetchall())
 
     return rows
 
 
-def list_task_card_payloads(user_id: int) -> list[dict]:
+def list_task_card_payloads(user_id: int) -> list[DbRow]:
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -222,7 +224,7 @@ def list_task_card_payloads(user_id: int) -> list[dict]:
                 """,
                 (str(user_id),),
             )
-            rows = cursor.fetchall()
+            rows = cast(list[DbRow], cursor.fetchall())
 
     payloads = []
     for row in rows:
@@ -257,7 +259,7 @@ def ensure_gmail_link_table():
         connection.commit()
 
 
-def get_gmail_link(user_id: int):
+def get_gmail_link(user_id: int) -> DbRow | None:
     ensure_gmail_link_table()
 
     with get_connection() as connection:
@@ -278,7 +280,7 @@ def get_gmail_link(user_id: int):
                 """,
                 (user_id,),
             )
-            link = cursor.fetchone()
+            link = cast(DbRow | None, cursor.fetchone())
 
     if link:
         logger.info(
@@ -304,7 +306,7 @@ def list_gmail_link_user_ids() -> list[int]:
                 ORDER BY user_id
                 """
             )
-            rows = cursor.fetchall()
+            rows = cast(list[DbRow], cursor.fetchall())
 
     return [row["user_id"] for row in rows]
 
@@ -402,7 +404,7 @@ def ensure_outlook_link_table():
         connection.commit()
 
 
-def get_outlook_link(user_id: int):
+def get_outlook_link(user_id: int) -> DbRow | None:
     ensure_outlook_link_table()
 
     with get_connection() as connection:
@@ -423,7 +425,7 @@ def get_outlook_link(user_id: int):
                 """,
                 (user_id,),
             )
-            link = cursor.fetchone()
+            link = cast(DbRow | None, cursor.fetchone())
 
     if link:
         logger.info(
@@ -449,7 +451,7 @@ def list_outlook_link_user_ids() -> list[int]:
                 ORDER BY user_id
                 """
             )
-            rows = cursor.fetchall()
+            rows = cast(list[DbRow], cursor.fetchall())
 
     return [row["user_id"] for row in rows]
 
@@ -546,10 +548,10 @@ def get_user_by_username(username: str):
                 """,
                 (username,),
             )
-            return cursor.fetchone()
+            return cast(DbRow | None, cursor.fetchone())
 
 
-def get_user_by_id(user_id: int):
+def get_user_by_id(user_id: int) -> DbRow | None:
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -567,7 +569,7 @@ def get_user_by_id(user_id: int):
                 """,
                 (user_id,),
             )
-            return cursor.fetchone()
+            return cast(DbRow | None, cursor.fetchone())
 
 
 def create_user(name: str, username: str, password_hash: str):
@@ -588,14 +590,14 @@ def create_user(name: str, username: str, password_hash: str):
                 """,
                 (name, username, password_hash),
             )
-            user = cursor.fetchone()
+            user = cast(DbRow | None, cursor.fetchone())
         connection.commit()
 
     logger.info("Created user_details row for user_id=%s username=%s", user["user_id"], username)
     return user
 
 
-def update_user_preferences(user_id: int, preferences: str):
+def update_user_preferences(user_id: int, preferences: str) -> DbRow:
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -614,8 +616,11 @@ def update_user_preferences(user_id: int, preferences: str):
                 """,
                 (preferences, user_id),
             )
-            user = cursor.fetchone()
+            user = cast(DbRow | None, cursor.fetchone())
         connection.commit()
+
+    if user is None:
+        raise LookupError(f"User not found for user_id={user_id}")
 
     logger.info(
         "Updated onboarding preferences for user_id=%s preferences=%s",

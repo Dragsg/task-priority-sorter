@@ -116,3 +116,66 @@ def test_body_excerpt_prefers_complete_actionable_lines_over_raw_snippet_cutoff(
     assert "submit your answers by next Monday morning 8.30am" in signal.body_excerpt
     assert "unsubscribe" not in signal.body_excerpt.lower()
     assert "http" not in signal.body_excerpt.lower()
+
+
+def test_promotions_label_newsletter_is_filtered_even_with_urgency_words():
+    extractor = SignalExtractor()
+    message = RawMessage(
+        user_id="user-1",
+        platform=Platform.GMAIL,
+        source_id="msg-5",
+        subject="Morning Brew: High hopes",
+        snippet="Due tomorrow: markets, policy, and startup headlines.",
+        body_text=(
+            "View online.\n"
+            "Trump may soon ease restrictions tomorrow.\n"
+            "Read this by tonight and stay ahead.\n"
+            "Unsubscribe anytime.\n"
+        ),
+        sender_display="Morning Brew",
+        sender_email="crew@morningbrew.com",
+        sender_domain="morningbrew.com",
+        label_ids=["INBOX", "CATEGORY_PROMOTIONS"],
+        provider_metadata={
+            "extra": {
+                "list_unsubscribe": "<mailto:unsubscribe@morningbrew.com>",
+                "precedence": "bulk",
+            }
+        },
+    )
+
+    signal = extractor.extract(message)
+
+    assert signal.has_task is False
+
+
+def test_bulk_updates_email_from_institution_with_deadline_still_survives():
+    extractor = SignalExtractor()
+    message = RawMessage(
+        user_id="user-1",
+        platform=Platform.GMAIL,
+        source_id="msg-6",
+        subject="CS2103T assignment due Friday",
+        snippet="Submit your assignment by Friday 11:59pm on Classroom.",
+        body_text=(
+            "Hello,\n"
+            "Please submit your CS2103T assignment by Friday 11:59pm on Classroom.\n"
+            "If you don't want to receive emails from Classroom, you can unsubscribe.\n"
+        ),
+        sender_display="Google Classroom",
+        sender_email="notifications@classroom.google.com",
+        sender_domain="classroom.google.com",
+        label_ids=["INBOX", "CATEGORY_UPDATES"],
+        provider_metadata={
+            "extra": {
+                "list_unsubscribe": "<https://classroom.google.com/unsubscribe>",
+                "precedence": "list",
+            }
+        },
+    )
+
+    signal = extractor.extract(message)
+
+    assert signal.has_task is True
+    assert signal.task_type == TaskType.SUBMISSION
+    assert signal.deadline_at is not None

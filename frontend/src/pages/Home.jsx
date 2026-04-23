@@ -110,7 +110,7 @@ function writeDashboardCache(userId, user, tasks, profile) {
   }
 }
 
-function buildSyncStatus(result) {
+function buildSyncStatus(result, previousTasks = []) {
   const pieces = [];
   const gmail = result.emailSync?.gmail;
   const outlook = result.emailSync?.outlook;
@@ -131,9 +131,22 @@ function buildSyncStatus(result) {
     );
   }
 
-  const cardSummary = result.taskCardCount
-    ? `Generated ${result.taskCardCount} prioritized task card${result.taskCardCount === 1 ? "" : "s"}.`
-    : "Pipeline ran successfully, but no actionable task cards were created yet.";
+  const previousIds = new Set(
+    (previousTasks || [])
+      .map((task) => task?.canonical_task_id)
+      .filter(Boolean)
+  );
+  const currentItems = Array.isArray(result.items) ? result.items : [];
+  const addedCount = currentItems.filter(
+    (task) => task?.canonical_task_id && !previousIds.has(task.canonical_task_id)
+  ).length;
+
+  let cardSummary = "Queue refreshed with no new visible task cards added.";
+  if (addedCount > 0) {
+    cardSummary = `Added ${addedCount} new prioritized task card${addedCount === 1 ? "" : "s"} to your queue.`;
+  } else if (!currentItems.length) {
+    cardSummary = "Queue refreshed, but there are still no visible task cards in your queue.";
+  }
 
   return pieces.length ? `${pieces.join(" | ")}. ${cardSummary}` : cardSummary;
 }
@@ -1220,6 +1233,7 @@ export default function Home() {
     setIsSyncing(true);
     setTaskError("");
     setTaskStatus("");
+    const previousTasks = tasks;
     try {
       const result = await syncPrioritizedTasks();
       setTasks(result.items ?? []);
@@ -1230,7 +1244,7 @@ export default function Home() {
       setEditingTaskId(null);
       const latestProfile = await fetchPipelineProfile();
       setPipelineProfile(latestProfile);
-      setTaskStatus(buildSyncStatus(result));
+      setTaskStatus(buildSyncStatus(result, previousTasks));
     } catch (error) {
       setTaskError(error.message);
     } finally {

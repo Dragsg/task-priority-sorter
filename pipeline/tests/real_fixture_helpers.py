@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from pipeline.models import RawMessage
+from pipeline.fixtures import (
+    load_all_fixture_messages as _load_all_fixture_messages,
+    load_fixture_message as _load_fixture_message,
+    load_manifest_message_ids as _load_manifest_message_ids,
+    resolve_fixture_root,
+)
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-LOCAL_FIXTURE_ROOT = PROJECT_ROOT / "test-data"
-LEGACY_FIXTURE_ROOT = Path(r"C:\Users\ngyin\Documents\straightup hackathon\data\fixtures\redacted\gmail")
-FIXTURE_ROOT = LOCAL_FIXTURE_ROOT if LOCAL_FIXTURE_ROOT.exists() else LEGACY_FIXTURE_ROOT
+FIXTURE_ROOT = resolve_fixture_root()
 
 
 def require_fixture_root() -> Path:
@@ -21,20 +23,12 @@ def require_fixture_root() -> Path:
 
 
 def load_manifest_message_ids() -> list[str]:
-    root = require_fixture_root()
-    manifest_path = root / "manifest.json"
-    if manifest_path.exists():
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        return manifest["message_ids"]
-    return sorted(path.stem for path in root.glob("*.json"))
+    return _load_manifest_message_ids(fixture_root=require_fixture_root())
 
 
 def load_fixture_message(message_id: str, *, user_id: str = "fixture-user") -> RawMessage:
-    root = require_fixture_root()
-    payload = json.loads((root / f"{message_id}.json").read_text(encoding="utf-8"))
-    payload.setdefault("user_id", user_id)
-    return RawMessage.model_validate(payload)
+    return _load_fixture_message(message_id, user_id=user_id, fixture_root=require_fixture_root())
 
 
 def load_all_fixture_messages(*, user_id: str = "fixture-user") -> list[RawMessage]:
-    return [load_fixture_message(message_id, user_id=user_id) for message_id in load_manifest_message_ids()]
+    return _load_all_fixture_messages(user_id=user_id, fixture_root=require_fixture_root())
