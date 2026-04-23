@@ -224,6 +224,13 @@ def map_gmail_message_for_storage(message: dict) -> dict:
             "internalDate": internal_date,
             "sizeEstimate": message.get("sizeEstimate"),
             "payloadMimeType": message.get("payload", {}).get("mimeType"),
+            "extra": {
+                "list_unsubscribe": headers.get("list-unsubscribe"),
+                "list_id": headers.get("list-id"),
+                "precedence": headers.get("precedence"),
+                "mailing_list": headers.get("mailing-list"),
+                "auto_submitted": headers.get("auto-submitted"),
+            },
         },
         "from_raw": headers.get("from"),
         "to_raw": headers.get("to"),

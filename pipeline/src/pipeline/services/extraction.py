@@ -62,6 +62,16 @@ COMMERCIAL_DOMAINS = {
     "openai.com",
     "anthropic.com",
 }
+GMAIL_HARD_DISCARD_LABELS = {
+    "CATEGORY_PROMOTIONS",
+    "CATEGORY_SOCIAL",
+    "CATEGORY_FORUMS",
+    "SPAM",
+    "TRASH",
+}
+GMAIL_SOFT_BULK_LABELS = {
+    "CATEGORY_UPDATES",
+}
 IRRELEVANT_SUBJECT_PATTERNS = {
     "security alert",
     "usage reached",
@@ -82,6 +92,24 @@ IRRELEVANT_SUBJECT_PATTERNS = {
     "verify your email",
     "welcome to",
     "thanks for signing up",
+}
+NEWSLETTER_HINT_PATTERNS = {
+    "newsletter",
+    "digest",
+    "roundup",
+    "morning brew",
+    "daily",
+    "weekly",
+    "edition",
+    "trial",
+    "unsubscribe",
+    "view online",
+}
+BULK_PRECEDENCE_VALUES = {"bulk", "list", "junk"}
+TRUSTED_NEWSLETTER_OVERRIDE_ROLES = {
+    SenderRole.LECTURER,
+    SenderRole.ADMIN,
+    SenderRole.INSTITUTION,
 }
 MODULE_PATTERN = re.compile(r"\b[A-Z]{2,3}\d{4}[A-Z]?\b")
 CCA_KEYWORDS = {"cca", "welfare", "club", "society", "hall", "rag", "flag", "committee"}
@@ -186,7 +214,16 @@ class SignalExtractor:
         topic_entity = self._manual_topic_entity(manual_metadata) or self._extract_topic_entity(text, message, doc)
         deadline_hours = self._deadline_hours(deadline_at, reference_time=timestamp)
         task_type = self._manual_task_type(manual_metadata) or self._classify_task_type(lowercase_text, task_verbs, topic_entity)
-        has_task = True if manual_metadata else not self._should_discard_message(message, lowercase_text, deadline_at=deadline_at) and bool(
+        sender_role = self._classify_sender(message)
+        has_task = True if manual_metadata else not self._should_discard_message(
+            message,
+            lowercase_text,
+            deadline_at=deadline_at,
+            sender_role=sender_role,
+            task_verbs=task_verbs,
+            task_type=task_type,
+            topic_entity=topic_entity,
+        ) and bool(
             task_verbs
             or urgency_terms
             or deadline_at
@@ -201,7 +238,7 @@ class SignalExtractor:
             timestamp=timestamp,
             sender_id=message.sender_id or message.sender_email,
             sender_display=message.sender_display or message.sender_email or message.from_raw,
-            sender_role=self._classify_sender(message),
+            sender_role=sender_role,
             subject=message.subject,
             snippet=message.snippet,
             body_excerpt=self._build_body_excerpt(message),
@@ -406,17 +443,109 @@ class SignalExtractor:
         lowercase_text: str,
         *,
         deadline_at: datetime | None,
+        sender_role: SenderRole,
+        task_verbs: list[str],
+        task_type: TaskType,
+        topic_entity: TopicEntity,
     ) -> bool:
-        if deadline_at is not None:
-            return False
-
         sender_domain = (message.sender_domain or "").lower()
         subject = (message.subject or "").lower()
+        label_ids = {str(label).upper() for label in (message.label_ids or [])}
+
+        if "SPAM" in label_ids or "TRASH" in label_ids:
+            return True
+
+        if label_ids & GMAIL_HARD_DISCARD_LABELS:
+            if not self._allows_newsletter_task_override(
+                lowercase_text,
+                deadline_at=deadline_at,
+                sender_role=sender_role,
+                task_verbs=task_verbs,
+                task_type=task_type,
+                topic_entity=topic_entity,
+            ):
+                return True
+
+        if self._is_likely_newsletter_message(message, lowercase_text, subject, sender_domain, label_ids):
+            if not self._allows_newsletter_task_override(
+                lowercase_text,
+                deadline_at=deadline_at,
+                sender_role=sender_role,
+                task_verbs=task_verbs,
+                task_type=task_type,
+                topic_entity=topic_entity,
+            ):
+                return True
+
+        if deadline_at is not None:
+            return False
 
         if any(domain in sender_domain for domain in COMMERCIAL_DOMAINS):
             return True
 
         return any(pattern in subject or pattern in lowercase_text for pattern in IRRELEVANT_SUBJECT_PATTERNS)
+
+    def _is_likely_newsletter_message(
+        self,
+        message: RawMessage,
+        lowercase_text: str,
+        subject: str,
+        sender_domain: str,
+        label_ids: set[str],
+    ) -> bool:
+        if label_ids & GMAIL_SOFT_BULK_LABELS:
+            return True
+        if any(pattern in subject or pattern in lowercase_text for pattern in NEWSLETTER_HINT_PATTERNS):
+            return True
+        if any(domain in sender_domain for domain in COMMERCIAL_DOMAINS):
+            return True
+        return self._has_bulk_mail_headers(message)
+
+    def _has_bulk_mail_headers(self, message: RawMessage) -> bool:
+        extra = getattr(message.provider_metadata, "extra", {}) or {}
+        precedence = str(extra.get("precedence") or "").strip().lower()
+        return bool(
+            extra.get("list_unsubscribe")
+            or extra.get("list_id")
+            or extra.get("mailing_list")
+            or precedence in BULK_PRECEDENCE_VALUES
+        )
+
+    def _allows_newsletter_task_override(
+        self,
+        lowercase_text: str,
+        *,
+        deadline_at: datetime | None,
+        sender_role: SenderRole,
+        task_verbs: list[str],
+        task_type: TaskType,
+        topic_entity: TopicEntity,
+    ) -> bool:
+        if sender_role in TRUSTED_NEWSLETTER_OVERRIDE_ROLES:
+            return bool(
+                deadline_at is not None
+                or topic_entity.entity_type == EntityType.MODULE
+                or task_type in {TaskType.SUBMISSION, TaskType.ADMIN, TaskType.MEETING}
+                or any(verb in task_verbs for verb in {"submit", "complete", "review", "attend", "register"})
+            )
+
+        if topic_entity.entity_type == EntityType.MODULE:
+            return bool(
+                deadline_at is not None
+                or any(verb in task_verbs for verb in {"submit", "complete", "review", "register"})
+            )
+
+        if deadline_at is not None and any(
+            verb in task_verbs for verb in {"submit", "complete", "review", "attend", "register", "prepare"}
+        ):
+            return True
+
+        if task_type == TaskType.ADMIN and deadline_at is not None and any(
+            term in lowercase_text for term in {"verify", "register", "form", "payment", "invoice", "confirmation"}
+        ):
+            return True
+
+        return False
 
     def _extract_task_verbs(self, text: str) -> list[str]:
         tokens = re.findall(r"[a-z]+", text)
