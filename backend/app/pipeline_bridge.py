@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from threading import RLock, Thread
 from time import monotonic
+from typing import Any, cast
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -41,6 +42,7 @@ from pipeline.models import (
     OnboardingContext,
     RawMessage,
     TaskType,
+    BehaviorProfile,
 )
 from pipeline.services.pipeline import PriorityPipeline
 from pipeline.storage.db import create_engine_from_url, create_schema
@@ -247,7 +249,7 @@ def sync_onboarding_context(user_id: int, preferences: str | None = None) -> dic
     return updated.model_dump(mode="json")
 
 
-def get_onboarding_context_snapshot(user_id: int, *, user: dict | None = None) -> dict:
+def get_onboarding_context_snapshot(user_id: int, *, user: dict[str, Any] | None = None) -> dict:
     repository = get_pipeline_repository()
     pipeline_user_id = str(user_id)
     context = repository.get_onboarding_context(pipeline_user_id) or OnboardingContext(user_id=pipeline_user_id)
@@ -334,7 +336,10 @@ def list_prioritized_tasks(user_id: int) -> list[dict]:
     return _build_dashboard_items(repository, user_id)
 
 
-def _resolve_feedback_profile_inputs(user_id: int, feedback_context) -> tuple[PriorityPipeline, str, object, str | None]:
+def _resolve_feedback_profile_inputs(
+    user_id: int,
+    feedback_context,
+) -> tuple[PriorityPipeline, str, BehaviorProfile, str | None]:
     pipeline = get_priority_pipeline()
     pipeline_user_id = str(user_id)
     profile = feedback_context.profile or pipeline.profile_service.create_default_profile(pipeline_user_id)
@@ -357,7 +362,7 @@ def _apply_profile_feedback(
     direction: FeedbackDirection | None = None,
     priority_after=None,
     incremental_priority_delta: int = 0,
-    profile=None,
+    profile: BehaviorProfile | None = None,
 ):
     pipeline, pipeline_user_id, current_profile, sender_hash = _resolve_feedback_profile_inputs(
         user_id,
@@ -570,8 +575,9 @@ def update_prioritized_task(
     if updated_card is None:
         raise LookupError("Task card not found for this user.")
 
-    if normalized_updates.get("tags"):
-        repository.upsert_custom_tags(str(user_id), normalized_updates["tags"])
+    tags_update = cast(list[str] | None, normalized_updates.get("tags"))
+    if tags_update:
+        repository.upsert_custom_tags(str(user_id), tags_update)
 
     items = _build_dashboard_items(repository, user_id)
     profile = (
