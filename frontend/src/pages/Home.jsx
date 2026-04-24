@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
@@ -274,8 +274,23 @@ function formatSourceTimestamp(value) {
   return parsed.toLocaleString();
 }
 
+function getNormalizedTaskStatus(task) {
+  return String(task?.status || "pending_review").toLowerCase();
+}
+
+function filterVisibleTaskItems(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.filter((task) => {
+    const status = getNormalizedTaskStatus(task);
+    return status === "pending_review" || status === "completed";
+  });
+}
+
 function getTaskWorkflowStatus(task) {
-  return String(task?.status || "").toLowerCase() === "completed" ? "COMPLETED" : "OPEN";
+  return getNormalizedTaskStatus(task) === "completed" ? "COMPLETED" : "OPEN";
 }
 
 function formatDateTimeLocalInput(value) {
@@ -963,7 +978,7 @@ export default function Home() {
   const cachedUserId = getStoredUserId();
   const cachedDashboard = readDashboardCache(cachedUserId);
   const [user, setUser] = useState(() => cachedDashboard?.user ?? getStoredUser());
-  const [tasks, setTasks] = useState(() => cachedDashboard?.tasks ?? []);
+  const [tasks, setTasks] = useState(() => filterVisibleTaskItems(cachedDashboard?.tasks ?? []));
   const [pipelineProfile, setPipelineProfile] = useState(() => cachedDashboard?.profile ?? null);
   const [availableTags, setAvailableTags] = useState([]);
   const [taskFeedbackStates, setTaskFeedbackStates] = useState({});
@@ -978,6 +993,7 @@ export default function Home() {
   const [isManualFormOpen, setIsManualFormOpen] = useState(false);
   const [isCreatingManualTask, setIsCreatingManualTask] = useState(false);
   const [isManualTagInputFocused, setIsManualTagInputFocused] = useState(false);
+  const taskMutationVersionRef = useRef(0);
   const [manualTask, setManualTask] = useState({
     title: "",
     description: "",
@@ -988,7 +1004,24 @@ export default function Home() {
     tagInput: "",
   });
 
+  function bumpTaskMutationVersion() {
+    taskMutationVersionRef.current += 1;
+  }
+
+  function setVisibleTasks(items) {
+    setTasks(filterVisibleTaskItems(items));
+  }
+
+  function applyDashboardSnapshot(dashboard) {
+    setUser(dashboard.user);
+    setVisibleTasks(dashboard.items ?? []);
+    setPipelineProfile(dashboard.profile ?? null);
+    setAvailableTags(dashboard.availableTags ?? []);
+  }
+
   useEffect(() => {
+    let isCancelled = false;
+
     async function loadDashboard() {
       const currentUserId = getStoredUserId();
       const cached = readDashboardCache(currentUserId);
@@ -996,17 +1029,21 @@ export default function Home() {
         if (cached.user) {
           setUser(cached.user);
         }
-        setTasks(cached.tasks ?? []);
+        setVisibleTasks(cached.tasks ?? []);
         setPipelineProfile(cached.profile ?? null);
       }
 
       try {
+        const requestVersion = taskMutationVersionRef.current;
         const dashboard = await fetchDashboardBootstrap();
-        setUser(dashboard.user);
-        setTasks(dashboard.items ?? []);
-        setPipelineProfile(dashboard.profile ?? null);
-        setAvailableTags(dashboard.availableTags ?? []);
+        if (isCancelled || requestVersion !== taskMutationVersionRef.current) {
+          return;
+        }
+        applyDashboardSnapshot(dashboard);
       } catch {
+        if (isCancelled) {
+          return;
+        }
         if (cached) {
           setTaskError("Using your last saved dashboard while fresh data is temporarily unavailable.");
           return;
@@ -1017,6 +1054,10 @@ export default function Home() {
     }
 
     loadDashboard();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [navigate]);
 
   const priorityCounts = useMemo(() => {
@@ -1058,14 +1099,12 @@ export default function Home() {
 
       refreshInFlight = true;
       try {
+        const requestVersion = taskMutationVersionRef.current;
         const dashboard = await fetchDashboardBootstrap();
-        if (isCancelled) {
+        if (isCancelled || requestVersion !== taskMutationVersionRef.current) {
           return;
         }
-        setUser(dashboard.user);
-        setTasks(dashboard.items ?? []);
-        setPipelineProfile(dashboard.profile ?? null);
-        setAvailableTags(dashboard.availableTags ?? []);
+        applyDashboardSnapshot(dashboard);
       } catch {
         // Keep the current UI steady if the background refresh misses a cycle.
       } finally {
@@ -1109,7 +1148,7 @@ export default function Home() {
           setPipelineProfile(latestProfile);
         }
         if (result.items) {
-          setTasks(result.items);
+          setVisibleTasks(result.items);
         }
         setTaskStatus(
           next.action === "WRONG_PRIORITY"
@@ -1133,7 +1172,7 @@ export default function Home() {
           if (cancelled) {
             return;
           }
-          setTasks(taskPayload.items ?? []);
+          setVisibleTasks(taskPayload.items ?? []);
           setPipelineProfile(profilePayload);
         } catch {
           // Keep the optimistic state if recovery fetch also fails.
@@ -1166,7 +1205,7 @@ export default function Home() {
 
   function updateTaskListFromResponse(result) {
     if (result?.items) {
-      setTasks(result.items);
+      setVisibleTasks(result.items);
     }
     if (result?.profile) {
       setPipelineProfile(result.profile);
@@ -1229,13 +1268,14 @@ export default function Home() {
   }
 
   async function handleSyncTasks() {
+    bumpTaskMutationVersion();
     setIsSyncing(true);
     setTaskError("");
     setTaskStatus("");
     const previousTasks = tasks;
     try {
       const result = await syncPrioritizedTasks();
-      setTasks(result.items ?? []);
+      setVisibleTasks(result.items ?? []);
       setAvailableTags(result.availableTags ?? []);
       setTaskFeedbackStates({});
       setTaskTagUpdateStates({});
@@ -1257,6 +1297,7 @@ export default function Home() {
       ...current,
       [canonicalTaskId]: createFeedbackState(action, direction, currentPriorityTier),
     }));
+    bumpTaskMutationVersion();
     applyLocalFeedback(canonicalTaskId, action, direction);
     setTaskStatus(
       action === "WRONG_PRIORITY"
@@ -1284,6 +1325,7 @@ export default function Home() {
     if (JSON.stringify(sanitizedTags) === JSON.stringify(currentTags)) {
       return;
     }
+    bumpTaskMutationVersion();
     setTaskError("");
     setTaskStatus("Saving your tag changes.");
     setTaskTagUpdateStates((current) => ({
@@ -1306,7 +1348,7 @@ export default function Home() {
       setTaskError(error.message);
       try {
         const taskPayload = await fetchPrioritizedTasks();
-        setTasks(taskPayload.items ?? []);
+        setVisibleTasks(taskPayload.items ?? []);
       } catch {
         // Keep the optimistic tag state if refresh fails.
       }
@@ -1320,6 +1362,7 @@ export default function Home() {
   }
 
   async function handleTaskEditSave(canonicalTaskId, payload) {
+    bumpTaskMutationVersion();
     setTaskError("");
     setTaskStatus("");
     setTaskEditStates((current) => ({
@@ -1346,6 +1389,7 @@ export default function Home() {
 
   async function handleCreateManualTask(event) {
     event.preventDefault();
+    bumpTaskMutationVersion();
     setTaskError("");
     setTaskStatus("");
     setIsCreatingManualTask(true);

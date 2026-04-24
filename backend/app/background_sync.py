@@ -2,8 +2,9 @@ import logging
 import os
 from threading import Event, Lock, Thread
 
-from .db import list_gmail_link_user_ids, list_outlook_link_user_ids
+from .db import list_gmail_link_user_ids, list_outlook_link_user_ids, list_telegram_link_user_ids
 from .pipeline_bridge import run_background_refresh_for_user
+from .telegram_service import send_due_telegram_digests
 from .time_utils import now_sgt
 
 logger = logging.getLogger(__name__)
@@ -15,10 +16,12 @@ _sync_status = {
     "last_success_at": None,
     "gmail_users_checked": 0,
     "outlook_users_checked": 0,
+    "telegram_users_checked": 0,
     "linked_users_checked": 0,
     "users_refreshed": 0,
     "users_failed": 0,
     "last_total_task_cards": 0,
+    "digests_sent": 0,
 }
 
 
@@ -40,11 +43,13 @@ def run_background_email_sync(app):
     with app.app_context():
         gmail_user_ids = set(list_gmail_link_user_ids())
         outlook_user_ids = set(list_outlook_link_user_ids())
+        telegram_user_ids = set(list_telegram_link_user_ids())
         linked_user_ids = sorted(gmail_user_ids | outlook_user_ids)
 
         with _sync_status_lock:
             _sync_status["gmail_users_checked"] = len(gmail_user_ids)
             _sync_status["outlook_users_checked"] = len(outlook_user_ids)
+            _sync_status["telegram_users_checked"] = len(telegram_user_ids)
             _sync_status["linked_users_checked"] = len(linked_user_ids)
 
         logger.info(
@@ -86,7 +91,15 @@ def run_background_email_sync(app):
             _sync_status["users_refreshed"] = users_refreshed
             _sync_status["users_failed"] = users_failed
             _sync_status["last_total_task_cards"] = total_task_cards
+            _sync_status["digests_sent"] = 0
             _sync_status["last_success_at"] = _now_iso()
+
+        try:
+            digest_summary = send_due_telegram_digests()
+            with _sync_status_lock:
+                _sync_status["digests_sent"] = int(digest_summary.get("sent") or 0)
+        except Exception:
+            logger.exception("Telegram digest sweep failed")
 
 
 def start_background_email_sync(app):

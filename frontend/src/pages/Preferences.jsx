@@ -2,25 +2,46 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
+  createTelegramLinkCode,
   deleteCurrentUser,
   deleteOnboardingCalendar,
+  disconnectTelegram,
   fetchOnboardingContext,
+  fetchTelegramSettings,
   getStoredUser,
+  sendTelegramTestMessage,
+  saveTelegramSettings,
   updateCurrentUser,
   uploadOnboardingCalendar,
 } from "../api";
 import CalendarContextSummary from "../components/CalendarContextSummary";
 import PageNav from "../components/PageNav";
 
+const DEFAULT_TELEGRAM_SETTINGS = {
+  telegramEnabled: true,
+  instantCritical: true,
+  instantHigh: true,
+  instantMedium: false,
+  instantLow: false,
+  dailyDigestEnabled: true,
+  dailyDigestTime: "08:00",
+};
+
 export default function Preferences() {
   const navigate = useNavigate();
   const [user, setUser] = useState(() => getStoredUser());
   const [onboarding, setOnboarding] = useState(null);
+  const [telegram, setTelegram] = useState(null);
   const [username, setUsername] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [telegramStatus, setTelegramStatus] = useState("");
+  const [telegramError, setTelegramError] = useState("");
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [usernameBusy, setUsernameBusy] = useState(false);
+  const [telegramSaveBusy, setTelegramSaveBusy] = useState(false);
+  const [telegramLinkBusy, setTelegramLinkBusy] = useState(false);
+  const [telegramTestBusy, setTelegramTestBusy] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -28,19 +49,36 @@ export default function Preferences() {
   const calendarInputRef = useRef(null);
 
   useEffect(() => {
+    let active = true;
+
     async function loadContext() {
       try {
-        const data = await fetchOnboardingContext();
-        setUser(data.user);
-        setOnboarding(data.onboarding);
-        setUsername(data.user?.username ?? "");
+        const [contextData, telegramData] = await Promise.all([
+          fetchOnboardingContext(),
+          fetchTelegramSettings(),
+        ]);
+
+        if (!active) {
+          return;
+        }
+
+        setUser(contextData.user);
+        setOnboarding(contextData.onboarding);
+        setUsername(contextData.user?.username ?? "");
+        setTelegram(telegramData);
       } catch {
+        if (!active) {
+          return;
+        }
         clearStoredToken();
         navigate("/", { replace: true });
       }
     }
 
     loadContext();
+    return () => {
+      active = false;
+    };
   }, [navigate]);
 
   function handleCalendarPickerOpen() {
@@ -104,6 +142,95 @@ export default function Preferences() {
     }
   }
 
+  function updateTelegramSetting(field, value) {
+    setTelegram((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        settings: {
+          ...(current.settings ?? DEFAULT_TELEGRAM_SETTINGS),
+          [field]: value,
+        },
+      };
+    });
+  }
+
+  async function refreshTelegram(message = "") {
+    try {
+      const payload = await fetchTelegramSettings();
+      setTelegram(payload);
+      if (message) {
+        setTelegramStatus(message);
+      }
+      setTelegramError("");
+    } catch (refreshError) {
+      setTelegramError(refreshError.message);
+    }
+  }
+
+  async function handleTelegramSettingsSave(event) {
+    event.preventDefault();
+
+    try {
+      setTelegramSaveBusy(true);
+      setTelegramError("");
+      setTelegramStatus("");
+      const payload = await saveTelegramSettings(telegram?.settings ?? DEFAULT_TELEGRAM_SETTINGS);
+      setTelegram(payload);
+      setTelegramStatus("Telegram settings saved.");
+    } catch (saveError) {
+      setTelegramError(saveError.message);
+    } finally {
+      setTelegramSaveBusy(false);
+    }
+  }
+
+  async function handleTelegramLinkCode() {
+    try {
+      setTelegramLinkBusy(true);
+      setTelegramError("");
+      setTelegramStatus("");
+      const payload = await createTelegramLinkCode();
+      setTelegram(payload);
+      setTelegramStatus("A new linking code is ready. Send it to the bot to connect this chat.");
+    } catch (linkError) {
+      setTelegramError(linkError.message);
+    } finally {
+      setTelegramLinkBusy(false);
+    }
+  }
+
+  async function handleTelegramDisconnect() {
+    try {
+      setTelegramLinkBusy(true);
+      setTelegramError("");
+      setTelegramStatus("");
+      const payload = await disconnectTelegram();
+      setTelegram(payload);
+      setTelegramStatus("Telegram has been disconnected.");
+    } catch (disconnectError) {
+      setTelegramError(disconnectError.message);
+    } finally {
+      setTelegramLinkBusy(false);
+    }
+  }
+
+  async function handleTelegramTest() {
+    try {
+      setTelegramTestBusy(true);
+      setTelegramError("");
+      setTelegramStatus("");
+      await sendTelegramTestMessage();
+      setTelegramStatus("Test message sent to Telegram.");
+    } catch (testError) {
+      setTelegramError(testError.message);
+    } finally {
+      setTelegramTestBusy(false);
+    }
+  }
+
   async function handleAccountDelete(event) {
     event.preventDefault();
 
@@ -136,7 +263,7 @@ export default function Preferences() {
     setIsDeleteDialogOpen(false);
   }
 
-  if (!user || !onboarding) {
+  if (!user || !onboarding || !telegram) {
     return <main className="simple-shell">Loading your account settings...</main>;
   }
 
@@ -146,6 +273,9 @@ export default function Preferences() {
   const displayedInsightCount = busyWindowCount > 0
     ? Math.min(recurringInsightCount, busyWindowCount)
     : recurringInsightCount;
+  const telegramSettings = telegram.settings ?? DEFAULT_TELEGRAM_SETTINGS;
+  const pendingLink = telegram.pendingLink;
+  const linkedChat = telegram.linkedChat;
 
   return (
     <main className="simple-shell">
@@ -154,8 +284,8 @@ export default function Preferences() {
         <p className="auth-eyebrow">Account</p>
         <h1 className="simple-title">Manage your account settings</h1>
         <p className="simple-copy">
-          You&apos;re signed in as <strong>{user.username}</strong>. Your onboarding answers are already
-          saved, so this page lets you update your account username and calendar timing context.
+          You&apos;re signed in as <strong>{user.username}</strong>. This page lets you update
+          your username, calendar timing context, and Telegram notifications.
         </p>
       </section>
 
@@ -195,6 +325,230 @@ export default function Preferences() {
               </button>
             </div>
           </form>
+        </section>
+
+        <section className="calendar-panel">
+          <div className="calendar-panel-header">
+            <div>
+              <p className="summary-label">Telegram Notifications</p>
+              <p className="panel-copy">
+                Connect your Telegram chat for instant priority alerts and a daily plan for what
+                to focus on today.
+              </p>
+            </div>
+            <div className="summary-value summary-value-stack">
+              <span>{telegram.linked ? "Telegram linked" : "Telegram not linked"}</span>
+              <span>{telegram.configured ? "Bot configured" : "Bot not configured"}</span>
+            </div>
+          </div>
+
+          {telegram.configurationError ? (
+            <p className="error-text auth-error">{telegram.configurationError}</p>
+          ) : null}
+
+          <div className="telegram-status-card">
+            <div className="telegram-status-block">
+              <p className="summary-label">Connection</p>
+              {linkedChat ? (
+                <div className="telegram-link-box">
+                  <strong>{linkedChat.displayName || linkedChat.username || linkedChat.chatId}</strong>
+                  <span>
+                    {linkedChat.username ? `@${linkedChat.username}` : "Direct chat"}
+                  </span>
+                  <span>
+                    Linked {linkedChat.linkedAt ? new Date(linkedChat.linkedAt).toLocaleString() : "recently"}
+                  </span>
+                </div>
+              ) : (
+                <div className="telegram-link-box">
+                  <strong>No linked chat yet</strong>
+                  <span>Generate a code, open the bot, and send it there.</span>
+                </div>
+              )}
+            </div>
+
+            <div className="telegram-status-block">
+              <p className="summary-label">Linking</p>
+              {pendingLink ? (
+                <div className="telegram-link-box">
+                  <strong className="telegram-code-pill">{pendingLink.code}</strong>
+                  <span>
+                    Expires{" "}
+                    {pendingLink.expiresAt ? new Date(pendingLink.expiresAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }) : "soon"}
+                  </span>
+                  <span>Send this code to the Telegram bot from the chat you want to use.</span>
+                </div>
+              ) : (
+                <div className="telegram-link-box">
+                  <strong>No active code</strong>
+                  <span>Generate one whenever you want to connect a new chat.</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="telegram-instructions">
+            <p className="summary-label">Instructions</p>
+            <ol className="telegram-steps">
+              <li>Generate a temporary linking code here.</li>
+              <li>Open the Telegram bot and send that code from the chat you want to link.</li>
+              <li>Come back here and refresh the status once the bot confirms the connection.</li>
+            </ol>
+            {pendingLink?.botDeepLink ? (
+              <a
+                className="secondary-button telegram-link-button"
+                href={pendingLink.botDeepLink}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open Telegram bot
+              </a>
+            ) : null}
+          </div>
+
+          <div className="manual-task-actions">
+            <button
+              className="auth-button"
+              disabled={telegramLinkBusy || !telegram.configured}
+              onClick={handleTelegramLinkCode}
+              type="button"
+            >
+              {telegramLinkBusy ? "Preparing..." : pendingLink ? "Generate new code" : "Generate linking code"}
+            </button>
+            <button
+              className="secondary-button"
+              disabled={telegramLinkBusy}
+              onClick={() => refreshTelegram("Telegram status refreshed.")}
+              type="button"
+            >
+              Refresh status
+            </button>
+            {telegram.linked ? (
+              <button
+                className="secondary-button"
+                disabled={telegramLinkBusy}
+                onClick={handleTelegramDisconnect}
+                type="button"
+              >
+                Disconnect Telegram
+              </button>
+            ) : null}
+            <button
+              className="secondary-button"
+              disabled={telegramTestBusy || !telegram.linked || !telegram.configured}
+              onClick={handleTelegramTest}
+              type="button"
+            >
+              {telegramTestBusy ? "Sending test..." : "Send test message"}
+            </button>
+          </div>
+
+          <form className="calendar-upload-form" onSubmit={handleTelegramSettingsSave}>
+            <div className="telegram-toggle-grid">
+              <label className="option-row">
+                <input
+                  checked={telegramSettings.telegramEnabled}
+                  onChange={(event) => updateTelegramSetting("telegramEnabled", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Enable Telegram notifications</strong>
+                  <small>Turn Telegram delivery on or off without disconnecting the chat.</small>
+                </span>
+              </label>
+
+              <label className="option-row">
+                <input
+                  checked={telegramSettings.dailyDigestEnabled}
+                  disabled={!telegramSettings.telegramEnabled}
+                  onChange={(event) => updateTelegramSetting("dailyDigestEnabled", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Enable daily digest</strong>
+                  <small>Receive one daily summary of important work for today.</small>
+                </span>
+              </label>
+            </div>
+
+            <div className="telegram-tier-grid">
+              <label className="option-row">
+                <input
+                  checked={telegramSettings.instantCritical}
+                  disabled={!telegramSettings.telegramEnabled}
+                  onChange={(event) => updateTelegramSetting("instantCritical", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Critical alerts</strong>
+                  <small>Instant Telegram alerts for critical tasks.</small>
+                </span>
+              </label>
+
+              <label className="option-row">
+                <input
+                  checked={telegramSettings.instantHigh}
+                  disabled={!telegramSettings.telegramEnabled}
+                  onChange={(event) => updateTelegramSetting("instantHigh", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>High alerts</strong>
+                  <small>Instant Telegram alerts for high priority tasks.</small>
+                </span>
+              </label>
+
+              <label className="option-row">
+                <input
+                  checked={telegramSettings.instantMedium}
+                  disabled={!telegramSettings.telegramEnabled}
+                  onChange={(event) => updateTelegramSetting("instantMedium", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Medium alerts</strong>
+                  <small>Instant Telegram alerts for medium priority tasks.</small>
+                </span>
+              </label>
+
+              <label className="option-row">
+                <input
+                  checked={telegramSettings.instantLow}
+                  disabled={!telegramSettings.telegramEnabled}
+                  onChange={(event) => updateTelegramSetting("instantLow", event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Low alerts</strong>
+                  <small>Instant Telegram alerts for low priority tasks.</small>
+                </span>
+              </label>
+            </div>
+
+            <label className="field-group telegram-time-field">
+              <span>Daily digest time</span>
+              <input
+                className="auth-input"
+                disabled={!telegramSettings.telegramEnabled || !telegramSettings.dailyDigestEnabled}
+                onChange={(event) => updateTelegramSetting("dailyDigestTime", event.target.value)}
+                type="time"
+                value={telegramSettings.dailyDigestTime}
+              />
+              <p className="field-hint">Times follow the app&apos;s current timezone context.</p>
+            </label>
+
+            <div className="manual-task-actions">
+              <button className="auth-button" disabled={telegramSaveBusy} type="submit">
+                {telegramSaveBusy ? "Saving..." : "Save Telegram settings"}
+              </button>
+            </div>
+          </form>
+
+          {telegramStatus ? <p className="success-text">{telegramStatus}</p> : null}
+          {telegramError ? <p className="error-text auth-error">{telegramError}</p> : null}
         </section>
 
         <section className="calendar-panel">
