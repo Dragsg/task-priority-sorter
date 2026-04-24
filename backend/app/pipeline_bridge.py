@@ -25,8 +25,15 @@ from .outlook_service import list_new_outlook_messages, list_recent_outlook_mess
 from .telegram_service import send_instant_telegram_alerts
 from .time_utils import now_sgt, parse_iso_to_sgt
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PIPELINE_ROOT = PROJECT_ROOT / "pipeline"
+APP_ROOT = Path(__file__).resolve().parents[1]
+PIPELINE_ROOT_CANDIDATES = (
+    APP_ROOT.parent / "pipeline",  # local repo layout: backend/app -> ../pipeline
+    APP_ROOT / "pipeline",  # Azure deploy layout: app extracted at root alongside pipeline/
+)
+PIPELINE_ROOT = next(
+    (candidate for candidate in PIPELINE_ROOT_CANDIDATES if candidate.exists()),
+    PIPELINE_ROOT_CANDIDATES[0],
+)
 PIPELINE_SRC = PIPELINE_ROOT / "src"
 
 if str(PIPELINE_SRC) not in sys.path:
