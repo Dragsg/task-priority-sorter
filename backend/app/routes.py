@@ -15,6 +15,7 @@ from .db import (
     get_user_by_username,
     get_user_by_id,
     update_user_onboarding_answers,
+    update_user_username,
 )
 from .pipeline_bridge import (
     create_manual_task,
@@ -194,6 +195,35 @@ def current_user():
     return jsonify(serialize_user(user))
 
 
+@api.patch("/user")
+def update_user():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        data = request.get_json() or {}
+        username = normalize_username(data.get("username"))
+
+        validate_username(username)
+
+        existing_user = get_user_by_username(username)
+        if existing_user and existing_user["user_id"] != user_id:
+            return jsonify({"error": "Username already exists"}), 409
+
+        user = update_user_username(user_id, username)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(
+        {
+            "success": True,
+            "user": serialize_user(user),
+        }
+    )
+
+
 @api.put("/onboarding")
 def onboarding():
     try:
@@ -256,6 +286,8 @@ def onboarding_calendar_upload():
         uploaded = request.files.get("file")
         if uploaded is None:
             raise ValueError("Calendar file is required.")
+        if not uploaded.filename:
+            raise ValueError("Calendar file must include a filename.")
         context = save_calendar_context(
             user_id,
             filename=uploaded.filename,
@@ -607,11 +639,19 @@ def task_feedback(canonical_task_id: str):
     try:
         user_id = get_authenticated_user_id(required=True)
         data = request.get_json() or {}
+        action = data.get("action")
+        if not isinstance(action, str) or not action:
+            raise ValueError("action is required.")
+
+        direction = data.get("direction")
+        if direction is not None and not isinstance(direction, str):
+            raise ValueError("direction must be a string.")
+
         result = submit_task_feedback(
             user_id,
             canonical_task_id,
-            action=data.get("action"),
-            direction=data.get("direction"),
+            action=action,
+            direction=direction,
         )
     except ValueError as error:
         return jsonify({"error": str(error)}), 422

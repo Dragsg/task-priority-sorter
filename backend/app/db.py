@@ -572,7 +572,7 @@ def get_user_by_id(user_id: int) -> DbRow | None:
             return cast(DbRow | None, cursor.fetchone())
 
 
-def create_user(name: str, username: str, password_hash: str):
+def create_user(name: str, username: str, password_hash: str) -> DbRow:
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -592,6 +592,9 @@ def create_user(name: str, username: str, password_hash: str):
             )
             user = cast(DbRow | None, cursor.fetchone())
         connection.commit()
+
+    if user is None:
+        raise LookupError("Failed to create user.")
 
     logger.info("Created user_details row for user_id=%s username=%s", user["user_id"], username)
     return user
@@ -630,13 +633,41 @@ def update_user_preferences(user_id: int, preferences: str) -> DbRow:
     return user
 
 
+def update_user_username(user_id: int, username: str) -> DbRow | None:
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE public.user_details
+                SET username = %s
+                WHERE user_id = %s
+                RETURNING
+                    user_id,
+                    name,
+                    username,
+                    preferences,
+                    performance_time,
+                    important_topic,
+                    prioritise_by
+                """,
+                (username, user_id),
+            )
+            user = cast(DbRow | None, cursor.fetchone())
+        connection.commit()
+
+    if user:
+        logger.info("Updated username for user_id=%s username=%s", user_id, username)
+
+    return user
+
+
 def update_user_onboarding_answers(
     user_id: int,
     *,
     performance_time: str,
     important_topic: str,
     prioritise_by: str,
-):
+) -> DbRow | None:
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -657,7 +688,7 @@ def update_user_onboarding_answers(
                 """,
                 (performance_time, important_topic, prioritise_by, user_id),
             )
-            user = cursor.fetchone()
+            user = cast(DbRow | None, cursor.fetchone())
         connection.commit()
 
     logger.info(

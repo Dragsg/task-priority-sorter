@@ -5,6 +5,7 @@ import {
   deleteOnboardingCalendar,
   fetchOnboardingContext,
   getStoredUser,
+  updateCurrentUser,
   uploadOnboardingCalendar,
 } from "../api";
 import PageNav from "../components/PageNav";
@@ -24,10 +25,12 @@ export default function Preferences() {
   const navigate = useNavigate();
   const [user, setUser] = useState(() => getStoredUser());
   const [onboarding, setOnboarding] = useState(null);
+  const [username, setUsername] = useState("");
   const [calendarFile, setCalendarFile] = useState(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [calendarBusy, setCalendarBusy] = useState(false);
+  const [usernameBusy, setUsernameBusy] = useState(false);
 
   useEffect(() => {
     async function loadContext() {
@@ -35,6 +38,7 @@ export default function Preferences() {
         const data = await fetchOnboardingContext();
         setUser(data.user);
         setOnboarding(data.onboarding);
+        setUsername(data.user?.username ?? "");
       } catch {
         clearStoredToken();
         navigate("/", { replace: true });
@@ -52,7 +56,7 @@ export default function Preferences() {
     }
 
     try {
-      setBusy(true);
+      setCalendarBusy(true);
       setError("");
       setStatus("");
       const result = await uploadOnboardingCalendar(calendarFile);
@@ -62,13 +66,13 @@ export default function Preferences() {
     } catch (uploadError) {
       setError(uploadError.message);
     } finally {
-      setBusy(false);
+      setCalendarBusy(false);
     }
   }
 
   async function handleCalendarRemove() {
     try {
-      setBusy(true);
+      setCalendarBusy(true);
       setError("");
       setStatus("");
       const result = await deleteOnboardingCalendar();
@@ -77,7 +81,25 @@ export default function Preferences() {
     } catch (removeError) {
       setError(removeError.message);
     } finally {
-      setBusy(false);
+      setCalendarBusy(false);
+    }
+  }
+
+  async function handleUsernameUpdate(event) {
+    event.preventDefault();
+
+    try {
+      setUsernameBusy(true);
+      setError("");
+      setStatus("");
+      const result = await updateCurrentUser({ username });
+      setUser(result.user);
+      setUsername(result.user.username);
+      setStatus("Username updated.");
+    } catch (updateError) {
+      setError(updateError.message);
+    } finally {
+      setUsernameBusy(false);
     }
   }
 
@@ -93,14 +115,52 @@ export default function Preferences() {
       <PageNav />
       <section className="simple-hero">
         <p className="auth-eyebrow">Preferences</p>
-        <h1 className="simple-title">Manage your calendar context</h1>
+        <h1 className="simple-title">Manage your account settings</h1>
         <p className="simple-copy">
           You&apos;re signed in as <strong>{user.username}</strong>. Your onboarding answers are already
-          saved, so this page only manages calendar timing context.
+          saved, so this page lets you update your account username and calendar timing context.
         </p>
       </section>
 
       <section className="simple-card">
+        <section className="calendar-panel">
+          <div className="calendar-panel-header">
+            <div>
+              <p className="summary-label">Account</p>
+              <p className="panel-copy">
+                Update the username you use to sign in. This change is saved directly to your
+                account record.
+              </p>
+            </div>
+            <div className="summary-value summary-value-stack">
+              <span>Display name: {user.name}</span>
+              <span>Current username: {user.username}</span>
+            </div>
+          </div>
+
+          <form className="calendar-upload-form" onSubmit={handleUsernameUpdate}>
+            <label className="field-group">
+              <span>Username</span>
+              <input
+                className="auth-input"
+                disabled={usernameBusy}
+                onChange={(event) => setUsername(event.target.value)}
+                type="text"
+                value={username}
+              />
+            </label>
+            <div className="manual-task-actions">
+              <button
+                className="auth-button"
+                disabled={usernameBusy || !username.trim() || username.trim() === user.username}
+                type="submit"
+              >
+                {usernameBusy ? "Saving..." : "Save username"}
+              </button>
+            </div>
+          </form>
+        </section>
+
         <section className="calendar-panel">
           <div className="calendar-panel-header">
             <div>
@@ -147,13 +207,13 @@ export default function Preferences() {
               />
             </label>
             <div className="manual-task-actions">
-              <button className="auth-button" disabled={busy} type="submit">
-                {busy ? "Uploading..." : calendarSource ? "Replace calendar" : "Upload calendar"}
+              <button className="auth-button" disabled={calendarBusy} type="submit">
+                {calendarBusy ? "Uploading..." : calendarSource ? "Replace calendar" : "Upload calendar"}
               </button>
               {calendarSource ? (
                 <button
                   className="secondary-button"
-                  disabled={busy}
+                  disabled={calendarBusy}
                   onClick={handleCalendarRemove}
                   type="button"
                 >

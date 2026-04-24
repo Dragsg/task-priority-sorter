@@ -119,6 +119,16 @@ export async function fetchCurrentUser() {
   return user;
 }
 
+export async function updateCurrentUser({ username }) {
+  const payload = await sendJson("/user", {
+    method: "PATCH",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ username }),
+  });
+  storeUser(payload.user);
+  return payload;
+}
+
 export async function fetchDashboardBootstrap() {
   const response = await fetch(`${API_BASE_URL}/dashboard`, {
     headers: getAuthHeaders(),
