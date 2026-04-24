@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
 
@@ -25,6 +26,9 @@ try:
     from openai import OpenAI
 except ImportError:  # pragma: no cover - optional dependency
     OpenAI = None
+
+
+logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """
@@ -202,6 +206,7 @@ class PriorityReasoner:
     def __init__(self, settings: PipelineSettings, client: Any | None = None) -> None:
         self.settings = settings
         self.client = client
+        self._provider_status_logged = False
 
     def build_llm_input(
         self,
@@ -332,6 +337,7 @@ class PriorityReasoner:
 
     def _call_openai(self, request_payload: dict[str, Any]) -> StructuredLlmOutput:
         api_key = os.environ.get("OPENAI_API_KEY") or load_dotenv_value("OPENAI_API_KEY")
+        self._log_provider_status_once(api_key=api_key)
         if self.client is None and OpenAI is not None and api_key:  # pragma: no cover - networkless by default
             self.client = OpenAI(api_key=api_key)
 
@@ -354,6 +360,30 @@ class PriorityReasoner:
             return StructuredLlmOutput.model_validate_json(response.output_text)
         except Exception:
             return self._fallback_reasoning(request_payload["input"])
+
+    def _log_provider_status_once(self, *, api_key: str | None) -> None:
+        if self._provider_status_logged:
+            return
+
+        self._provider_status_logged = True
+        has_api_key = bool(api_key)
+        has_openai_sdk = OpenAI is not None
+
+        if has_api_key and has_openai_sdk:
+            logger.info(
+                "Priority reasoner provider status: OPENAI_API_KEY detected; OpenAI reasoning is enabled."
+            )
+            return
+
+        if has_api_key and not has_openai_sdk:
+            logger.warning(
+                "Priority reasoner provider status: OPENAI_API_KEY detected but the openai package is unavailable; using fallback reasoning."
+            )
+            return
+
+        logger.info(
+            "Priority reasoner provider status: OPENAI_API_KEY not detected; using fallback reasoning."
+        )
 
     def _request_messages(self, llm_input: dict[str, Any]) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = [
