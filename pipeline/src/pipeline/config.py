@@ -12,6 +12,7 @@ class PipelineSettings(BaseModel):
     ewma_decay: float = 0.85
     dedup_similarity_threshold: float = 0.82
     llm_model: str = "gpt-5.2"
+    llm_max_concurrency: int = 4
     llm_prompt_version: str = "priority-pipeline.v2"
     llm_schema_version: str = "priority-card.v2"
     provider_timezone_fallback: str = "Asia/Singapore"

@@ -34,6 +34,7 @@ from .pipeline_bridge import (
     remove_prioritized_task,
     remove_calendar_context,
     run_prioritization_for_user,
+    schedule_pipeline_recompute,
     save_calendar_context,
     submit_task_feedback,
     sync_onboarding_context,
@@ -699,6 +700,24 @@ def sync_prioritized_tasks():
         return jsonify({"error": str(error)}), get_status_code(error)
 
     return jsonify(result)
+
+
+@api.post("/tasks/sync/async")
+def sync_prioritized_tasks_async():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        limit = request.args.get("limit", default=None, type=int)
+        status = schedule_pipeline_recompute(
+            user_id,
+            refresh_sources=True,
+            limit=limit,
+            reason="manual_refresh",
+        )
+    except Exception as error:
+        logger.exception("Async task priority refresh failed to start")
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify({"success": True, "status": status}), 202
 
 
 @api.post("/tasks/manual")

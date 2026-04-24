@@ -299,6 +299,14 @@ export async function syncPrioritizedTasks(limit) {
   });
 }
 
+export async function schedulePrioritizedTaskSync(limit) {
+  const query = limit ? `?limit=${limit}` : "";
+  return sendJson(`/tasks/sync/async${query}`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+}
+
 export async function createManualTask(payload) {
   return sendJson("/tasks/manual", {
     method: "POST",
@@ -324,6 +332,13 @@ export async function promoteFalseNegativeEmail({ sourceId, platform }) {
 
 export async function fetchPipelineProfile() {
   const response = await fetch(`${API_BASE_URL}/tasks/profile`, {
+    headers: getAuthHeaders(),
+  });
+  return readJson(response);
+}
+
+export async function fetchPipelineRecomputeStatus() {
+  const response = await fetch(`${API_BASE_URL}/tasks/recompute-status`, {
     headers: getAuthHeaders(),
   });
   return readJson(response);

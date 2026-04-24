@@ -134,6 +134,28 @@ class TaskRoutesTestCase(unittest.TestCase):
         self.assertEqual(response.get_json()["runId"], "run-1")
         run_prioritization_for_user.assert_called_once_with(7, limit=20)
 
+    @patch("app.routes.schedule_pipeline_recompute")
+    def test_async_task_sync_route_returns_scheduled_status(self, schedule_pipeline_recompute):
+        schedule_pipeline_recompute.return_value = {
+            "userId": 7,
+            "running": True,
+            "pending": False,
+            "lastScheduledAt": "2026-04-25T10:00:00+08:00",
+        }
+
+        response = self.client.post("/api/tasks/sync/async?limit=20", headers=self.headers)
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["status"]["running"])
+        schedule_pipeline_recompute.assert_called_once_with(
+            7,
+            refresh_sources=True,
+            limit=20,
+            reason="manual_refresh",
+        )
+
     @patch("app.routes.create_manual_task")
     def test_manual_task_route_returns_payload(self, create_manual_task):
         create_manual_task.return_value = {

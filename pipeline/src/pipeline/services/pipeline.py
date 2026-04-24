@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from pipeline.config import PipelineSettings
 from pipeline.models import BehaviorProfile, FeedbackEvent, OnboardingContext
 from pipeline.models.enums import EntityType, TaskType
@@ -69,31 +71,14 @@ class PriorityPipeline:
 
             decisions = []
             task_cards = []
-            for task in canonical_tasks:
-                entity_context = profile.entity_weights.get(task.topic_entity.entity_key)
-                sender_context = self._resolve_sender_context(profile, task)
-                task_type_context = profile.task_type_weights.get(task.task_type)
-                tag_observation_count = max(
-                    (profile.tag_weights.get(tag).observation_count for tag in task.manual_tags if tag in profile.tag_weights),
-                    default=0,
-                )
-                can_personalize = self.profile_service.can_personalize(
-                    profile,
-                    entity_observation_count=entity_context.observation_count if entity_context else 0,
-                    sender_observation_count=sender_context.observation_count if sender_context else 0,
-                    task_type_observation_count=task_type_context.observation_count if task_type_context else 0,
-                    tag_observation_count=tag_observation_count,
-                )
-                llm_input = self.reasoner.build_llm_input(
-                    task=task,
-                    profile=profile,
-                    onboarding=onboarding,
-                    entity_context=entity_context,
-                    sender_context=sender_context,
-                    can_personalize=can_personalize,
-                    available_tags=custom_tags,
-                )
-                llm_output, decision = self.reasoner.reason_task(run_id=run_id, task=task, llm_input=llm_input)
+            reasoned_tasks = self._reason_tasks(
+                run_id=run_id,
+                canonical_tasks=canonical_tasks,
+                profile=profile,
+                onboarding=onboarding,
+                available_tags=custom_tags,
+            )
+            for llm_output, decision, task in reasoned_tasks:
                 decisions.append(decision)
                 task_cards.append(
                     self.post_processor.build_task_card(
@@ -166,3 +151,74 @@ class PriorityPipeline:
             if sender_context is not None:
                 return sender_context
         return None
+
+    def _reason_tasks(
+        self,
+        *,
+        run_id: str,
+        canonical_tasks,
+        profile: BehaviorProfile,
+        onboarding: OnboardingContext,
+        available_tags: list[str],
+    ):
+        if len(canonical_tasks) <= 1 or self.settings.llm_max_concurrency <= 1:
+            return [
+                self._reason_single_task(
+                    run_id=run_id,
+                    task=task,
+                    profile=profile,
+                    onboarding=onboarding,
+                    available_tags=available_tags,
+                )
+                for task in canonical_tasks
+            ]
+
+        max_workers = min(len(canonical_tasks), self.settings.llm_max_concurrency)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            return list(
+                executor.map(
+                    lambda task: self._reason_single_task(
+                        run_id=run_id,
+                        task=task,
+                        profile=profile,
+                        onboarding=onboarding,
+                        available_tags=available_tags,
+                    ),
+                    canonical_tasks,
+                )
+            )
+
+    def _reason_single_task(
+        self,
+        *,
+        run_id: str,
+        task,
+        profile: BehaviorProfile,
+        onboarding: OnboardingContext,
+        available_tags: list[str],
+    ):
+        entity_context = profile.entity_weights.get(task.topic_entity.entity_key)
+        sender_context = self._resolve_sender_context(profile, task)
+        task_type_context = profile.task_type_weights.get(task.task_type)
+        tag_observation_count = max(
+            (profile.tag_weights.get(tag).observation_count for tag in task.manual_tags if tag in profile.tag_weights),
+            default=0,
+        )
+        can_personalize = self.profile_service.can_personalize(
+            profile,
+            entity_observation_count=entity_context.observation_count if entity_context else 0,
+            sender_observation_count=sender_context.observation_count if sender_context else 0,
+            task_type_observation_count=task_type_context.observation_count if task_type_context else 0,
+            tag_observation_count=tag_observation_count,
+        )
+        llm_input = self.reasoner.build_llm_input(
+            task=task,
+            profile=profile,
+            onboarding=onboarding,
+            entity_context=entity_context,
+            sender_context=sender_context,
+            can_personalize=can_personalize,
+            available_tags=available_tags,
+        )
+        llm_output, decision = self.reasoner.reason_task(run_id=run_id, task=task, llm_input=llm_input)
+        return llm_output, decision, task
