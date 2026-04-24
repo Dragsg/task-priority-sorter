@@ -114,6 +114,67 @@ def test_task_description_extracts_actionable_summary_without_email_boilerplate(
     assert "invited you to an interview for your application" not in description.lower()
 
 
+def test_task_description_uses_llm_summary_when_available():
+    class FakeResponses:
+        def create(self, **kwargs):
+            class Response:
+                output_text = '{"summary":"Attend the interview tomorrow at 3pm in COM1 and bring your student ID."}'
+
+            return Response()
+
+    class FakeClient:
+        responses = FakeResponses()
+
+    processor = PostProcessor(PipelineSettings(), client=FakeClient())
+    task = make_task(
+        representative_subject="Interview invitation",
+        representative_snippet=(
+            "SYFC CCA invited you to an interview. Please attend the interview tomorrow at 3pm in COM1 "
+            "and bring your student ID."
+        ),
+        representative_body_excerpt=(
+            "Singapore Youth Flying Club invited you to an interview for your application. "
+            "Please attend the interview tomorrow at 3pm in COM1. "
+            "Bring your student ID and transcript."
+        ),
+    )
+
+    description = processor._build_task_description(task, task_title=processor._build_task_title(task))
+
+    assert description == "Attend the interview tomorrow at 3pm in COM1 and bring your student ID."
+
+
+def test_task_description_falls_back_when_llm_summary_is_invalid():
+    class FakeResponses:
+        def create(self, **kwargs):
+            class Response:
+                output_text = '{"summary":"Hi there"}'
+
+            return Response()
+
+    class FakeClient:
+        responses = FakeResponses()
+
+    processor = PostProcessor(PipelineSettings(), client=FakeClient())
+    task = make_task(
+        representative_subject="Interview invitation",
+        representative_snippet=(
+            "SYFC CCA invited you to an interview. Please attend the interview tomorrow at 3pm in COM1 "
+            "and bring your student ID."
+        ),
+        representative_body_excerpt=(
+            "Singapore Youth Flying Club invited you to an interview for your application. "
+            "Please attend the interview tomorrow at 3pm in COM1. "
+            "Bring your student ID and transcript."
+        ),
+    )
+
+    description = processor._build_task_description(task, task_title=processor._build_task_title(task))
+
+    assert description is not None
+    assert "attend the interview tomorrow at 3pm in com1" in description.lower()
+
+
 def test_build_task_card_infers_tags_even_when_llm_returns_none_and_confidence_is_low():
     processor = PostProcessor(PipelineSettings())
     task = make_task(
