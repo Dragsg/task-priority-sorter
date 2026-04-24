@@ -9,12 +9,15 @@ import {
   fetchOnboardingContext,
   fetchTelegramSettings,
   getStoredUser,
-  sendTelegramTestMessage,
+  getStoredUserId,
   saveTelegramSettings,
+  sendTelegramTestMessage,
+  storeUser,
   updateCurrentUser,
   uploadOnboardingCalendar,
 } from "../api";
 import CalendarContextSummary from "../components/CalendarContextSummary";
+import { clearOnboardingCache, readOnboardingCache, writeOnboardingCache } from "../onboardingCache";
 import PageNav from "../components/PageNav";
 
 const DEFAULT_TELEGRAM_SETTINGS = {
@@ -29,10 +32,13 @@ const DEFAULT_TELEGRAM_SETTINGS = {
 
 export default function Preferences() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(() => getStoredUser());
-  const [onboarding, setOnboarding] = useState(null);
+  const storedUserId = getStoredUserId();
+  const storedUser = getStoredUser();
+  const [cachedOnboarding] = useState(() => readOnboardingCache(storedUserId));
+  const [user, setUser] = useState(() => cachedOnboarding?.user ?? storedUser);
+  const [onboarding, setOnboarding] = useState(() => cachedOnboarding?.onboarding ?? null);
   const [telegram, setTelegram] = useState(null);
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(() => (cachedOnboarding?.user ?? storedUser)?.username ?? "");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [telegramStatus, setTelegramStatus] = useState("");
@@ -52,26 +58,35 @@ export default function Preferences() {
     let active = true;
 
     async function loadContext() {
-      try {
-        const [contextData, telegramData] = await Promise.all([
+      const [contextResult, telegramResult] = await Promise.allSettled([
           fetchOnboardingContext(),
           fetchTelegramSettings(),
-        ]);
+      ]);
 
-        if (!active) {
-          return;
-        }
+      if (!active) {
+        return;
+      }
 
+      if (contextResult.status === "fulfilled") {
+        const contextData = contextResult.value;
         setUser(contextData.user);
         setOnboarding(contextData.onboarding);
         setUsername(contextData.user?.username ?? "");
-        setTelegram(telegramData);
-      } catch {
-        if (!active) {
+        setError("");
+      } else {
+        if (!cachedOnboarding && !storedUser) {
+          clearStoredToken();
+          navigate("/", { replace: true });
           return;
         }
-        clearStoredToken();
-        navigate("/", { replace: true });
+        setError(contextResult.reason?.message || "Using your saved account settings while fresh context loads.");
+      }
+
+      if (telegramResult.status === "fulfilled") {
+        setTelegram(telegramResult.value);
+        setTelegramError("");
+      } else {
+        setTelegramError(telegramResult.reason?.message || "Unable to load Telegram settings right now.");
       }
     }
 
@@ -79,7 +94,14 @@ export default function Preferences() {
     return () => {
       active = false;
     };
-  }, [navigate]);
+  }, [cachedOnboarding, navigate, storedUser]);
+
+  useEffect(() => {
+    if (!user?.userId || !onboarding) {
+      return;
+    }
+    writeOnboardingCache(user.userId, user, onboarding);
+  }, [onboarding, user]);
 
   function handleCalendarPickerOpen() {
     if (calendarBusy) {
@@ -134,6 +156,7 @@ export default function Preferences() {
       const result = await updateCurrentUser({ username });
       setUser(result.user);
       setUsername(result.user.username);
+      storeUser(result.user);
       setStatus("Username updated.");
     } catch (updateError) {
       setError(updateError.message);
@@ -239,6 +262,7 @@ export default function Preferences() {
       setDeleteError("");
       setStatus("");
       await deleteCurrentUser({ username: deleteConfirmation });
+      clearOnboardingCache(user?.userId);
       clearStoredToken();
       navigate("/", { replace: true });
     } catch (deleteRequestError) {
@@ -263,19 +287,19 @@ export default function Preferences() {
     setIsDeleteDialogOpen(false);
   }
 
-  if (!user || !onboarding || !telegram) {
+  if (!user) {
     return <main className="simple-shell">Loading your account settings...</main>;
   }
 
-  const calendarSource = onboarding.calendar_source;
-  const busyWindowCount = onboarding.busy_windows?.length ?? 0;
-  const recurringInsightCount = onboarding.recurring_task_notes?.length ?? 0;
+  const calendarSource = onboarding?.calendar_source;
+  const busyWindowCount = onboarding?.busy_windows?.length ?? 0;
+  const recurringInsightCount = onboarding?.recurring_task_notes?.length ?? 0;
   const displayedInsightCount = busyWindowCount > 0
     ? Math.min(recurringInsightCount, busyWindowCount)
     : recurringInsightCount;
-  const telegramSettings = telegram.settings ?? DEFAULT_TELEGRAM_SETTINGS;
-  const pendingLink = telegram.pendingLink;
-  const linkedChat = telegram.linkedChat;
+  const telegramSettings = telegram?.settings ?? DEFAULT_TELEGRAM_SETTINGS;
+  const pendingLink = telegram?.pendingLink;
+  const linkedChat = telegram?.linkedChat;
 
   return (
     <main className="simple-shell">
@@ -337,13 +361,29 @@ export default function Preferences() {
               </p>
             </div>
             <div className="summary-value summary-value-stack">
-              <span>{telegram.linked ? "Telegram linked" : "Telegram not linked"}</span>
-              <span>{telegram.configured ? "Bot configured" : "Bot not configured"}</span>
+              <span>
+                {telegram
+                  ? telegram.linked
+                    ? "Telegram linked"
+                    : "Telegram not linked"
+                  : "Loading Telegram"}
+              </span>
+              <span>
+                {telegram
+                  ? telegram.configured
+                    ? "Bot configured"
+                    : "Bot not configured"
+                  : "Checking bot status"}
+              </span>
             </div>
           </div>
 
-          {telegram.configurationError ? (
+          {telegram?.configurationError ? (
             <p className="error-text auth-error">{telegram.configurationError}</p>
+          ) : null}
+
+          {!telegram ? (
+            <p className="panel-copy">Loading your Telegram settings...</p>
           ) : null}
 
           <div className="telegram-status-card">
@@ -412,7 +452,7 @@ export default function Preferences() {
           <div className="manual-task-actions">
             <button
               className="auth-button"
-              disabled={telegramLinkBusy || !telegram.configured}
+              disabled={telegramLinkBusy || !telegram?.configured}
               onClick={handleTelegramLinkCode}
               type="button"
             >
@@ -426,7 +466,7 @@ export default function Preferences() {
             >
               Refresh status
             </button>
-            {telegram.linked ? (
+            {telegram?.linked ? (
               <button
                 className="secondary-button"
                 disabled={telegramLinkBusy}
@@ -438,7 +478,7 @@ export default function Preferences() {
             ) : null}
             <button
               className="secondary-button"
-              disabled={telegramTestBusy || !telegram.linked || !telegram.configured}
+              disabled={telegramTestBusy || !telegram?.linked || !telegram?.configured}
               onClick={handleTelegramTest}
               type="button"
             >
@@ -561,9 +601,17 @@ export default function Preferences() {
               </p>
             </div>
             <div className="summary-value summary-value-stack">
-              <span>{calendarSource ? "Calendar linked" : "No calendar linked"}</span>
               <span>
-                {calendarSource
+                {onboarding
+                  ? calendarSource
+                    ? "Calendar linked"
+                    : "No calendar linked"
+                  : "Loading calendar context"}
+              </span>
+              <span>
+                {!onboarding
+                  ? "Checking saved availability insights"
+                  : calendarSource
                   ? displayedInsightCount > 0
                     ? `${displayedInsightCount} availability insights`
                     : `${busyWindowCount} upcoming busy windows`
@@ -573,6 +621,10 @@ export default function Preferences() {
           </div>
 
           <CalendarContextSummary onboarding={onboarding} />
+
+          {!onboarding ? (
+            <p className="panel-copy">Loading your saved calendar context...</p>
+          ) : null}
 
           <div className="calendar-upload-form">
             <input
@@ -594,7 +646,7 @@ export default function Preferences() {
               {calendarSource ? (
                 <button
                   className="secondary-button"
-                  disabled={calendarBusy}
+                  disabled={calendarBusy || !onboarding}
                   onClick={handleCalendarRemove}
                   type="button"
                 >

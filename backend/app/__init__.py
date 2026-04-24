@@ -11,7 +11,11 @@ def create_app() -> Flask:
     app.config.from_object(Config)
     app.secret_key = app.config["SECRET_KEY"]
 
-    CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}},
+        max_age=600,
+    )
     app.register_blueprint(api, url_prefix="/api")
     start_background_email_sync(app)
 

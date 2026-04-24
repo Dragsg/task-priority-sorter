@@ -14,6 +14,7 @@ import {
   updatePrioritizedTask,
   updateTaskTags,
 } from "../api";
+import { readDashboardCache, writeDashboardCache } from "../dashboardCache";
 import PageNav from "../components/PageNav";
 
 const TASK_TYPE_OPTIONS = [
@@ -23,7 +24,6 @@ const TASK_TYPE_OPTIONS = [
   { value: "admin", label: "Admin" },
   { value: "social", label: "Social" },
 ];
-const DASHBOARD_CACHE_VERSION = 4;
 const PRIORITY_TIERS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const TASK_STATUS_OPTIONS = ["OPEN", "COMPLETED"];
 
@@ -64,49 +64,6 @@ function buildTagSuggestions(availableTags, selectedTags, inputValue, limit = 8)
       return left.localeCompare(right);
     })
     .slice(0, limit);
-}
-
-function getDashboardCacheKey(userId) {
-  return `task-priority-dashboard:v${DASHBOARD_CACHE_VERSION}:${userId}`;
-}
-
-function readDashboardCache(userId) {
-  if (!userId) {
-    return null;
-  }
-  try {
-    const raw = localStorage.getItem(getDashboardCacheKey(userId));
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw);
-    return {
-      user: parsed.user ?? null,
-      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-      profile: parsed.profile ?? null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeDashboardCache(userId, user, tasks, profile) {
-  if (!userId) {
-    return;
-  }
-  try {
-    localStorage.setItem(
-      getDashboardCacheKey(userId),
-      JSON.stringify({
-        cachedAt: new Date().toISOString(),
-        user: user ?? null,
-        tasks: Array.isArray(tasks) ? tasks : [],
-        profile: profile ?? null,
-      })
-    );
-  } catch {
-    // Ignore cache write failures and keep the live UI responsive.
-  }
 }
 
 function buildSyncStatus(result, previousTasks = []) {
@@ -1085,8 +1042,13 @@ export default function Home() {
     if (!user?.userId) {
       return;
     }
-    writeDashboardCache(user.userId, user, tasks, pipelineProfile);
-  }, [pipelineProfile, tasks, user]);
+    writeDashboardCache(user.userId, {
+      user,
+      tasks,
+      profile: pipelineProfile,
+      availableTags,
+    });
+  }, [availableTags, pipelineProfile, tasks, user]);
 
   useEffect(() => {
     let isCancelled = false;
