@@ -66,9 +66,8 @@ GMAIL_HARD_DISCARD_LABELS = {
     "CATEGORY_PROMOTIONS",
     "CATEGORY_SOCIAL",
     "CATEGORY_FORUMS",
-    "SPAM",
-    "TRASH",
 }
+GMAIL_PRIORITY_KEEP_LABELS = {"IMPORTANT", "STARRED"}
 GMAIL_SOFT_BULK_LABELS = {
     "CATEGORY_UPDATES",
 }
@@ -106,6 +105,10 @@ NEWSLETTER_HINT_PATTERNS = {
     "view online",
 }
 BULK_PRECEDENCE_VALUES = {"bulk", "list", "junk"}
+NEWSLETTER_SENDER_PATTERN = re.compile(
+    r"(newsletter|digest|roundup|bulletin|brief|daily|weekly|updates?|news)",
+    re.IGNORECASE,
+)
 TRUSTED_NEWSLETTER_OVERRIDE_ROLES = {
     SenderRole.LECTURER,
     SenderRole.ADMIN,
@@ -449,24 +452,29 @@ class SignalExtractor:
         topic_entity: TopicEntity,
     ) -> bool:
         sender_domain = (message.sender_domain or "").lower()
+        sender_email = (message.sender_email or "").lower()
         subject = (message.subject or "").lower()
         label_ids = {str(label).upper() for label in (message.label_ids or [])}
 
         if "SPAM" in label_ids or "TRASH" in label_ids:
             return True
 
-        if label_ids & GMAIL_HARD_DISCARD_LABELS:
-            if not self._allows_newsletter_task_override(
-                lowercase_text,
-                deadline_at=deadline_at,
-                sender_role=sender_role,
-                task_verbs=task_verbs,
-                task_type=task_type,
-                topic_entity=topic_entity,
-            ):
-                return True
+        if label_ids & GMAIL_PRIORITY_KEEP_LABELS:
+            return False
 
-        if self._is_likely_newsletter_message(message, lowercase_text, subject, sender_domain, label_ids):
+        if label_ids & GMAIL_HARD_DISCARD_LABELS:
+            return True
+
+        if self._sender_email_looks_like_newsletter(sender_email):
+            return True
+
+        if self._is_likely_newsletter_message(
+            message,
+            lowercase_text,
+            subject,
+            sender_domain,
+            label_ids,
+        ):
             if not self._allows_newsletter_task_override(
                 lowercase_text,
                 deadline_at=deadline_at,
@@ -480,9 +488,6 @@ class SignalExtractor:
         if deadline_at is not None:
             return False
 
-        if any(domain in sender_domain for domain in COMMERCIAL_DOMAINS):
-            return True
-
         return any(pattern in subject or pattern in lowercase_text for pattern in IRRELEVANT_SUBJECT_PATTERNS)
 
     def _is_likely_newsletter_message(
@@ -493,13 +498,19 @@ class SignalExtractor:
         sender_domain: str,
         label_ids: set[str],
     ) -> bool:
-        if label_ids & GMAIL_SOFT_BULK_LABELS:
+        if label_ids & GMAIL_SOFT_BULK_LABELS and self._has_bulk_mail_headers(message):
             return True
-        if any(pattern in subject or pattern in lowercase_text for pattern in NEWSLETTER_HINT_PATTERNS):
-            return True
-        if any(domain in sender_domain for domain in COMMERCIAL_DOMAINS):
+        if any(pattern in subject or pattern in lowercase_text for pattern in NEWSLETTER_HINT_PATTERNS) and (
+            self._has_bulk_mail_headers(message) or any(domain in sender_domain for domain in COMMERCIAL_DOMAINS)
+        ):
             return True
         return self._has_bulk_mail_headers(message)
+
+    def _sender_email_looks_like_newsletter(self, sender_email: str) -> bool:
+        if not sender_email or "@" not in sender_email:
+            return False
+        local_part = sender_email.split("@", 1)[0]
+        return bool(NEWSLETTER_SENDER_PATTERN.search(local_part))
 
     def _has_bulk_mail_headers(self, message: RawMessage) -> bool:
         extra = getattr(message.provider_metadata, "extra", {}) or {}

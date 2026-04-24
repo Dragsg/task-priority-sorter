@@ -179,3 +179,50 @@ def test_bulk_updates_email_from_institution_with_deadline_still_survives():
     assert signal.has_task is True
     assert signal.task_type == TaskType.SUBMISSION
     assert signal.deadline_at is not None
+
+
+def test_newsletter_sender_email_is_filtered():
+    extractor = SignalExtractor()
+    message = RawMessage(
+        user_id="user-1",
+        platform=Platform.GMAIL,
+        source_id="msg-7",
+        subject="Weekly digest: submit this form by Friday",
+        snippet="Due Friday: complete the form before 5pm.",
+        body_text="Please complete the form and submit it by Friday 5pm. Unsubscribe anytime.",
+        sender_display="Campus Weekly",
+        sender_email="newsletter@campus.example.com",
+        sender_domain="campus.example.com",
+        label_ids=["INBOX", "CATEGORY_UPDATES"],
+        provider_metadata={
+            "extra": {
+                "list_unsubscribe": "<mailto:unsubscribe@campus.example.com>",
+                "precedence": "bulk",
+            }
+        },
+    )
+
+    signal = extractor.extract(message)
+
+    assert signal.has_task is False
+
+
+def test_important_or_starred_labels_override_hard_gmail_filters():
+    extractor = SignalExtractor()
+    message = RawMessage(
+        user_id="user-1",
+        platform=Platform.GMAIL,
+        source_id="msg-8",
+        subject="Project consultation tomorrow",
+        snippet="Please attend the project consultation tomorrow at 2pm.",
+        body_text="Please attend the CS2103T project consultation tomorrow at 2pm in COM1.",
+        sender_display="Prof Chen",
+        sender_email="chen@school.edu",
+        sender_domain="school.edu",
+        label_ids=["INBOX", "CATEGORY_SOCIAL", "IMPORTANT", "STARRED"],
+    )
+
+    signal = extractor.extract(message)
+
+    assert signal.has_task is True
+    assert signal.deadline_at is not None

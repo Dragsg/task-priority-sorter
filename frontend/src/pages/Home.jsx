@@ -947,11 +947,14 @@ export default function Home() {
   const cachedUserId = getStoredUserId();
   const cachedDashboard = readDashboardCache(cachedUserId);
   const [user, setUser] = useState(() => cachedDashboard?.user ?? getStoredUser());
-  const [dashboardItems, setDashboardItems] = useState(() =>
-    Array.isArray(cachedDashboard?.tasks) ? cachedDashboard.tasks : []
+  const [tasks, setTasks] = useState(() =>
+    filterVisibleTaskItems(cachedDashboard?.allTasks ?? cachedDashboard?.tasks ?? [])
+  );
+  const [allTaskItems, setAllTaskItems] = useState(() =>
+    Array.isArray(cachedDashboard?.allTasks) ? cachedDashboard.allTasks : null
   );
   const [pipelineProfile, setPipelineProfile] = useState(() => cachedDashboard?.profile ?? null);
-  const [availableTags, setAvailableTags] = useState([]);
+  const [availableTags, setAvailableTags] = useState(() => cachedDashboard?.availableTags ?? []);
   const [taskFeedbackStates, setTaskFeedbackStates] = useState({});
   const [taskTagUpdateStates, setTaskTagUpdateStates] = useState({});
   const [taskEditStates, setTaskEditStates] = useState({});
@@ -980,15 +983,11 @@ export default function Home() {
   }
 
   function setVisibleTasks(items) {
-    setDashboardItems(Array.isArray(items) ? items : []);
+    setTasks(filterVisibleTaskItems(items));
   }
 
-  const tasks = useMemo(
-    () => filterVisibleTaskItems(dashboardItems),
-    [dashboardItems]
-  );
-
   function applyDashboardSnapshot(dashboard) {
+    setAllTaskItems(dashboard.items ?? []);
     setUser(dashboard.user);
     setVisibleTasks(dashboard.items ?? []);
     setPipelineProfile(dashboard.profile ?? null);
@@ -1002,11 +1001,14 @@ export default function Home() {
       const currentUserId = getStoredUserId();
       const cached = readDashboardCache(currentUserId);
       if (cached) {
+        const cachedItems = cached.allTasks ?? cached.tasks ?? [];
         if (cached.user) {
           setUser(cached.user);
         }
-        setVisibleTasks(cached.tasks ?? []);
+        setAllTaskItems(cached.allTasks ?? null);
+        setVisibleTasks(cachedItems);
         setPipelineProfile(cached.profile ?? null);
+        setAvailableTags(cached.availableTags ?? []);
       }
 
       try {
@@ -1063,11 +1065,12 @@ export default function Home() {
     }
     writeDashboardCache(user.userId, {
       user,
-      tasks: dashboardItems,
+      tasks,
+      allTasks: allTaskItems ?? undefined,
       profile: pipelineProfile,
       availableTags,
     });
-  }, [availableTags, dashboardItems, pipelineProfile, user]);
+  }, [allTaskItems, availableTags, pipelineProfile, tasks, user]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1129,7 +1132,7 @@ export default function Home() {
           setPipelineProfile(latestProfile);
         }
         if (result.items) {
-          setVisibleTasks(result.items);
+          updateTaskListFromResponse(result);
         }
         setTaskStatus(
           next.action === "WRONG_PRIORITY"
@@ -1153,7 +1156,7 @@ export default function Home() {
           if (cancelled) {
             return;
           }
-          setVisibleTasks(taskPayload.items ?? []);
+          updateTaskListFromResponse(taskPayload);
           setPipelineProfile(profilePayload);
         } catch {
           // Keep the optimistic state if recovery fetch also fails.
@@ -1186,6 +1189,7 @@ export default function Home() {
 
   function updateTaskListFromResponse(result) {
     if (result?.items) {
+      setAllTaskItems(result.items);
       setVisibleTasks(result.items);
     }
     if (result?.profile) {
@@ -1196,8 +1200,13 @@ export default function Home() {
     }
   }
 
+  function updateTaskCollections(mutateItems) {
+    setTasks((current) => filterVisibleTaskItems(mutateItems(current)));
+    setAllTaskItems((current) => (Array.isArray(current) ? mutateItems(current) : current));
+  }
+
   function applyLocalFeedback(canonicalTaskId, action, direction) {
-    setDashboardItems((current) => {
+    updateTaskCollections((current) => {
       const selectedTask = current.find((task) => task.canonical_task_id === canonicalTaskId);
       if (!selectedTask) {
         return current;
@@ -1227,7 +1236,7 @@ export default function Home() {
   }
 
   function applyLocalTagUpdate(canonicalTaskId, nextTags) {
-    setDashboardItems((current) =>
+    updateTaskCollections((current) =>
       current.map((task) =>
         task.canonical_task_id === canonicalTaskId
           ? { ...task, tags: nextTags }
@@ -1261,14 +1270,19 @@ export default function Home() {
     const previousTasks = tasks;
     try {
       const result = await syncPrioritizedTasks();
-      setVisibleTasks(result.items ?? []);
-      setAvailableTags(result.availableTags ?? []);
+      updateTaskListFromResponse(result);
       setTaskFeedbackStates({});
       setTaskTagUpdateStates({});
       setTaskEditStates({});
       setEditingTaskId(null);
-      const latestProfile = await fetchPipelineProfile();
-      setPipelineProfile(latestProfile);
+      if (!result?.profile) {
+        try {
+          const latestProfile = await fetchPipelineProfile();
+          setPipelineProfile(latestProfile);
+        } catch {
+          // Keep the latest queue changes visible even if the profile refresh misses a cycle.
+        }
+      }
       setTaskStatus(buildSyncStatus(result, previousTasks));
     } catch (error) {
       setTaskError(error.message);
@@ -1334,7 +1348,7 @@ export default function Home() {
       setTaskError(error.message);
       try {
         const taskPayload = await fetchPrioritizedTasks();
-        setVisibleTasks(taskPayload.items ?? []);
+        updateTaskListFromResponse(taskPayload);
       } catch {
         // Keep the optimistic tag state if refresh fails.
       }
