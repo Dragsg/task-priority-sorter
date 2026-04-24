@@ -342,6 +342,213 @@ select {
   color: inherit;
 }
 
+.status-pill-neutral {
+  background: rgba(255, 248, 239, 0.92);
+  color: var(--accent-strong);
+}
+
+.status-pill-linked {
+  background: rgba(232, 243, 231, 0.98);
+  border-color: rgba(72, 96, 67, 0.18);
+  color: #486043;
+}
+
+.status-pill-live {
+  background: rgba(233, 240, 249, 0.98);
+  border-color: rgba(70, 106, 153, 0.2);
+  color: #34557f;
+}
+
+.status-pill-idle {
+  background: rgba(247, 241, 231, 0.98);
+  border-color: rgba(146, 89, 29, 0.16);
+  color: #92591d;
+}
+
+.linking-hero {
+  display: grid;
+  gap: 22px;
+}
+
+.linking-summary-card,
+.connection-card,
+.advanced-toggle-card,
+.sync-metric-card,
+.linking-tool-card {
+  background: var(--paper);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(18px);
+}
+
+.linking-summary-card,
+.connection-card,
+.advanced-toggle-card,
+.linking-tool-card {
+  border-radius: 28px;
+}
+
+.linking-summary-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  padding: 24px 26px;
+}
+
+.linking-summary-label,
+.sync-metric-label,
+.connection-account-label {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.linking-summary-value {
+  margin: 0;
+  color: #2d241b;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.linking-summary-inline {
+  display: grid;
+  gap: 10px;
+}
+
+.linking-summary-copy {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.96rem;
+}
+
+.connection-grid,
+.advanced-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.connection-grid {
+  margin-top: 22px;
+}
+
+.connection-card {
+  display: grid;
+  gap: 20px;
+  padding: 28px;
+}
+
+.connection-card-top,
+.advanced-toggle-card,
+.advanced-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.connection-provider {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.connection-provider h2,
+.advanced-toggle-card h2,
+.advanced-section-heading h2 {
+  margin: 0;
+  color: #2d241b;
+  font-size: 1.45rem;
+  font-weight: 500;
+}
+
+.connection-provider p {
+  margin: 8px 0 0;
+  color: var(--ink-muted);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+.connection-provider-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(246, 236, 220, 0.98), rgba(239, 226, 206, 0.94));
+  color: #443224;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.connection-status-text,
+.tool-hint {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 1rem;
+}
+
+.connection-account-line {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid rgba(111, 88, 67, 0.12);
+  border-radius: 20px;
+  background: rgba(255, 252, 247, 0.88);
+}
+
+.connection-account-line strong {
+  color: #2d241b;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.connection-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.advanced-toggle-card {
+  margin-top: 24px;
+  padding: 24px 28px;
+}
+
+.advanced-details-stack {
+  display: grid;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.sync-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.sync-metric-card {
+  padding: 18px;
+  border-radius: 22px;
+}
+
+.sync-metric-value {
+  margin: 0;
+  color: #2d241b;
+  font-size: 1.08rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.linking-tool-card {
+  padding: 28px;
+}
+
 .count-pill {
   min-width: 42px;
 }
@@ -1898,6 +2105,10 @@ select {
     0 8px 18px rgba(92, 71, 46, 0.08);
 }
 
+.kanban-card-moving {
+  cursor: progress;
+}
+
 .kanban-card-expanded {
   min-height: 0;
 }
@@ -2254,6 +2465,14 @@ select {
     align-items: flex-start;
   }
 
+  .connection-card-top,
+  .advanced-toggle-card,
+  .advanced-section-heading,
+  .connection-provider {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .selector-row {
     flex-direction: column;
     align-items: flex-start;
@@ -2274,6 +2493,13 @@ select {
   }
 
   .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .linking-summary-card,
+  .connection-grid,
+  .advanced-tool-grid,
+  .sync-metrics-grid {
     grid-template-columns: 1fr;
   }
 

@@ -800,6 +800,21 @@ def _build_platform_distribution(task_cards: list[dict]) -> list[dict]:
     ]
 
 
+def _summarize_llm_provider(decisions) -> str:
+    providers = sorted(
+        {
+            str(getattr(decision, "provider", "")).strip().lower()
+            for decision in decisions
+            if getattr(decision, "provider", None)
+        }
+    )
+    if not providers:
+        return "unknown"
+    if len(providers) == 1:
+        return providers[0]
+    return ",".join(providers)
+
+
 def run_prioritization_for_user(user_id: int, limit: int | None = None) -> dict:
     return _run_pipeline_from_stored_messages(user_id, limit=limit, refresh_sources=True)
 
@@ -913,10 +928,11 @@ def _run_pipeline_from_stored_messages(
         _set_cached_value(_PROFILE_CACHE, user_id, bundle.profile.model_dump(mode="json"))
 
     logger.info(
-        "Ran prioritization pipeline for user_id=%s emails=%s cards=%s run_id=%s",
+        "Ran prioritization pipeline for user_id=%s emails=%s cards=%s provider=%s run_id=%s",
         user_id,
         len(raw_messages),
         len(bundle.task_cards),
+        _summarize_llm_provider(bundle.decisions),
         bundle.run_id,
     )
     return {
