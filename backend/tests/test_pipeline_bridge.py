@@ -1,13 +1,84 @@
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from app.pipeline_bridge import (
     get_task_statistics_snapshot,
     refresh_linked_email_sources,
+    _run_pipeline_from_stored_messages,
 )
+from pipeline.models import TaskStatus
 
 
 class PipelineBridgeTestCase(unittest.TestCase):
+    @patch("app.pipeline_bridge.logger")
+    @patch("app.pipeline_bridge.get_available_tags")
+    @patch("app.pipeline_bridge._build_dashboard_items")
+    @patch("app.pipeline_bridge._row_to_raw_message")
+    @patch("app.pipeline_bridge.list_stored_messages")
+    @patch("app.pipeline_bridge.get_pipeline_repository")
+    @patch("app.pipeline_bridge.get_priority_pipeline")
+    @patch("app.pipeline_bridge.sync_onboarding_context")
+    def test_run_pipeline_from_stored_messages_counts_new_non_rejected_task_cards(
+        self,
+        sync_onboarding_context,
+        get_priority_pipeline,
+        get_pipeline_repository,
+        list_stored_messages,
+        row_to_raw_message,
+        build_dashboard_items,
+        get_available_tags,
+        logger,
+    ):
+        repository = MagicMock()
+        pipeline = get_priority_pipeline.return_value
+        get_pipeline_repository.return_value = repository
+        list_stored_messages.return_value = [{"id": "m1"}, {"id": "m2"}, {"id": "m3"}]
+        row_to_raw_message.side_effect = ["raw-1", "raw-2", "raw-3"]
+        build_dashboard_items.return_value = [
+            {"canonical_task_id": "old-open", "status": "pending_review"},
+            {"canonical_task_id": "old-completed", "status": "completed"},
+            {"canonical_task_id": "run-open", "status": "pending_review"},
+            {"canonical_task_id": "run-completed", "status": "completed"},
+        ]
+        get_available_tags.return_value = ["assignment"]
+        pipeline.run_messages.return_value = SimpleNamespace(
+            run_id="run-1",
+            profile=None,
+            decisions=[],
+            signals=["signal-1", "signal-2"],
+            canonical_tasks=["task-1"],
+            task_cards=[
+                SimpleNamespace(canonical_task_id="run-open", status=TaskStatus.PENDING_REVIEW),
+                SimpleNamespace(canonical_task_id="run-rejected", status=TaskStatus.PENDING_REVIEW),
+                SimpleNamespace(canonical_task_id="run-completed", status=TaskStatus.PENDING_REVIEW),
+            ],
+        )
+        repository.get_feedback_task_context.side_effect = [
+            SimpleNamespace(status=TaskStatus.PENDING_REVIEW),
+            SimpleNamespace(status=TaskStatus.REJECTED),
+            SimpleNamespace(status=TaskStatus.COMPLETED),
+        ]
+
+        result = _run_pipeline_from_stored_messages(14, refresh_sources=False)
+
+        sync_onboarding_context.assert_called_once_with(14)
+        pipeline.run_messages.assert_called_once_with("14", ["raw-1", "raw-2", "raw-3"])
+        self.assertEqual(result["rawMessageCount"], 3)
+        self.assertEqual(result["signalCount"], 2)
+        self.assertEqual(result["canonicalTaskCount"], 1)
+        self.assertEqual(result["taskCardCount"], 1)
+        self.assertEqual(result["items"], build_dashboard_items.return_value)
+        logger.info.assert_called_once_with(
+            "Prioritization run user_id=%s emails_scanned=%s non_task_emails=%s new_cards=%s provider=%s run_id=%s",
+            14,
+            3,
+            1,
+            1,
+            "unknown",
+            "run-1",
+        )
+
     @patch("app.pipeline_bridge.list_new_outlook_messages")
     @patch("app.pipeline_bridge.list_recent_outlook_messages")
     @patch("app.pipeline_bridge.list_new_messages")
