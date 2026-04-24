@@ -92,6 +92,12 @@ def _invalidate_dashboard_cache(user_id: int) -> None:
         _PROFILE_CACHE.pop(user_id, None)
 
 
+def clear_user_runtime_state(user_id: int) -> None:
+    _invalidate_dashboard_cache(user_id)
+    with _RECOMPUTE_LOCK:
+        _RECOMPUTE_STATES.pop(user_id, None)
+
+
 def _update_cached_tasks_after_remove(user_id: int, canonical_task_id: str) -> None:
     with _DASHBOARD_CACHE_LOCK:
         entry = _TASK_CACHE.get(user_id)
@@ -239,6 +245,23 @@ def _build_static_onboarding_preferences(user: dict | None) -> dict:
     return static_preferences
 
 
+def _get_profile_seed_context(
+    repository: SqlAlchemyPipelineRepository,
+    user_id: int,
+    *,
+    user: dict[str, Any] | None = None,
+) -> OnboardingContext:
+    pipeline_user_id = str(user_id)
+    context = repository.get_onboarding_context(pipeline_user_id) or OnboardingContext(user_id=pipeline_user_id)
+    expected_static_preferences = {
+        **dict(context.static_preferences),
+        **_build_static_onboarding_preferences(user or get_user_by_id(user_id)),
+    }
+    if expected_static_preferences != dict(context.static_preferences):
+        context = context.model_copy(update={"static_preferences": expected_static_preferences})
+    return context
+
+
 def sync_onboarding_context(user_id: int) -> dict:
     repository = get_pipeline_repository()
     pipeline_user_id = str(user_id)
@@ -262,15 +285,9 @@ def sync_onboarding_context(user_id: int) -> dict:
 
 def get_onboarding_context_snapshot(user_id: int, *, user: dict[str, Any] | None = None) -> dict:
     repository = get_pipeline_repository()
-    pipeline_user_id = str(user_id)
-    context = repository.get_onboarding_context(pipeline_user_id) or OnboardingContext(user_id=pipeline_user_id)
-    user = user or get_user_by_id(user_id)
-    expected_static_preferences = {
-        **dict(context.static_preferences),
-        **_build_static_onboarding_preferences(user),
-    }
-    if expected_static_preferences != dict(context.static_preferences):
-        context = context.model_copy(update={"static_preferences": expected_static_preferences})
+    context = _get_profile_seed_context(repository, user_id, user=user)
+    persisted = repository.get_onboarding_context(str(user_id))
+    if persisted is None or dict(persisted.static_preferences) != dict(context.static_preferences):
         repository.save_onboarding_context(context)
     return context.model_dump(mode="json")
 
@@ -353,8 +370,13 @@ def _resolve_feedback_profile_inputs(
     feedback_context,
 ) -> tuple[PriorityPipeline, str, BehaviorProfile, str | None]:
     pipeline = get_priority_pipeline()
+    repository = get_pipeline_repository()
     pipeline_user_id = str(user_id)
-    profile = feedback_context.profile or pipeline.profile_service.create_default_profile(pipeline_user_id)
+    onboarding = _get_profile_seed_context(repository, user_id)
+    profile = feedback_context.profile or pipeline.profile_service.create_default_profile(
+        pipeline_user_id,
+        onboarding,
+    )
     sender_hash = None
     for sender_id in feedback_context.task.sender_ids:
         if sender_id:
@@ -613,7 +635,11 @@ def get_profile_snapshot(user_id: int) -> dict:
         return cached
     repository = get_pipeline_repository()
     pipeline = get_priority_pipeline()
-    profile = repository.get_behavior_profile(str(user_id)) or pipeline.profile_service.create_default_profile(str(user_id))
+    onboarding = _get_profile_seed_context(repository, user_id)
+    profile = repository.get_behavior_profile(str(user_id)) or pipeline.profile_service.create_default_profile(
+        str(user_id),
+        onboarding,
+    )
     payload = profile.model_dump(mode="json")
     _set_cached_value(_PROFILE_CACHE, user_id, payload)
     return payload
@@ -834,7 +860,7 @@ def create_manual_task(
                 "source_id": source_id,
                 "thread_id": source_id,
                 "timestamp_iso": now_sgt().isoformat(),
-                "sender_display": user["name"] if user else "You",
+                "sender_display": user["username"] if user else "You",
                 "sender_email": None,
                 "subject": cleaned_title,
                 "snippet": cleaned_description or cleaned_title,

@@ -234,19 +234,71 @@ def _merge_windows(windows: list[tuple[datetime, datetime, str | None]]) -> list
     return merged
 
 
-def _derive_recurring_notes(windows: list[tuple[datetime, datetime, str | None]]) -> list[str]:
-    grouped: dict[tuple[int, str, str], int] = defaultdict(int)
+def _classify_daypart(hour: int) -> str:
+    if hour < 12:
+        return "morning"
+    if hour < 18:
+        return "afternoon"
+    return "evening"
+
+
+def _collect_schedule_statistics(windows: list[tuple[datetime, datetime, str | None]]) -> dict[str, Any] | None:
+    if not windows:
+        return None
+
+    weekday_minutes = Counter()
+    daypart_minutes = Counter()
+    weekday_slot_minutes: dict[int, Counter[tuple[str, str]]] = defaultdict(Counter)
+
     for start, end, _label in windows:
-        key = (start.weekday(), start.strftime("%H:%M"), end.strftime("%H:%M"))
-        grouped[key] += 1
+        minutes = max(int((end - start).total_seconds() // 60), 0)
+        if minutes <= 0:
+            continue
+
+        weekday = start.weekday()
+        start_label = start.strftime("%H:%M")
+        end_label = end.strftime("%H:%M")
+        weekday_minutes[weekday] += minutes
+        weekday_slot_minutes[weekday][(start_label, end_label)] += minutes
+        daypart_minutes[_classify_daypart(start.hour)] += minutes
+
+    if not weekday_minutes:
+        return None
+
+    busiest_days = [weekday for weekday, _minutes in weekday_minutes.most_common(2)]
+    busiest_days = sorted(busiest_days)
+    calmest_daypart = min(
+        ("morning", "afternoon", "evening"),
+        key=lambda key: daypart_minutes.get(key, 0),
+    )
+
+    return {
+        "busiest_days": busiest_days,
+        "calmest_daypart": calmest_daypart,
+        "weekday_slot_minutes": weekday_slot_minutes,
+    }
+
+
+def _derive_recurring_notes(windows: list[tuple[datetime, datetime, str | None]]) -> list[str]:
+    stats = _collect_schedule_statistics(windows)
+    if not stats:
+        return []
 
     notes: list[str] = []
-    for (weekday, start_label, end_label), count in sorted(grouped.items(), key=lambda item: (-item[1], item[0][0], item[0][1])):
-        if count < 2:
+    weekday_slot_minutes = stats["weekday_slot_minutes"]
+
+    for weekday in stats["busiest_days"]:
+        slot_minutes = weekday_slot_minutes.get(weekday)
+        if not slot_minutes:
             continue
-        notes.append(f"{_WEEKDAY_NAMES[weekday]} usually stays busy around {start_label}-{end_label}.")
-        if len(notes) >= 5:
-            break
+        start_label, end_label = slot_minutes.most_common(1)[0][0]
+        notes.append(
+            f"{_WEEKDAY_NAMES[weekday]} is typically busiest around {start_label}-{end_label}."
+        )
+
+    notes.append(
+        f"{stats['calmest_daypart'].capitalize()}s are usually the most open."
+    )
     return notes
 
 
@@ -259,23 +311,14 @@ def _build_timetable_summary(
     if not windows:
         return f"No busy calendar windows detected in the next {lookahead_days} days."
 
-    weekday_minutes = Counter()
-    daypart_minutes = Counter()
-    for start, end, _label in windows:
-        minutes = max(int((end - start).total_seconds() // 60), 0)
-        weekday_minutes[start.weekday()] += minutes
-        midpoint_hour = start.hour
-        if midpoint_hour < 12:
-            daypart_minutes["morning"] += minutes
-        elif midpoint_hour < 18:
-            daypart_minutes["afternoon"] += minutes
-        else:
-            daypart_minutes["evening"] += minutes
+    stats = _collect_schedule_statistics(windows)
+    if not stats:
+        return f"No busy calendar windows detected in the next {lookahead_days} days."
 
-    busiest_days = [weekday for weekday, _minutes in weekday_minutes.most_common(2)]
-    busiest_days = sorted(busiest_days)
-    calmest_daypart = min(("morning", "afternoon", "evening"), key=lambda key: daypart_minutes.get(key, 0))
-    busiest_label = " and ".join(_WEEKDAY_NAMES[index] for index in busiest_days)
+    busiest_label = " and ".join(_WEEKDAY_NAMES[index] for index in stats["busiest_days"])
     if uses_recurring_reference:
-        return f"Regular schedule is busiest on {busiest_label}; {calmest_daypart}s are usually the most open."
-    return f"Busiest on {busiest_label}; {calmest_daypart}s look the most open."
+        return (
+            f"Regular schedule is busiest on {busiest_label}; "
+            f"{stats['calmest_daypart']}s are usually the most open."
+        )
+    return f"Busiest on {busiest_label}; {stats['calmest_daypart']}s look the most open."

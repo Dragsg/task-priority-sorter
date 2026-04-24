@@ -95,11 +95,11 @@ async function sendJson(path, options = {}) {
   return readJson(response);
 }
 
-export async function signUp({ username, password, name }) {
+export async function signUp({ username, password }) {
   return sendJson("/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password, name }),
+    body: JSON.stringify({ username, password }),
   });
 }
 
@@ -117,6 +117,24 @@ export async function fetchCurrentUser() {
   });
   storeUser(user);
   return user;
+}
+
+export async function updateCurrentUser({ username }) {
+  const payload = await sendJson("/user", {
+    method: "PATCH",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ username }),
+  });
+  storeUser(payload.user);
+  return payload;
+}
+
+export async function deleteCurrentUser({ username }) {
+  return sendJson("/user", {
+    method: "DELETE",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ username }),
+  });
 }
 
 export async function fetchDashboardBootstrap() {

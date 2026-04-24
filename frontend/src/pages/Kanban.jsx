@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
@@ -529,6 +529,7 @@ function TaskEditModal({
 }
 
 function KanbanCard({
+  isExpanded,
   task,
   isDragging,
   isSaving,
@@ -536,6 +537,7 @@ function KanbanCard({
   onDragEnd,
   onEditOpen,
   onDelete,
+  onToggleExpanded,
   onToggleCompleted,
 }) {
   const visibleTags = getVisibleTaskTags(task);
@@ -549,7 +551,7 @@ function KanbanCard({
 
   return (
     <article
-      className={`kanban-card task-card task-card-tier-${task.priority_tier.toLowerCase()}${isCompleted ? " kanban-card-completed" : ""}${isDragging ? " kanban-card-dragging" : ""}`}
+      className={`kanban-card task-card task-card-tier-${task.priority_tier.toLowerCase()}${isCompleted ? " kanban-card-completed" : ""}${isDragging ? " kanban-card-dragging" : ""}${isExpanded ? " kanban-card-expanded" : ""}`}
       draggable={!isSaving}
       onDragEnd={onDragEnd}
       onDragStart={(event) => onDragStart(event, task)}
@@ -568,17 +570,30 @@ function KanbanCard({
         <h3 className="task-title kanban-card-title">
           {cleanPreviewText(task.task_title) || "Untitled task"}
         </h3>
-        {sourceContext ? <p className="kanban-card-context">{sourceContext}</p> : null}
         {preview ? (
           <div className="kanban-card-summary-block">
             <p className="task-summary-label">Summary</p>
             <p className="kanban-card-preview">{preview}</p>
           </div>
         ) : null}
-        {sourcePreview && sourcePreview !== preview ? (
-          <p className="kanban-card-email-note">
-            <span>Original email:</span> {sourcePreview}
-          </p>
+        {isExpanded ? (
+          <div className="kanban-card-expanded-content">
+            {sourceContext ? <p className="kanban-card-context">{sourceContext}</p> : null}
+            {sourcePreview && sourcePreview !== preview ? (
+              <p className="kanban-card-email-note">
+                <span>Original email:</span> {sourcePreview}
+              </p>
+            ) : null}
+            {visibleTags.length ? (
+              <div className="task-tag-list kanban-tag-list">
+                {visibleTags.map((tag) => (
+                  <span className="task-tag-chip" key={tag}>
+                    {tag.replace(/_/g, " ")}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
@@ -590,17 +605,16 @@ function KanbanCard({
           ) : null}
         </div>
 
-        {visibleTags.length ? (
-          <div className="task-tag-list kanban-tag-list">
-            {visibleTags.map((tag) => (
-              <span className="task-tag-chip" key={tag}>
-                {tag.replace(/_/g, " ")}
-              </span>
-            ))}
-          </div>
-        ) : null}
-
         <div className="kanban-card-actions">
+          <button
+            aria-expanded={isExpanded}
+            className="kanban-action-button kanban-action-button-quiet"
+            disabled={isSaving}
+            onClick={() => onToggleExpanded(task.canonical_task_id)}
+            type="button"
+          >
+            {isExpanded ? "Collapse" : "Expand"}
+          </button>
           <button
             className="kanban-action-button"
             disabled={isSaving}
@@ -641,6 +655,7 @@ function KanbanColumn({
   ...cardProps
 }) {
   const isDropTarget = dragState.overTier === column.value;
+  const isDragging = dragState.taskId !== null;
 
   return (
     <section
@@ -663,6 +678,7 @@ function KanbanColumn({
         {tasks.length ? (
           tasks.map((task) => (
             <KanbanCard
+              isExpanded={Boolean(cardProps.expandedTaskIds[task.canonical_task_id])}
               isDragging={dragState.taskId === task.canonical_task_id}
               isSaving={Boolean(cardProps.savingStates[task.canonical_task_id])}
               key={task.canonical_task_id}
@@ -670,6 +686,7 @@ function KanbanColumn({
               onDragEnd={cardProps.onDragEnd}
               onDragStart={cardProps.onDragStart}
               onEditOpen={cardProps.onEditOpen}
+              onToggleExpanded={cardProps.onToggleExpanded}
               onToggleCompleted={cardProps.onToggleCompleted}
               task={task}
             />
@@ -680,6 +697,12 @@ function KanbanColumn({
             <p className="panel-copy">Drag a card here or adjust the filters above.</p>
           </div>
         )}
+        <div
+          aria-hidden="true"
+          className={`kanban-column-dropzone${isDropTarget ? " kanban-column-dropzone-active" : ""}${isDragging ? " kanban-column-dropzone-visible" : ""}`}
+        >
+          Drop task here
+        </div>
       </div>
     </section>
   );
@@ -708,6 +731,8 @@ export default function Kanban() {
     fromTier: null,
     overTier: null,
   });
+  const [expandedTaskIds, setExpandedTaskIds] = useState({});
+  const dragPreviewRef = useRef(null);
 
   useEffect(() => {
     async function loadBoard() {
@@ -869,9 +894,49 @@ export default function Kanban() {
     );
   }
 
+  function createDragPreview(cardElement) {
+    if (typeof document === "undefined" || !cardElement) {
+      return null;
+    }
+
+    const preview = cardElement.cloneNode(true);
+    preview.style.position = "fixed";
+    preview.style.top = "-9999px";
+    preview.style.left = "-9999px";
+    preview.style.width = `${cardElement.offsetWidth}px`;
+    preview.style.pointerEvents = "none";
+    preview.style.margin = "0";
+    preview.style.transform = "rotate(1.5deg) scale(1.02)";
+    preview.style.boxShadow = "0 20px 42px rgba(92, 71, 46, 0.22)";
+    preview.style.opacity = "0.98";
+    preview.style.zIndex = "9999";
+    preview.classList.add("kanban-card-drag-preview");
+    document.body.appendChild(preview);
+    dragPreviewRef.current = preview;
+    return preview;
+  }
+
+  function cleanupDragPreview() {
+    if (dragPreviewRef.current?.parentNode) {
+      dragPreviewRef.current.parentNode.removeChild(dragPreviewRef.current);
+    }
+    dragPreviewRef.current = null;
+  }
+
+  function handleToggleExpanded(canonicalTaskId) {
+    setExpandedTaskIds((current) => ({
+      ...current,
+      [canonicalTaskId]: !current[canonicalTaskId],
+    }));
+  }
+
   function handleDragStart(event, task) {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", task.canonical_task_id);
+    const preview = createDragPreview(event.currentTarget);
+    if (preview) {
+      event.dataTransfer.setDragImage(preview, 24, 24);
+    }
     setDragState({
       taskId: task.canonical_task_id,
       fromTier: task.priority_tier,
@@ -882,6 +947,7 @@ export default function Kanban() {
   }
 
   function handleDragEnd() {
+    cleanupDragPreview();
     setDragState({ taskId: null, fromTier: null, overTier: null });
   }
 
@@ -906,6 +972,7 @@ export default function Kanban() {
     const selectedTask = tasks.find((task) => task.canonical_task_id === canonicalTaskId);
     const previousTasks = tasks;
 
+    cleanupDragPreview();
     setDragState({ taskId: null, fromTier: null, overTier: null });
 
     if (!selectedTask || selectedTask.priority_tier === priorityTier) {
@@ -1008,6 +1075,8 @@ export default function Kanban() {
       clearTaskBusy(task.canonical_task_id);
     }
   }
+
+  useEffect(() => cleanupDragPreview, []);
 
   if (loading) {
     return <main className="simple-shell">Loading your Kanban board...</main>;
@@ -1136,7 +1205,9 @@ export default function Kanban() {
                 onDragStart={handleDragStart}
                 onDrop={handlePriorityDrop}
                 onEditOpen={openTaskEditor}
+                onToggleExpanded={handleToggleExpanded}
                 onToggleCompleted={handleToggleCompleted}
+                expandedTaskIds={expandedTaskIds}
                 savingStates={savingStates}
                 tasks={groupedTasks[column.value]}
               />

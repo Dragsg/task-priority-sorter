@@ -555,6 +555,38 @@ select {
   margin-top: 14px;
 }
 
+.onboarding-progress-panel {
+  margin-bottom: 24px;
+}
+
+.onboarding-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.onboarding-progress-track {
+  width: 100%;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(111, 88, 67, 0.12);
+  overflow: hidden;
+}
+
+.onboarding-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6f5843, #9b7b5d);
+  transition: width 180ms ease;
+}
+
+.onboarding-calendar-input {
+  display: none;
+}
+
 .option-row {
   display: flex;
   align-items: flex-start;
@@ -858,10 +890,11 @@ select {
 .calendar-summary,
 .calendar-notes {
   margin-top: 16px;
-  padding: 14px 16px;
-  border: 1px solid var(--border-soft);
-  border-radius: 18px;
-  background: rgba(255, 251, 244, 0.68);
+  padding: 18px 20px;
+  border: 1px solid rgba(111, 88, 67, 0.14);
+  border-radius: 22px;
+  background: rgba(255, 252, 247, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .calendar-upload-form {
@@ -870,8 +903,88 @@ select {
   margin-top: 18px;
 }
 
+.calendar-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.calendar-detail-card {
+  padding: 14px 16px;
+  border: 1px solid rgba(111, 88, 67, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 249, 241, 0.88);
+}
+
+.calendar-detail-card-wide {
+  grid-column: 1 / -1;
+}
+
+.calendar-detail-label {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.calendar-detail-value {
+  margin: 0;
+  color: #2d241b;
+  font-size: 0.98rem;
+  line-height: 1.5;
+}
+
+.calendar-detail-value-soft {
+  color: #4a3d31;
+}
+
+.calendar-notes-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.calendar-notes-count {
+  margin: 0;
+  color: var(--ink-muted);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.calendar-note-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.calendar-note-item {
+  padding: 12px 14px;
+  border: 1px solid rgba(111, 88, 67, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 249, 241, 0.82);
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
 .auth-file-input {
   padding: 12px 16px;
+}
+
+@media (max-width: 720px) {
+  .calendar-detail-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .home-link {
@@ -880,6 +993,60 @@ select {
 
 .danger-button {
   color: #8a3028;
+}
+
+.auth-button.danger-button {
+  background: linear-gradient(180deg, #f6e2dd 0%, #efcfc7 100%);
+  border-color: rgba(138, 48, 40, 0.22);
+  color: #8a3028;
+}
+
+.auth-button.danger-button:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f9e8e3 0%, #f2d7d0 100%);
+  border-color: rgba(138, 48, 40, 0.3);
+}
+
+.danger-panel {
+  border-color: rgba(138, 48, 40, 0.16);
+  background: rgba(252, 240, 236, 0.82);
+}
+
+.danger-panel-note {
+  padding: 14px 16px;
+  border: 1px solid rgba(138, 48, 40, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 248, 246, 0.94);
+  color: #5a3028;
+  line-height: 1.5;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(45, 36, 27, 0.34);
+  backdrop-filter: blur(4px);
+}
+
+.confirm-dialog {
+  width: min(100%, 560px);
+  padding: 24px;
+  border: 1px solid rgba(138, 48, 40, 0.16);
+  border-radius: 28px;
+  background: rgba(255, 249, 245, 0.98);
+  box-shadow: 0 28px 56px rgba(68, 44, 33, 0.18);
+}
+
+.confirm-dialog-title {
+  margin: 0 0 14px;
+  color: #2d241b;
+}
+
+.confirm-dialog-actions {
+  justify-content: flex-end;
 }
 
 .tasks-section {
@@ -1631,7 +1798,7 @@ select {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 20px;
   margin-top: 28px;
-  align-items: start;
+  align-items: stretch;
   min-width: 0;
 }
 
@@ -1640,6 +1807,7 @@ select {
   flex-direction: column;
   gap: 16px;
   min-height: 420px;
+  height: 100%;
   padding: 18px;
   border: 1px solid var(--border-soft);
   border-radius: 28px;
@@ -1676,6 +1844,8 @@ select {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  flex: 1 1 auto;
+  min-height: 220px;
   min-width: 0;
 }
 
@@ -1691,12 +1861,21 @@ select {
   flex-direction: column;
   gap: 14px;
   padding: 18px 18px 16px;
+  min-height: 310px;
   min-width: 0;
   overflow: hidden;
   background: rgba(255, 252, 247, 0.96);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.58),
     0 12px 30px rgba(92, 71, 46, 0.06);
+  cursor: grab;
+  user-select: none;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
 }
 
 .kanban-card-completed {
@@ -1704,8 +1883,27 @@ select {
   background: rgba(247, 243, 235, 0.96);
 }
 
+.kanban-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.58),
+    0 16px 36px rgba(92, 71, 46, 0.1);
+}
+
 .kanban-card-dragging {
-  opacity: 0.55;
+  opacity: 0.32;
+  transform: scale(0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 8px 18px rgba(92, 71, 46, 0.08);
+}
+
+.kanban-card-expanded {
+  min-height: 0;
+}
+
+.kanban-card-drag-preview {
+  transform-origin: top left;
 }
 
 .kanban-card-top {
@@ -1741,6 +1939,7 @@ select {
 .kanban-card-content {
   display: grid;
   gap: 8px;
+  align-content: start;
   min-width: 0;
 }
 
@@ -1749,6 +1948,10 @@ select {
   font-size: 1.28rem;
   line-height: 1.18;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .kanban-card-context {
@@ -1763,11 +1966,17 @@ select {
 
 .kanban-card-summary-block {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   padding: 12px 14px;
   border: 1px solid rgba(111, 88, 67, 0.12);
   border-radius: 18px;
   background: rgba(255, 252, 247, 0.9);
+}
+
+.kanban-card-expanded-content {
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
 }
 
 .kanban-card-footer {
@@ -1783,6 +1992,14 @@ select {
   font-size: 0.92rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+
+.kanban-card-expanded .kanban-card-preview {
+  -webkit-line-clamp: unset;
 }
 
 .kanban-card-email-note {
@@ -1813,16 +2030,17 @@ select {
 }
 
 .kanban-card-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  align-items: center;
+  align-items: stretch;
 }
 
 .kanban-action-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   min-height: 38px;
   padding: 0 14px;
   border: 1px solid rgba(111, 88, 67, 0.18);
@@ -1856,6 +2074,50 @@ select {
   color: #8a3028;
   border-color: rgba(138, 48, 40, 0.18);
   background: rgba(255, 246, 244, 0.94);
+}
+
+.kanban-action-button-quiet {
+  background: rgba(249, 243, 234, 0.92);
+}
+
+.kanban-column-dropzone {
+  min-height: 0;
+  max-height: 0;
+  overflow: hidden;
+  border: 1px dashed rgba(111, 88, 67, 0.18);
+  border-radius: 20px;
+  background: rgba(255, 250, 244, 0.48);
+  color: var(--ink-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.kanban-column-dropzone-visible {
+  flex: 1 0 88px;
+  opacity: 1;
+  min-height: 88px;
+  max-height: none;
+  transform: translateY(0);
+}
+
+.kanban-column-dropzone-active {
+  border-color: rgba(111, 88, 67, 0.34);
+  background: rgba(255, 247, 236, 0.92);
+  color: var(--accent-strong);
 }
 
 .kanban-modal-backdrop {
@@ -2036,6 +2298,10 @@ select {
   .kanban-card-top,
   .kanban-modal-header {
     flex-direction: column;
+  }
+
+  .kanban-card-actions {
+    grid-template-columns: 1fr;
   }
 
   .kanban-modal-backdrop {

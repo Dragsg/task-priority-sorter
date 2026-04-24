@@ -26,6 +26,10 @@ def get_connection():
         yield connection
 
 
+def _quote_identifier(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
+
+
 def ensure_stored_emails_table():
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -529,14 +533,57 @@ def update_outlook_last_received_at(user_id: int, last_received_at):
     )
 
 
+def ensure_user_details_table():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.user_details (
+                    user_id BIGSERIAL PRIMARY KEY,
+                    username TEXT NOT NULL UNIQUE,
+                    password TEXT NOT NULL,
+                    preferences TEXT,
+                    performance_time TEXT,
+                    important_topic TEXT,
+                    prioritise_by TEXT
+                )
+                """
+            )
+            cursor.execute(
+                """
+                ALTER TABLE public.user_details
+                ADD COLUMN IF NOT EXISTS username TEXT,
+                ADD COLUMN IF NOT EXISTS password TEXT,
+                ADD COLUMN IF NOT EXISTS preferences TEXT,
+                ADD COLUMN IF NOT EXISTS performance_time TEXT,
+                ADD COLUMN IF NOT EXISTS important_topic TEXT,
+                ADD COLUMN IF NOT EXISTS prioritise_by TEXT
+                """
+            )
+            cursor.execute(
+                """
+                ALTER TABLE public.user_details
+                DROP COLUMN IF EXISTS name
+                """
+            )
+            cursor.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS user_details_username_key
+                ON public.user_details (username)
+                """
+            )
+        connection.commit()
+
+
 def get_user_by_username(username: str):
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT
                     user_id,
-                    name,
                     username,
                     password,
                     preferences,
@@ -552,13 +599,14 @@ def get_user_by_username(username: str):
 
 
 def get_user_by_id(user_id: int) -> DbRow | None:
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT
                     user_id,
-                    name,
                     username,
                     preferences,
                     performance_time,
@@ -572,32 +620,38 @@ def get_user_by_id(user_id: int) -> DbRow | None:
             return cast(DbRow | None, cursor.fetchone())
 
 
-def create_user(name: str, username: str, password_hash: str):
+def create_user(username: str, password_hash: str) -> DbRow:
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO public.user_details (name, username, password)
-                VALUES (%s, %s, %s)
+                INSERT INTO public.user_details (username, password)
+                VALUES (%s, %s)
                 RETURNING
                     user_id,
-                    name,
                     username,
                     preferences,
                     performance_time,
                     important_topic,
                     prioritise_by
                 """,
-                (name, username, password_hash),
+                (username, password_hash),
             )
             user = cast(DbRow | None, cursor.fetchone())
         connection.commit()
+
+    if user is None:
+        raise LookupError("Failed to create user.")
 
     logger.info("Created user_details row for user_id=%s username=%s", user["user_id"], username)
     return user
 
 
 def update_user_preferences(user_id: int, preferences: str) -> DbRow:
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -607,7 +661,6 @@ def update_user_preferences(user_id: int, preferences: str) -> DbRow:
                 WHERE user_id = %s
                 RETURNING
                     user_id,
-                    name,
                     username,
                     preferences,
                     performance_time,
@@ -630,13 +683,44 @@ def update_user_preferences(user_id: int, preferences: str) -> DbRow:
     return user
 
 
+def update_user_username(user_id: int, username: str) -> DbRow | None:
+    ensure_user_details_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE public.user_details
+                SET username = %s
+                WHERE user_id = %s
+                RETURNING
+                    user_id,
+                    username,
+                    preferences,
+                    performance_time,
+                    important_topic,
+                    prioritise_by
+                """,
+                (username, user_id),
+            )
+            user = cast(DbRow | None, cursor.fetchone())
+        connection.commit()
+
+    if user:
+        logger.info("Updated username for user_id=%s username=%s", user_id, username)
+
+    return user
+
+
 def update_user_onboarding_answers(
     user_id: int,
     *,
     performance_time: str,
     important_topic: str,
     prioritise_by: str,
-):
+) -> DbRow | None:
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -648,7 +732,6 @@ def update_user_onboarding_answers(
                 WHERE user_id = %s
                 RETURNING
                     user_id,
-                    name,
                     username,
                     preferences,
                     performance_time,
@@ -657,7 +740,7 @@ def update_user_onboarding_answers(
                 """,
                 (performance_time, important_topic, prioritise_by, user_id),
             )
-            user = cursor.fetchone()
+            user = cast(DbRow | None, cursor.fetchone())
         connection.commit()
 
     logger.info(
@@ -668,3 +751,54 @@ def update_user_onboarding_answers(
         prioritise_by,
     )
     return user
+
+
+def delete_user_account(user_id: int) -> None:
+    ensure_user_details_table()
+    ensure_gmail_link_table()
+    ensure_outlook_link_table()
+    ensure_stored_emails_table()
+
+    deleted_tables: list[str] = []
+    user_id_text = str(user_id)
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT columns.table_schema, columns.table_name
+                FROM information_schema.columns AS columns
+                INNER JOIN information_schema.tables AS tables
+                    ON tables.table_schema = columns.table_schema
+                   AND tables.table_name = columns.table_name
+                WHERE columns.table_schema = 'public'
+                  AND columns.column_name = 'user_id'
+                  AND tables.table_type = 'BASE TABLE'
+                ORDER BY CASE WHEN columns.table_name = 'user_details' THEN 1 ELSE 0 END, columns.table_name
+                """
+            )
+            table_rows = cast(list[DbRow], cursor.fetchall())
+
+            for row in table_rows:
+                table_schema = str(row["table_schema"])
+                table_name = str(row["table_name"])
+                qualified_table = f"{_quote_identifier(table_schema)}.{_quote_identifier(table_name)}"
+                if table_name == "user_details":
+                    cursor.execute(
+                        f"DELETE FROM {qualified_table} WHERE user_id = %s",
+                        (user_id,),
+                    )
+                else:
+                    cursor.execute(
+                        f"DELETE FROM {qualified_table} WHERE CAST(user_id AS TEXT) = %s",
+                        (user_id_text,),
+                    )
+                if cursor.rowcount:
+                    deleted_tables.append(f"{table_schema}.{table_name}")
+        connection.commit()
+
+    logger.info(
+        "Deleted account data for user_id=%s across tables=%s",
+        user_id,
+        ", ".join(deleted_tables) if deleted_tables else "none",
+    )

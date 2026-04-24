@@ -87,7 +87,11 @@ class PipelineApiService:
         return len(aliases)
 
     def get_profile(self, user_id: str) -> BehaviorProfile:
-        return self.repository.get_behavior_profile(user_id) or self.pipeline.profile_service.create_default_profile(user_id)
+        onboarding = self.repository.get_onboarding_context(user_id) or OnboardingContext(user_id=user_id)
+        return self.repository.get_behavior_profile(user_id) or self.pipeline.profile_service.create_default_profile(
+            user_id,
+            onboarding,
+        )
 
     def get_onboarding_context(self, user_id: str) -> OnboardingContext:
         return self.repository.get_onboarding_context(user_id) or OnboardingContext(user_id=user_id)
@@ -111,7 +115,11 @@ class PipelineApiService:
             raise LookupError(f"No current task found for canonical_task_id={canonical_task_id!r}")
 
         task_context = feedback_context.task
-        profile = feedback_context.profile or self.pipeline.profile_service.create_default_profile(user_id)
+        onboarding = self.repository.get_onboarding_context(user_id) or OnboardingContext(user_id=user_id)
+        profile = feedback_context.profile or self.pipeline.profile_service.create_default_profile(
+            user_id,
+            onboarding,
+        )
         sender_hash = self._sender_hash_for_task(profile, task_context.sender_ids)
         event = FeedbackEvent(
             user_id=user_id,

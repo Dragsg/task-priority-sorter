@@ -1,5 +1,7 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from secrets import token_urlsafe
+from threading import Thread
 from urllib.parse import urlencode
 
 import bcrypt
@@ -10,13 +12,16 @@ from config import Config
 from .background_sync import get_background_sync_status
 from .db import (
     create_user,
+    delete_user_account,
     get_gmail_link,
     get_outlook_link,
     get_user_by_username,
     get_user_by_id,
     update_user_onboarding_answers,
+    update_user_username,
 )
 from .pipeline_bridge import (
+    clear_user_runtime_state,
     create_manual_task,
     get_available_tags,
     get_onboarding_context_snapshot,
@@ -36,13 +41,11 @@ from .pipeline_bridge import (
 from .account_utils import (
     normalize_username,
     normalize_important_topic,
-    normalize_name,
     normalize_performance_time,
     normalize_prioritise_by,
     serialize_user,
     validate_username,
     validate_important_topic,
-    validate_name,
     validate_password,
     validate_performance_time,
     validate_prioritise_by,
@@ -62,6 +65,7 @@ from .outlook_service import (
 
 api = Blueprint("api", __name__)
 ALLOWED_RECENT_LIMITS = {5, 10, 20, 50, 100}
+logger = logging.getLogger(__name__)
 
 
 def build_token(user_id: int) -> str:
@@ -108,17 +112,32 @@ def get_recent_limit() -> int:
     return limit
 
 
+def _run_user_account_deletion(user_id: int) -> None:
+    try:
+        delete_user_account(user_id)
+        clear_user_runtime_state(user_id)
+    except Exception:  # pragma: no cover - background failure path
+        logger.exception("Background account deletion failed for user_id=%s", user_id)
+
+
+def _start_user_account_deletion(user_id: int) -> None:
+    Thread(
+        target=_run_user_account_deletion,
+        args=(user_id,),
+        name=f"delete-user-{user_id}",
+        daemon=True,
+    ).start()
+
+
 @api.post("/signup")
 def signup():
     try:
         data = request.get_json() or {}
         username = normalize_username(data.get("username"))
         password = data.get("password") or ""
-        name = normalize_name(data.get("name"))
 
         validate_username(username)
         validate_password(password)
-        validate_name(name)
 
         existing_user = get_user_by_username(username)
         if existing_user:
@@ -128,7 +147,7 @@ def signup():
             password.encode("utf-8"),
             bcrypt.gensalt(),
         ).decode("utf-8")
-        user = create_user(name=name, username=username, password_hash=password_hash)
+        user = create_user(username=username, password_hash=password_hash)
         token = build_token(user["user_id"])
     except ValueError as error:
         return jsonify({"success": False, "error": str(error)}), 422
@@ -194,6 +213,58 @@ def current_user():
     return jsonify(serialize_user(user))
 
 
+@api.patch("/user")
+def update_user():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        data = request.get_json() or {}
+        username = normalize_username(data.get("username"))
+
+        validate_username(username)
+
+        existing_user = get_user_by_username(username)
+        if existing_user and existing_user["user_id"] != user_id:
+            return jsonify({"error": "Username already exists"}), 409
+
+        user = update_user_username(user_id, username)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(
+        {
+            "success": True,
+            "user": serialize_user(user),
+        }
+    )
+
+
+@api.delete("/user")
+def delete_user():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        user = get_user_by_id(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        data = request.get_json() or {}
+        confirmation_username = normalize_username(data.get("username"))
+        if confirmation_username != user["username"]:
+            raise ValueError("Type your current username exactly to confirm account deletion.")
+
+        _start_user_account_deletion(user_id)
+        session.clear()
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify({"success": True}), 202
+
+
 @api.put("/onboarding")
 def onboarding():
     try:
@@ -256,6 +327,8 @@ def onboarding_calendar_upload():
         uploaded = request.files.get("file")
         if uploaded is None:
             raise ValueError("Calendar file is required.")
+        if not uploaded.filename:
+            raise ValueError("Calendar file must include a filename.")
         context = save_calendar_context(
             user_id,
             filename=uploaded.filename,
@@ -607,11 +680,19 @@ def task_feedback(canonical_task_id: str):
     try:
         user_id = get_authenticated_user_id(required=True)
         data = request.get_json() or {}
+        action = data.get("action")
+        if not isinstance(action, str) or not action:
+            raise ValueError("action is required.")
+
+        direction = data.get("direction")
+        if direction is not None and not isinstance(direction, str):
+            raise ValueError("direction must be a string.")
+
         result = submit_task_feedback(
             user_id,
             canonical_task_id,
-            action=data.get("action"),
-            direction=data.get("direction"),
+            action=action,
+            direction=direction,
         )
     except ValueError as error:
         return jsonify({"error": str(error)}), 422

@@ -351,6 +351,10 @@ def list_new_messages(user_id: int, *, link: dict | None = None) -> dict:
 
 def complete_gmail_link(user_id: int, flow: Flow):
     credentials = flow.credentials
+    access_token = credentials.token
+    if not access_token:
+        raise RuntimeError("Google did not return an access token.")
+
     service = build("gmail", "v1", credentials=credentials)
 
     profile = service.users().getProfile(userId="me").execute()
@@ -371,7 +375,7 @@ def complete_gmail_link(user_id: int, flow: Flow):
     save_gmail_link(
         user_id=user_id,
         email_address=profile["emailAddress"],
-        access_token=credentials.token,
+        access_token=access_token,
         refresh_token=credentials.refresh_token,
         token_expiry=normalize_expiry(credentials.expiry),
         history_id=latest_history_id,

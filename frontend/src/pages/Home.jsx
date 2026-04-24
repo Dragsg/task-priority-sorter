@@ -14,7 +14,6 @@ import {
   updatePrioritizedTask,
   updateTaskTags,
 } from "../api";
-import { PRIORITISE_BY_OPTIONS, getOnboardingAnswerLabel } from "../onboardingOptions";
 import PageNav from "../components/PageNav";
 
 const TASK_TYPE_OPTIONS = [
@@ -1475,12 +1474,6 @@ export default function Home() {
             <p className="summary-value">{user?.username ?? "Refreshing your account..."}</p>
           </article>
           <article className="summary-card">
-            <p className="summary-label">Prioritise by</p>
-            <p className="summary-value">
-              {getOnboardingAnswerLabel(PRIORITISE_BY_OPTIONS, user?.prioritiseBy)}
-            </p>
-          </article>
-          <article className="summary-card">
             <p className="summary-label">Profile confidence</p>
             <p className="summary-value">
               {pipelineProfile ? `${Math.round((pipelineProfile.confidence ?? 0) * 100)}%` : "0%"}
@@ -1519,7 +1512,7 @@ export default function Home() {
             Manage linked accounts
           </Link>
           <Link className="secondary-button home-link" to="/preferences">
-            Open preferences
+            Open account
           </Link>
           <button
             className="inline-button danger-button"
