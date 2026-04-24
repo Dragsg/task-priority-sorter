@@ -4,12 +4,16 @@ from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 from app.telegram_service import (
+    _build_digest_message,
+    _build_instant_alert_message,
+    _send_message,
     ensure_telegram_webhook,
     get_telegram_settings_payload,
     get_telegram_startup_warning,
     process_telegram_webhook,
     send_daily_telegram_digest,
     send_instant_telegram_alerts,
+    send_telegram_test_message,
 )
 
 SGT = ZoneInfo("Asia/Singapore")
@@ -263,6 +267,159 @@ class TelegramServiceTestCase(unittest.TestCase):
             warning = get_telegram_startup_warning()
 
         self.assertIn("TELEGRAM_WEBHOOK_URL", warning)
+
+    def test_instant_alert_message_uses_html_formatting_and_hosted_link(self):
+        task = {
+            "task_title": "Submit project proposal",
+            "priority_tier": "HIGH",
+            "task_description": "Needs review before mentor check-in.",
+            "deadline_at_iso": "2026-04-24T18:00:00+08:00",
+            "platforms_seen": ["gmail"],
+        }
+
+        with patch(
+            "app.telegram_service.Config.FRONTEND_URL",
+            "https://thankful-stone-0c17fc20f.7.azurestaticapps.net",
+        ):
+            message = _build_instant_alert_message(task)
+
+        self.assertIn("<b>New task added</b>", message)
+        self.assertIn("<b>Submit project proposal</b>", message)
+        self.assertNotIn("Why now:", message)
+        self.assertIn('<a href="https://thankful-stone-0c17fc20f.7.azurestaticapps.net/kanban">Open app</a>', message)
+
+    def test_digest_message_uses_html_sections_and_hosted_link(self):
+        tasks = [
+            {
+                "task_title": "Submit reflection",
+                "priority_tier": "HIGH",
+                "task_description": "Wrap this up before class.",
+                "deadline_at_iso": "2026-04-24T17:00:00+08:00",
+                "deadline_hours": 2,
+                "platforms_seen": ["gmail"],
+            }
+        ]
+        now = datetime(2026, 4, 24, 8, 30, tzinfo=SGT)
+
+        with patch(
+            "app.telegram_service.Config.FRONTEND_URL",
+            "https://thankful-stone-0c17fc20f.7.azurestaticapps.net",
+        ):
+            message = _build_digest_message(tasks, now)
+
+        self.assertIn("<b>Daily digest</b>", message)
+        self.assertIn("<b>Focus first</b>", message)
+        self.assertIn("<b>Snapshot</b>", message)
+        self.assertNotIn("Why now:", message)
+        self.assertIn('<a href="https://thankful-stone-0c17fc20f.7.azurestaticapps.net/kanban">Open app</a>', message)
+
+    @patch("app.telegram_service.mark_telegram_digest_sent")
+    @patch("app.telegram_service._send_message")
+    @patch("app.telegram_service.claim_telegram_digest", return_value=True)
+    @patch("app.telegram_service.get_telegram_link")
+    @patch("app.telegram_service.get_telegram_notification_settings")
+    @patch("app.pipeline_bridge.list_prioritized_tasks")
+    def test_daily_digest_only_includes_accepted_kanban_tasks(
+        self,
+        list_prioritized_tasks,
+        get_telegram_notification_settings,
+        get_telegram_link,
+        claim_telegram_digest,
+        send_message,
+        mark_telegram_digest_sent,
+    ):
+        get_telegram_notification_settings.return_value = {
+            "telegram_enabled": True,
+            "alert_critical": True,
+            "alert_high": True,
+            "alert_medium": False,
+            "alert_low": False,
+            "daily_digest_enabled": True,
+            "daily_digest_time": "08:00",
+        }
+        get_telegram_link.return_value = {"telegram_chat_id": "123"}
+        list_prioritized_tasks.return_value = [
+            {
+                "canonical_task_id": "canon-1",
+                "task_title": "Submit reflection",
+                "priority_tier": "HIGH",
+                "status": "accepted",
+                "deadline_at_iso": "2026-04-24T17:00:00+08:00",
+                "deadline_hours": 2,
+            },
+            {
+                "canonical_task_id": "canon-2",
+                "task_title": "Sign-in code 123456",
+                "priority_tier": "HIGH",
+                "status": "pending_review",
+                "deadline_at_iso": None,
+                "deadline_hours": None,
+            },
+        ]
+        send_message.return_value = {"message_id": 555}
+        now = datetime(2026, 4, 24, 8, 30, tzinfo=SGT)
+
+        with patch("app.telegram_service.Config.TELEGRAM_BOT_TOKEN", "token"):
+            sent = send_daily_telegram_digest(9, now=now)
+
+        self.assertTrue(sent)
+        sent_message = send_message.call_args.args[1]
+        self.assertIn("Submit reflection", sent_message)
+        self.assertNotIn("Sign-in code 123456", sent_message)
+        mark_telegram_digest_sent.assert_called_once()
+
+    @patch("app.telegram_service._send_message")
+    @patch("app.pipeline_bridge.list_prioritized_tasks")
+    @patch("app.telegram_service.get_telegram_link")
+    def test_send_telegram_test_message_sends_todays_digest(
+        self,
+        get_telegram_link,
+        list_prioritized_tasks,
+        send_message,
+    ):
+        get_telegram_link.return_value = {"telegram_chat_id": "123"}
+        list_prioritized_tasks.return_value = [
+            {
+                "task_title": "Submit reflection",
+                "priority_tier": "HIGH",
+                "status": "OPEN",
+                "deadline_at_iso": "2026-04-24T17:00:00+08:00",
+                "deadline_hours": 2,
+                "platforms_seen": ["gmail"],
+            }
+        ]
+        send_message.return_value = {"message_id": 321}
+
+        with patch("app.telegram_service.Config.TELEGRAM_BOT_TOKEN", "token"), patch(
+            "app.telegram_service.Config.FRONTEND_URL",
+            "https://thankful-stone-0c17fc20f.7.azurestaticapps.net",
+        ), patch(
+            "app.telegram_service.now_sgt",
+            return_value=datetime(2026, 4, 24, 8, 30, tzinfo=SGT),
+        ):
+            result = send_telegram_test_message(7)
+
+        self.assertEqual(result["messageId"], "321")
+        sent_message = send_message.call_args.args[1]
+        self.assertIn("<b>Daily digest</b>", sent_message)
+        self.assertNotIn("Why now:", sent_message)
+
+    @patch("app.telegram_service._send_telegram_api_request")
+    def test_send_message_uses_html_parse_mode(self, send_request):
+        send_request.return_value = {"ok": True, "result": {"message_id": 1}}
+
+        result = _send_message("123", "<b>Hello</b>")
+
+        self.assertEqual(result["message_id"], 1)
+        send_request.assert_called_once_with(
+            "sendMessage",
+            {
+                "chat_id": "123",
+                "text": "<b>Hello</b>",
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            },
+        )
 
     @patch("app.telegram_service._send_telegram_api_request")
     def test_webhook_registration_uses_configured_secret(self, send_request):

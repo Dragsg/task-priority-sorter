@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import re
 from datetime import datetime
 from typing import Any
@@ -17,6 +18,9 @@ try:
     import spacy as spacy
 except ImportError:  # pragma: no cover - optional dependency
     spacy = None
+
+
+logger = logging.getLogger(__name__)
 
 
 TASK_VERBS = {
@@ -187,6 +191,8 @@ MONTH_OR_WEEKDAY_PATTERN = re.compile(
 )
 TIME_PATTERN = re.compile(r"\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\b", re.IGNORECASE)
 PURE_NUMERIC_PATTERN = re.compile(r"^\d+(?::\d+)?$")
+DEADLINE_SEARCH_MAX_CHARS = 1600
+DEADLINE_SEARCH_MAX_LINES = 24
 
 
 class SignalExtractor:
@@ -571,17 +577,28 @@ class SignalExtractor:
         return [token for token in tokens if token in URGENCY_WORDS]
 
     def _extract_deadline(self, text: str, *, reference_time: datetime | None = None) -> datetime | None:
-        cleaned_text = self._prepare_text_for_deadline_search(text)
+        cleaned_text = self._limit_deadline_search_text(self._prepare_text_for_deadline_search(text))
+        if not cleaned_text:
+            return None
         base_time = reference_time or utc_now_naive()
-        matches = search_dates(
-            cleaned_text,
-            settings={
-                "PREFER_DATES_FROM": "future",
-                "RETURN_AS_TIMEZONE_AWARE": False,
-                "TIMEZONE": self.timezone_fallback,
-                "RELATIVE_BASE": base_time,
-            },
-        )
+        try:
+            matches = search_dates(
+                cleaned_text,
+                languages=["en"],
+                settings={
+                    "PREFER_DATES_FROM": "future",
+                    "RETURN_AS_TIMEZONE_AWARE": False,
+                    "TIMEZONE": self.timezone_fallback,
+                    "RELATIVE_BASE": base_time,
+                },
+            )
+        except Exception:
+            logger.warning(
+                "Deadline extraction failed; skipping deadline parse for text window length=%s",
+                len(cleaned_text),
+                exc_info=True,
+            )
+            return None
         if not matches:
             return None
         candidates: list[tuple[datetime, str]] = []
@@ -617,6 +634,32 @@ class SignalExtractor:
             stripped = re.sub(r"<https?://[^>]+>", " ", stripped)
             cleaned_lines.append(stripped)
         return "\n".join(cleaned_lines)
+
+    def _limit_deadline_search_text(self, text: str) -> str:
+        if not text:
+            return ""
+
+        clipped_lines: list[str] = []
+        total_chars = 0
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            remaining = DEADLINE_SEARCH_MAX_CHARS - total_chars
+            if remaining <= 0:
+                break
+            if len(line) > remaining:
+                line = line[:remaining].rstrip()
+            if not line:
+                break
+
+            clipped_lines.append(line)
+            total_chars += len(line) + 1
+            if len(clipped_lines) >= DEADLINE_SEARCH_MAX_LINES:
+                break
+
+        return "\n".join(clipped_lines).strip()
 
     def _is_acceptable_deadline_match(
         self,

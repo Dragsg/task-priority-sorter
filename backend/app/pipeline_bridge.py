@@ -454,7 +454,16 @@ def _build_false_negative_items(
         if message.source_id in task_source_ids:
             continue
 
-        signal = extractor.extract(message)
+        try:
+            signal = extractor.extract(message)
+        except Exception:
+            logger.exception(
+                "Skipping false-negative rebuild item after extractor failure for user_id=%s source_id=%s platform=%s",
+                message.user_id,
+                message.source_id,
+                platform,
+            )
+            continue
         items.append(
             _build_false_negative_payload(
                 message,

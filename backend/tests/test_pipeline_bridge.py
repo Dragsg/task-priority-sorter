@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from app.pipeline_bridge import (
     _build_dashboard_items,
+    _build_false_negative_items,
     create_manual_task,
     get_task_statistics_snapshot,
     remove_prioritized_task,
@@ -24,6 +25,7 @@ from pipeline.models import (
     Platform,
     PrioritizedTaskCard,
     PriorityTier,
+    RawMessage,
     TaskOrigin,
     TaskStatus,
     TaskType,
@@ -39,6 +41,31 @@ from pipeline.storage.tables import PipelineTaskRecord
 
 
 class PipelineBridgeTestCase(unittest.TestCase):
+    @patch("app.pipeline_bridge.logger")
+    @patch("app.pipeline_bridge.get_priority_pipeline")
+    def test_build_false_negative_items_skips_messages_that_fail_extraction(
+        self,
+        get_priority_pipeline,
+        logger,
+    ):
+        extractor = MagicMock()
+        extractor.is_hard_discarded.return_value = False
+        extractor.extract.side_effect = [
+            RuntimeError("bad message"),
+            SimpleNamespace(body_excerpt="Actionable preview", snippet="Fallback preview"),
+        ]
+        get_priority_pipeline.return_value = SimpleNamespace(extractor=extractor)
+        raw_messages = [
+            RawMessage(user_id="7", platform=Platform.GMAIL, source_id="bad-1", subject="Bad", body_text="bad"),
+            RawMessage(user_id="7", platform=Platform.GMAIL, source_id="good-1", subject="Good", body_text="good"),
+        ]
+
+        items = _build_false_negative_items(raw_messages, task_source_ids=set())
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["sourceId"], "good-1")
+        logger.exception.assert_called_once()
+
     def test_rejected_task_does_not_return_to_pending_review_on_rerun(self):
         repository = InMemoryPipelineRepository()
         user_id = "14"

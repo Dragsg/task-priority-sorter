@@ -5,13 +5,14 @@ import {
   createManualTask,
   fetchDashboardBootstrap,
   fetchPipelineProfile,
+  fetchPipelineRecomputeStatus,
   fetchPrioritizedTasks,
   getStoredUser,
   getStoredUserId,
   LIVE_REFRESH_INTERVAL_MS,
   promoteFalseNegativeEmail,
+  schedulePrioritizedTaskSync,
   submitTaskFeedback,
-  syncPrioritizedTasks,
   updatePrioritizedTask,
   updateTaskTags,
 } from "../api";
@@ -27,6 +28,7 @@ const TASK_TYPE_OPTIONS = [
 ];
 const PRIORITY_TIERS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const TASK_STATUS_OPTIONS = ["OPEN", "COMPLETED"];
+const RECOMPUTE_STATUS_POLL_INTERVAL_MS = 2500;
 
 function normalizeManualTag(value) {
   if (typeof value !== "string") {
@@ -106,6 +108,26 @@ function buildSyncStatus(result, previousTasks = []) {
   }
 
   return pieces.length ? `${pieces.join(" | ")}. ${cardSummary}` : cardSummary;
+}
+
+function buildAsyncSyncCompletionStatus(nextItems = [], previousTasks = []) {
+  const previousIds = new Set(
+    (previousTasks || [])
+      .map((task) => task?.canonical_task_id)
+      .filter(Boolean)
+  );
+  const visibleItems = filterVisibleTaskItems(nextItems);
+  const addedCount = visibleItems.filter(
+    (task) => task?.canonical_task_id && !previousIds.has(task.canonical_task_id)
+  ).length;
+
+  if (addedCount > 0) {
+    return `Added ${addedCount} new prioritized task card${addedCount === 1 ? "" : "s"} to your queue.`;
+  }
+  if (!visibleItems.length) {
+    return "Inbox check finished, but there are still no visible task cards in your queue.";
+  }
+  return "Task priorities refreshed in the background.";
 }
 
 function describeFeedback(action, direction) {
@@ -1106,6 +1128,7 @@ export default function Home() {
   const [taskError, setTaskError] = useState("");
   const [taskStatus, setTaskStatus] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [recomputeStatus, setRecomputeStatus] = useState(null);
   const [feedbackQueue, setFeedbackQueue] = useState([]);
   const [isProcessingFeedbackQueue, setIsProcessingFeedbackQueue] = useState(false);
   const [isFalseNegativePanelOpen, setIsFalseNegativePanelOpen] = useState(false);
@@ -1114,6 +1137,9 @@ export default function Home() {
   const [isCreatingManualTask, setIsCreatingManualTask] = useState(false);
   const [isManualTagInputFocused, setIsManualTagInputFocused] = useState(false);
   const taskMutationVersionRef = useRef(0);
+  const hasAttemptedAutoSyncRef = useRef(false);
+  const syncBaselineTasksRef = useRef([]);
+  const isAwaitingSyncCompletionRef = useRef(false);
   const [manualTask, setManualTask] = useState({
     title: "",
     description: "",
@@ -1161,11 +1187,47 @@ export default function Home() {
 
       try {
         const requestVersion = taskMutationVersionRef.current;
-        const dashboard = await fetchDashboardBootstrap();
+        const [dashboard, latestRecomputeStatus] = await Promise.all([
+          fetchDashboardBootstrap(),
+          fetchPipelineRecomputeStatus(),
+        ]);
         if (isCancelled || requestVersion !== taskMutationVersionRef.current) {
           return;
         }
         applyDashboardSnapshot(dashboard);
+        setRecomputeStatus(latestRecomputeStatus);
+        const backgroundSyncActive = Boolean(
+          latestRecomputeStatus?.running || latestRecomputeStatus?.pending
+        );
+        setIsSyncing(backgroundSyncActive);
+        if (backgroundSyncActive) {
+          isAwaitingSyncCompletionRef.current = true;
+          syncBaselineTasksRef.current = filterVisibleTaskItems(dashboard.items ?? []);
+          return;
+        }
+
+        const visibleItems = filterVisibleTaskItems(dashboard.items ?? []);
+        if (!visibleItems.length && !hasAttemptedAutoSyncRef.current) {
+          hasAttemptedAutoSyncRef.current = true;
+          syncBaselineTasksRef.current = visibleItems;
+          isAwaitingSyncCompletionRef.current = true;
+          setIsSyncing(true);
+          setTaskStatus("Checking your inbox and rebuilding priorities in the background.");
+          try {
+            const scheduled = await schedulePrioritizedTaskSync();
+            if (isCancelled || requestVersion !== taskMutationVersionRef.current) {
+              return;
+            }
+            setRecomputeStatus(scheduled.status ?? null);
+          } catch (error) {
+            if (isCancelled || requestVersion !== taskMutationVersionRef.current) {
+              return;
+            }
+            isAwaitingSyncCompletionRef.current = false;
+            setIsSyncing(false);
+            setTaskError(error.message);
+          }
+        }
       } catch {
         if (isCancelled) {
           return;
@@ -1262,6 +1324,55 @@ export default function Home() {
       window.clearInterval(intervalId);
     };
   }, [isLiveRefreshPaused]);
+
+  useEffect(() => {
+    if (!isSyncing && !recomputeStatus?.running && !recomputeStatus?.pending) {
+      return undefined;
+    }
+
+    let pollInFlight = false;
+
+    async function pollRecomputeStatus() {
+      if (pollInFlight) {
+        return;
+      }
+
+      pollInFlight = true;
+      try {
+        const status = await fetchPipelineRecomputeStatus();
+        if (isCancelled) {
+          return;
+        }
+        setRecomputeStatus(status);
+        const backgroundSyncActive = Boolean(status?.running || status?.pending);
+        setIsSyncing(backgroundSyncActive);
+        if (backgroundSyncActive || !isAwaitingSyncCompletionRef.current) {
+          return;
+        }
+
+        const dashboard = await fetchDashboardBootstrap();
+        if (isCancelled) {
+          return;
+        }
+        applyDashboardSnapshot(dashboard);
+        setTaskStatus(buildAsyncSyncCompletionStatus(dashboard.items ?? [], syncBaselineTasksRef.current));
+        isAwaitingSyncCompletionRef.current = false;
+      } catch {
+        // Keep the current UI steady if background recompute polling misses a cycle.
+      } finally {
+        pollInFlight = false;
+      }
+    }
+
+    let isCancelled = false;
+    const intervalId = window.setInterval(pollRecomputeStatus, RECOMPUTE_STATUS_POLL_INTERVAL_MS);
+    pollRecomputeStatus();
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isSyncing, recomputeStatus?.running, recomputeStatus?.pending]);
 
   useEffect(() => {
     if (!isFalseNegativePanelOpen) {
@@ -1498,28 +1609,20 @@ export default function Home() {
     bumpTaskMutationVersion();
     setIsSyncing(true);
     setTaskError("");
-    setTaskStatus("");
-    const previousTasks = tasks;
+    setTaskStatus("Refreshing task priorities in the background.");
+    syncBaselineTasksRef.current = tasks;
+    isAwaitingSyncCompletionRef.current = true;
     try {
-      const result = await syncPrioritizedTasks();
-      updateTaskListFromResponse(result);
+      const result = await schedulePrioritizedTaskSync();
+      setRecomputeStatus(result.status ?? null);
       setTaskFeedbackStates({});
       setTaskTagUpdateStates({});
       setTaskEditStates({});
       setEditingTaskId(null);
-      if (!result?.profile) {
-        try {
-          const latestProfile = await fetchPipelineProfile();
-          setPipelineProfile(latestProfile);
-        } catch {
-          // Keep the latest queue changes visible even if the profile refresh misses a cycle.
-        }
-      }
-      setTaskStatus(buildSyncStatus(result, previousTasks));
     } catch (error) {
-      setTaskError(error.message);
-    } finally {
+      isAwaitingSyncCompletionRef.current = false;
       setIsSyncing(false);
+      setTaskError(error.message);
     }
   }
 
@@ -1967,10 +2070,15 @@ export default function Home() {
               </div>
             ) : (
               <div className="task-card task-card-empty">
-                <p className="summary-value">There is nothing waiting for review right now.</p>
+                <p className="summary-value">
+                  {isSyncing
+                    ? "Your queue is being refreshed in the background."
+                    : "There is nothing waiting for review right now."}
+                </p>
                 <p className="panel-copy">
-                  Refresh the queue after new emails arrive, or use Connections if you still need to
-                  bring an inbox into the app.
+                  {isSyncing
+                    ? "We are checking your inbox and rebuilding task priorities. New task cards will appear here as soon as the refresh finishes."
+                    : "Refresh the queue after new emails arrive, or use Connections if you still need to bring an inbox into the app."}
                 </p>
               </div>
             )}

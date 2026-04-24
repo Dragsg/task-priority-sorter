@@ -37,12 +37,14 @@ class TaskRoutesTestCase(unittest.TestCase):
 
     @patch("app.routes.get_available_tags")
     @patch("app.routes.get_profile_snapshot")
+    @patch("app.routes.list_false_negative_items")
     @patch("app.routes.list_prioritized_tasks")
     @patch("app.routes.get_user_by_id")
     def test_dashboard_route_returns_bootstrap_payload(
         self,
         get_user_by_id,
         list_prioritized_tasks,
+        list_false_negative_items,
         get_profile_snapshot,
         get_available_tags,
     ):
@@ -55,6 +57,7 @@ class TaskRoutesTestCase(unittest.TestCase):
             "prioritise_by": "Urgency",
         }
         list_prioritized_tasks.return_value = [{"canonical_task_id": "canon-1"}]
+        list_false_negative_items.return_value = [{"sourceId": "msg-1"}]
         get_profile_snapshot.return_value = {"profile_version": 5}
         get_available_tags.return_value = ["assignment", "urgent"]
 
@@ -64,6 +67,7 @@ class TaskRoutesTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["user"]["userId"], 7)
         self.assertEqual(payload["items"][0]["canonical_task_id"], "canon-1")
+        self.assertEqual(payload["falseNegativeItems"][0]["sourceId"], "msg-1")
         self.assertEqual(payload["profile"]["profile_version"], 5)
         self.assertEqual(payload["availableTags"], ["assignment", "urgent"])
 
@@ -129,6 +133,28 @@ class TaskRoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["runId"], "run-1")
         run_prioritization_for_user.assert_called_once_with(7, limit=20)
+
+    @patch("app.routes.schedule_pipeline_recompute")
+    def test_async_task_sync_route_returns_scheduled_status(self, schedule_pipeline_recompute):
+        schedule_pipeline_recompute.return_value = {
+            "userId": 7,
+            "running": True,
+            "pending": False,
+            "lastScheduledAt": "2026-04-25T10:00:00+08:00",
+        }
+
+        response = self.client.post("/api/tasks/sync/async?limit=20", headers=self.headers)
+
+        self.assertEqual(response.status_code, 202)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["status"]["running"])
+        schedule_pipeline_recompute.assert_called_once_with(
+            7,
+            refresh_sources=True,
+            limit=20,
+            reason="manual_refresh",
+        )
 
     @patch("app.routes.create_manual_task")
     def test_manual_task_route_returns_payload(self, create_manual_task):

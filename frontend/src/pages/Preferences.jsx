@@ -246,7 +246,7 @@ export default function Preferences() {
       setTelegramError("");
       setTelegramStatus("");
       await sendTelegramTestMessage();
-      setTelegramStatus("Test message sent to Telegram.");
+      setTelegramStatus("Daily digest for today sent to Telegram.");
     } catch (testError) {
       setTelegramError(testError.message);
     } finally {
@@ -517,7 +517,7 @@ export default function Preferences() {
                     onClick={handleTelegramTest}
                     type="button"
                   >
-                    {telegramTestBusy ? "Sending test..." : "Send test message"}
+                    {telegramTestBusy ? "Sending digest..." : "Send daily digest for today"}
                   </button>
                 </div>
               </section>

@@ -1,6 +1,7 @@
 from pipeline.models import Platform, RawMessage
 from pipeline.models.enums import EntityType, TaskType
 from pipeline.services.extraction import SignalExtractor
+from unittest.mock import patch
 
 
 def test_extracts_module_entity_from_academic_message():
@@ -226,3 +227,24 @@ def test_important_or_starred_labels_override_hard_gmail_filters():
 
     assert signal.has_task is True
     assert signal.deadline_at is not None
+
+
+def test_deadline_search_uses_english_only_and_bounded_text_window():
+    extractor = SignalExtractor()
+    oversized_text = "\n".join(f"line {index} tomorrow at 5pm" for index in range(80))
+
+    with patch("pipeline.services.extraction.search_dates", return_value=None) as search_dates_mock:
+        assert extractor._extract_deadline(oversized_text) is None
+
+    args, kwargs = search_dates_mock.call_args
+    assert args[0]
+    assert len(args[0]) <= 1600
+    assert len(args[0].splitlines()) <= 24
+    assert kwargs["languages"] == ["en"]
+
+
+def test_deadline_search_failures_return_none_instead_of_crashing():
+    extractor = SignalExtractor()
+
+    with patch("pipeline.services.extraction.search_dates", side_effect=RuntimeError("boom")):
+        assert extractor._extract_deadline("submit this by tomorrow 5pm") is None
