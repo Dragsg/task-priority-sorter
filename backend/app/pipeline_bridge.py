@@ -22,6 +22,7 @@ from .db import (
 )
 from .gmail_service import list_new_messages, list_recent_messages
 from .outlook_service import list_new_outlook_messages, list_recent_outlook_messages
+from .telegram_service import send_instant_telegram_alerts
 from .time_utils import now_sgt, parse_iso_to_sgt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -926,6 +927,10 @@ def _run_pipeline_from_stored_messages(
 ) -> dict:
     pipeline = get_priority_pipeline()
     repository = get_pipeline_repository()
+    previous_task_ids = {
+        card.canonical_task_id
+        for card in repository.get_current_task_cards(str(user_id))
+    }
     sync_onboarding_context(user_id)
     email_sync = (
         refresh_linked_email_sources(user_id, recent_limit=limit or 20)
@@ -939,12 +944,27 @@ def _run_pipeline_from_stored_messages(
     stored_rows = list_stored_messages(user_id, limit=limit)
     raw_messages = [_row_to_raw_message(user_id, row) for row in stored_rows]
     bundle = pipeline.run_messages(str(user_id), raw_messages)
+    current_cards = repository.get_current_task_cards(str(user_id))
     card_payloads = _build_dashboard_items(repository, user_id)
     run_task_status_counts = _summarize_run_task_statuses(repository, user_id, bundle.task_cards)
     new_task_card_count = run_task_status_counts[TaskStatus.PENDING_REVIEW.value]
     filtered_non_task_count = max(len(raw_messages) - len(bundle.signals), 0)
+    new_task_payloads = [
+        card.model_dump(mode="json")
+        for card in current_cards
+        if card.canonical_task_id not in previous_task_ids
+    ]
     if bundle.profile is not None:
         _set_cached_value(_PROFILE_CACHE, user_id, bundle.profile.model_dump(mode="json"))
+
+    if new_task_payloads:
+        try:
+            send_instant_telegram_alerts(user_id, new_task_payloads)
+        except Exception:  # pragma: no cover - defensive guard for live failures
+            logger.exception(
+                "Telegram alert dispatch failed after pipeline run for user_id=%s",
+                user_id,
+            )
 
     logger.info(
         "Prioritization run user_id=%s emails_scanned=%s non_task_emails=%s new_cards=%s provider=%s run_id=%s",
