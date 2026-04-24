@@ -37,6 +37,7 @@ jobs:
         with:
           name: python-app
           path: |
+            requirements.txt
             backend
             pipeline
             !antenv/
