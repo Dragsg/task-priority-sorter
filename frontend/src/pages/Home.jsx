@@ -947,7 +947,9 @@ export default function Home() {
   const cachedUserId = getStoredUserId();
   const cachedDashboard = readDashboardCache(cachedUserId);
   const [user, setUser] = useState(() => cachedDashboard?.user ?? getStoredUser());
-  const [tasks, setTasks] = useState(() => filterVisibleTaskItems(cachedDashboard?.tasks ?? []));
+  const [dashboardItems, setDashboardItems] = useState(() =>
+    Array.isArray(cachedDashboard?.tasks) ? cachedDashboard.tasks : []
+  );
   const [pipelineProfile, setPipelineProfile] = useState(() => cachedDashboard?.profile ?? null);
   const [availableTags, setAvailableTags] = useState([]);
   const [taskFeedbackStates, setTaskFeedbackStates] = useState({});
@@ -978,8 +980,13 @@ export default function Home() {
   }
 
   function setVisibleTasks(items) {
-    setTasks(filterVisibleTaskItems(items));
+    setDashboardItems(Array.isArray(items) ? items : []);
   }
+
+  const tasks = useMemo(
+    () => filterVisibleTaskItems(dashboardItems),
+    [dashboardItems]
+  );
 
   function applyDashboardSnapshot(dashboard) {
     setUser(dashboard.user);
@@ -1056,11 +1063,11 @@ export default function Home() {
     }
     writeDashboardCache(user.userId, {
       user,
-      tasks,
+      tasks: dashboardItems,
       profile: pipelineProfile,
       availableTags,
     });
-  }, [availableTags, pipelineProfile, tasks, user]);
+  }, [availableTags, dashboardItems, pipelineProfile, user]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1190,16 +1197,21 @@ export default function Home() {
   }
 
   function applyLocalFeedback(canonicalTaskId, action, direction) {
-    setTasks((current) => {
+    setDashboardItems((current) => {
       const selectedTask = current.find((task) => task.canonical_task_id === canonicalTaskId);
       if (!selectedTask) {
         return current;
       }
 
       if (action === "ACCEPT" || action === "REJECT") {
-        return [
-          ...current.filter((task) => task.canonical_task_id !== canonicalTaskId),
-        ];
+        if (action === "REJECT") {
+          return current.filter((task) => task.canonical_task_id !== canonicalTaskId);
+        }
+        return current.map((task) =>
+          task.canonical_task_id === canonicalTaskId
+            ? { ...task, status: "accepted" }
+            : task
+        );
       }
 
       if (action === "WRONG_PRIORITY" && direction) {
@@ -1215,7 +1227,7 @@ export default function Home() {
   }
 
   function applyLocalTagUpdate(canonicalTaskId, nextTags) {
-    setTasks((current) =>
+    setDashboardItems((current) =>
       current.map((task) =>
         task.canonical_task_id === canonicalTaskId
           ? { ...task, tags: nextTags }
