@@ -102,6 +102,7 @@ class PipelineBridgeTestCase(unittest.TestCase):
         self.assertEqual(result["manualTaskSourceId"], "manual-manual-card")
 
     @patch("app.pipeline_bridge.logger")
+    @patch("app.pipeline_bridge.get_profile_snapshot")
     @patch("app.pipeline_bridge.get_available_tags")
     @patch("app.pipeline_bridge._build_dashboard_items")
     @patch("app.pipeline_bridge._row_to_raw_message")
@@ -118,6 +119,7 @@ class PipelineBridgeTestCase(unittest.TestCase):
         row_to_raw_message,
         build_dashboard_items,
         get_available_tags,
+        get_profile_snapshot,
         logger,
     ):
         repository = MagicMock()
@@ -132,6 +134,7 @@ class PipelineBridgeTestCase(unittest.TestCase):
             {"canonical_task_id": "run-completed", "status": "completed"},
         ]
         get_available_tags.return_value = ["assignment"]
+        get_profile_snapshot.return_value = {"profile_version": 9}
         pipeline.run_messages.return_value = SimpleNamespace(
             run_id="run-1",
             profile=None,
@@ -159,6 +162,7 @@ class PipelineBridgeTestCase(unittest.TestCase):
         self.assertEqual(result["canonicalTaskCount"], 1)
         self.assertEqual(result["taskCardCount"], 1)
         self.assertEqual(result["items"], build_dashboard_items.return_value)
+        self.assertEqual(result["profile"], {"profile_version": 9})
         logger.info.assert_called_once_with(
             "Prioritization run user_id=%s emails_scanned=%s non_task_emails=%s new_cards=%s provider=%s run_id=%s",
             14,

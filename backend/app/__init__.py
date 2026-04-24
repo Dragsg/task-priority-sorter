@@ -1,3 +1,5 @@
+import logging
+
 from flask import Flask
 from flask_cors import CORS
 
@@ -7,10 +9,28 @@ from .routes import api
 from .telegram_service import ensure_telegram_webhook, get_telegram_startup_warning
 
 
+def _configure_logging(app: Flask) -> None:
+    level_name = str(app.config.get("LOG_LEVEL") or "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    root_logger = logging.getLogger()
+
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+        )
+        root_logger.addHandler(handler)
+
+    root_logger.setLevel(level)
+    app.logger.setLevel(level)
+    logging.getLogger("werkzeug").setLevel(level)
+
+
 def create_app() -> Flask:
     app = Flask(__name__)
     app.config.from_object(Config)
     app.secret_key = app.config["SECRET_KEY"]
+    _configure_logging(app)
 
     CORS(
         app,

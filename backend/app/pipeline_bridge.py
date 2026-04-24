@@ -989,6 +989,11 @@ def _run_pipeline_from_stored_messages(
     ]
     if bundle.profile is not None:
         _set_cached_value(_PROFILE_CACHE, user_id, bundle.profile.model_dump(mode="json"))
+    profile_payload = (
+        bundle.profile.model_dump(mode="json")
+        if bundle.profile is not None
+        else get_profile_snapshot(user_id)
+    )
 
     if new_task_payloads:
         try:
@@ -1016,6 +1021,7 @@ def _run_pipeline_from_stored_messages(
         "taskCardCount": new_task_card_count,
         "emailSync": email_sync,
         "items": card_payloads,
+        "profile": profile_payload,
         "availableTags": get_available_tags(user_id),
     }
 

@@ -199,6 +199,10 @@ def list_stored_messages(user_id: int, limit: int | None = None) -> list[DbRow]:
             bcc_raw
         FROM stored_emails
         WHERE user_id = %s
+          AND (
+              platform <> 'gmail'
+              OR label_ids @> '["INBOX"]'::jsonb
+          )
         ORDER BY COALESCE(timestamp_iso, created_at) DESC, id DESC
     """
     params: list[object] = [user_id]

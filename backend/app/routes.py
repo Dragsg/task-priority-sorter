@@ -652,8 +652,21 @@ def sync_prioritized_tasks():
     try:
         user_id = get_authenticated_user_id(required=True)
         limit = request.args.get("limit", default=None, type=int)
+        logger.info(
+            "Manual task priority refresh started for user_id=%s limit=%s",
+            user_id,
+            limit,
+        )
         result = run_prioritization_for_user(user_id, limit=limit)
+        logger.info(
+            "Manual task priority refresh completed for user_id=%s run_id=%s raw_messages=%s task_cards=%s",
+            user_id,
+            result.get("runId"),
+            result.get("rawMessageCount"),
+            result.get("taskCardCount"),
+        )
     except Exception as error:
+        logger.exception("Manual task priority refresh failed")
         return jsonify({"error": str(error)}), get_status_code(error)
 
     return jsonify(result)

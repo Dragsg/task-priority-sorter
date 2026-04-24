@@ -763,10 +763,12 @@ export default function Kanban() {
   const storedUserId = getStoredUserId();
   const storedUser = getStoredUser();
   const [cachedDashboard] = useState(() => readDashboardCache(storedUserId));
+  const cachedBoardItems = cachedDashboard?.allTasks;
+  const hasCachedBoardSnapshot = Array.isArray(cachedBoardItems);
   const [user, setUser] = useState(() => cachedDashboard?.user ?? storedUser);
-  const [tasks, setTasks] = useState(() => sortBoardTasks(cachedDashboard?.tasks ?? []));
+  const [tasks, setTasks] = useState(() => sortBoardTasks(cachedBoardItems ?? []));
   const [availableTags, setAvailableTags] = useState(() => cachedDashboard?.availableTags ?? []);
-  const [loading, setLoading] = useState(() => !cachedDashboard && !storedUser);
+  const [loading, setLoading] = useState(() => !hasCachedBoardSnapshot);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState([]);
@@ -828,6 +830,7 @@ export default function Kanban() {
     writeDashboardCache(user.userId, {
       user,
       tasks,
+      allTasks: tasks,
       availableTags,
     });
   }, [availableTags, tasks, user]);
@@ -1163,7 +1166,7 @@ export default function Kanban() {
 
   useEffect(() => cleanupDragPreview, []);
 
-  if (!user && loading) {
+  if (loading) {
     return <main className="simple-shell">Loading your Kanban board...</main>;
   }
 

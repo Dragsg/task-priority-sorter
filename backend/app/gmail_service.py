@@ -239,6 +239,10 @@ def map_gmail_message_for_storage(message: dict) -> dict:
     }
 
 
+def _is_inbox_gmail_message(message: dict) -> bool:
+    return "INBOX" in (message.get("labelIds") or [])
+
+
 def get_message_detail(service, message_id: str) -> dict | None:
     try:
         message = (
@@ -312,6 +316,7 @@ def list_new_messages(user_id: int, *, link: dict | None = None) -> dict:
                 userId="me",
                 startHistoryId=link["history_id"],
                 historyTypes=["messageAdded"],
+                labelId="INBOX",
             )
             .execute()
         )
@@ -332,7 +337,11 @@ def list_new_messages(user_id: int, *, link: dict | None = None) -> dict:
                 seen_ids.add(message_id)
                 message_ids.append(message_id)
 
-    detailed_messages = get_existing_message_details(service, message_ids)
+    detailed_messages = [
+        message
+        for message in get_existing_message_details(service, message_ids)
+        if _is_inbox_gmail_message(message)
+    ]
     save_messages(
         user_id,
         [map_gmail_message_for_storage(message) for message in detailed_messages],

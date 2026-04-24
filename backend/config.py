@@ -11,6 +11,7 @@ load_dotenv(ENV_FILE)
 
 class Config:
     DEBUG = os.getenv("FLASK_DEBUG", "true").lower() == "true"
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
     HOST = os.getenv("FLASK_HOST", "127.0.0.1")
     PORT = int(os.getenv("FLASK_PORT", "5000"))
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
