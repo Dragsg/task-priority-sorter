@@ -41,6 +41,7 @@ from pipeline.models import (
     FeedbackEvent,
     OnboardingContext,
     RawMessage,
+    TaskStatus,
     TaskType,
     BehaviorProfile,
 )
@@ -355,6 +356,21 @@ def _build_dashboard_items(repository: SqlAlchemyPipelineRepository, user_id: in
 
 def _task_payload_is_completed(task: dict) -> bool:
     return str(task.get("status") or "").lower() == "completed"
+
+
+def _summarize_run_task_statuses(repository: SqlAlchemyPipelineRepository, user_id: int, task_cards) -> dict[str, int]:
+    counts = {status.value: 0 for status in TaskStatus}
+
+    for task_card in task_cards:
+        canonical_task_id = getattr(task_card, "canonical_task_id", None)
+        status = getattr(task_card, "status", TaskStatus.PENDING_REVIEW)
+        if canonical_task_id:
+            context = repository.get_feedback_task_context(str(user_id), canonical_task_id)
+            if context is not None:
+                status = context.status
+        counts[status.value] = counts.get(status.value, 0) + 1
+
+    return counts
 
 
 def list_prioritized_tasks(user_id: int) -> list[dict]:
@@ -924,14 +940,18 @@ def _run_pipeline_from_stored_messages(
     raw_messages = [_row_to_raw_message(user_id, row) for row in stored_rows]
     bundle = pipeline.run_messages(str(user_id), raw_messages)
     card_payloads = _build_dashboard_items(repository, user_id)
+    run_task_status_counts = _summarize_run_task_statuses(repository, user_id, bundle.task_cards)
+    new_task_card_count = run_task_status_counts[TaskStatus.PENDING_REVIEW.value]
+    filtered_non_task_count = max(len(raw_messages) - len(bundle.signals), 0)
     if bundle.profile is not None:
         _set_cached_value(_PROFILE_CACHE, user_id, bundle.profile.model_dump(mode="json"))
 
     logger.info(
-        "Ran prioritization pipeline for user_id=%s emails=%s cards=%s provider=%s run_id=%s",
+        "Prioritization run user_id=%s emails_scanned=%s non_task_emails=%s new_cards=%s provider=%s run_id=%s",
         user_id,
         len(raw_messages),
-        len(bundle.task_cards),
+        filtered_non_task_count,
+        new_task_card_count,
         _summarize_llm_provider(bundle.decisions),
         bundle.run_id,
     )
@@ -940,7 +960,7 @@ def _run_pipeline_from_stored_messages(
         "rawMessageCount": len(raw_messages),
         "signalCount": len(bundle.signals),
         "canonicalTaskCount": len(bundle.canonical_tasks),
-        "taskCardCount": len(bundle.task_cards),
+        "taskCardCount": new_task_card_count,
         "emailSync": email_sync,
         "items": card_payloads,
         "availableTags": get_available_tags(user_id),

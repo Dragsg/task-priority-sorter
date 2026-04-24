@@ -361,6 +361,10 @@ class PriorityReasoner:
             )
             return StructuredLlmOutput.model_validate_json(response.output_text), "openai"
         except Exception:
+            logger.exception(
+                "Priority reasoner OpenAI call failed for model=%s; falling back to heuristic reasoning.",
+                self.settings.llm_model,
+            )
             return self._fallback_reasoning(request_payload["input"]), "fallback"
 
     def _log_provider_status_once(self, *, api_key: str | None) -> None:
