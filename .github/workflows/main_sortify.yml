@@ -38,6 +38,7 @@ jobs:
           name: python-app
           path: |
             backend
+            pipeline
             !antenv/
 
   deploy:
