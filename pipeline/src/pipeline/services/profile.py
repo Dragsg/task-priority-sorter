@@ -12,6 +12,7 @@ from pipeline.models import (
     FeedbackAction,
     FeedbackDirection,
     FeedbackEvent,
+    OnboardingContext,
     SenderWeight,
     TagWeight,
     TaskType,
@@ -19,15 +20,26 @@ from pipeline.models import (
 )
 from pipeline.utils.time import utc_now_naive
 
+_PERFORMANCE_TIME_SEEDS = {
+    "Morning": {"peak_action_hour": 9, "low_energy_hours": [14, 15, 16, 21, 22]},
+    "Afternoon": {"peak_action_hour": 14, "low_energy_hours": [8, 9, 10, 20, 21]},
+    "Evening": {"peak_action_hour": 20, "low_energy_hours": [8, 9, 10, 13, 14]},
+}
+
 
 class ProfileService:
     def __init__(self, settings: PipelineSettings) -> None:
         self.settings = settings
 
-    def create_default_profile(self, user_id: str) -> BehaviorProfile:
+    def create_default_profile(
+        self,
+        user_id: str,
+        onboarding_context: OnboardingContext | None = None,
+    ) -> BehaviorProfile:
         seed = f"{user_id}:{self.settings.sender_hash_pepper}"
         salt = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
-        return BehaviorProfile(user_id=user_id, user_salt=salt)
+        profile = BehaviorProfile(user_id=user_id, user_salt=salt)
+        return self._seed_profile_from_onboarding(profile, onboarding_context)
 
     def hash_identity(self, *, user_salt: str, identifier: str) -> str:
         material = f"{user_salt}:{self.settings.sender_hash_pepper}:{identifier.strip().lower()}"
@@ -279,3 +291,23 @@ class ProfileService:
             profile.peak_action_hour = counter.most_common(1)[0][0]
             low_frequency_hours = [hour for hour, count in counter.items() if count <= 1]
             profile.low_energy_hours = sorted(low_frequency_hours)[:5]
+
+    def _seed_profile_from_onboarding(
+        self,
+        profile: BehaviorProfile,
+        onboarding_context: OnboardingContext | None,
+    ) -> BehaviorProfile:
+        if onboarding_context is None:
+            return profile
+
+        performance_time = dict(onboarding_context.static_preferences).get("performance_time")
+        if performance_time not in _PERFORMANCE_TIME_SEEDS:
+            return profile
+
+        seeded_pattern = _PERFORMANCE_TIME_SEEDS[performance_time]
+        return profile.model_copy(
+            update={
+                "peak_action_hour": seeded_pattern["peak_action_hour"],
+                "low_energy_hours": list(seeded_pattern["low_energy_hours"]),
+            }
+        )

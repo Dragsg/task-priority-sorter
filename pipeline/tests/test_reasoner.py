@@ -183,3 +183,84 @@ def test_fallback_reasoner_confidence_varies_with_task_evidence():
     assert low_output.confidence < high_output.confidence
     assert low_output.confidence != 0.45
     assert high_output.confidence != 0.45
+
+
+def test_reasoner_exposes_onboarding_preferences_in_user_context():
+    settings = PipelineSettings()
+    reasoner = PriorityReasoner(settings, client=None)
+    task = CanonicalTask(
+        canonical_task_id="task-1",
+        user_id="user-1",
+        run_id="run-1",
+        task_type=TaskType.MEETING,
+        topic_entity=TopicEntity(entity_name="Townhall", entity_type=EntityType.TOPIC, entity_key="townhall"),
+        source_ids=["msg-1"],
+        priority_tier=PriorityTier.MEDIUM,
+        platforms_seen=[Platform.GMAIL],
+        sender_roles=[SenderRole.INSTITUTION],
+    )
+    profile = BehaviorProfile(user_id="user-1", user_salt="salt-1", confidence=0.0)
+    onboarding = OnboardingContext(
+        user_id="user-1",
+        static_preferences={
+            "performance_time": "Afternoon",
+            "important_topic": "External meetings and events",
+            "prioritise_by": "Who it's from",
+        },
+    )
+
+    llm_input = reasoner.build_llm_input(
+        task=task,
+        profile=profile,
+        onboarding=onboarding,
+        entity_context=None,
+        sender_context=None,
+        can_personalize=False,
+        current_hour=14,
+    )
+
+    assert llm_input["user_context"]["initial_performance_time"] == "Afternoon"
+    assert llm_input["user_context"]["initial_focus_area"] == "External meetings and events"
+    assert llm_input["user_context"]["initial_priority_lens"] == "Who it's from"
+
+
+def test_onboarding_preferences_can_apply_lightweight_priority_nudge_before_profile_learning():
+    settings = PipelineSettings()
+    reasoner = PriorityReasoner(settings, client=None)
+    task = CanonicalTask(
+        canonical_task_id="task-1",
+        user_id="user-1",
+        run_id="run-1",
+        task_type=TaskType.MEETING,
+        topic_entity=TopicEntity(entity_name="Townhall", entity_type=EntityType.TOPIC, entity_key="townhall"),
+        source_ids=["msg-1"],
+        deadline_hours=30,
+        priority_tier=PriorityTier.MEDIUM,
+        score_reasons=["scheduled meeting", "from institution"],
+        platforms_seen=[Platform.GMAIL],
+        sender_roles=[SenderRole.INSTITUTION],
+    )
+    profile = BehaviorProfile(user_id="user-1", user_salt="salt-1", confidence=0.0)
+    onboarding = OnboardingContext(
+        user_id="user-1",
+        static_preferences={
+            "performance_time": "Afternoon",
+            "important_topic": "External meetings and events",
+            "prioritise_by": "Who it's from",
+        },
+    )
+
+    llm_input = reasoner.build_llm_input(
+        task=task,
+        profile=profile,
+        onboarding=onboarding,
+        entity_context=None,
+        sender_context=None,
+        can_personalize=False,
+        current_hour=14,
+    )
+    output, _ = reasoner.reason_task(run_id="run-1", task=task, llm_input=llm_input)
+
+    assert output.priority_tier == PriorityTier.HIGH
+    assert output.profile_adjustment_made is True
+    assert output.adjustment_reason is not None

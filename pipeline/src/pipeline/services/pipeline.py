@@ -44,8 +44,11 @@ class PriorityPipeline:
     def run_messages(self, user_id: str, messages) -> PipelineRunBundle:
         run_id = self.repository.create_run(user_id)
         try:
-            profile = self.repository.get_behavior_profile(user_id) or self.profile_service.create_default_profile(user_id)
             onboarding = self.repository.get_onboarding_context(user_id) or OnboardingContext(user_id=user_id)
+            profile = self.repository.get_behavior_profile(user_id) or self.profile_service.create_default_profile(
+                user_id,
+                onboarding,
+            )
             aliases = self.repository.get_entity_aliases(user_id)
             custom_tags = self.repository.get_custom_tags(user_id)
 
@@ -118,7 +121,11 @@ class PriorityPipeline:
             raise
 
     def apply_feedback(self, event: FeedbackEvent) -> BehaviorProfile:
-        profile = self.repository.get_behavior_profile(event.user_id) or self.profile_service.create_default_profile(event.user_id)
+        onboarding = self.repository.get_onboarding_context(event.user_id) or OnboardingContext(user_id=event.user_id)
+        profile = self.repository.get_behavior_profile(event.user_id) or self.profile_service.create_default_profile(
+            event.user_id,
+            onboarding,
+        )
         return self.apply_feedback_to_profile(profile, event)
 
     def apply_feedback_to_profile(self, profile: BehaviorProfile, event: FeedbackEvent) -> BehaviorProfile:
@@ -136,7 +143,11 @@ class PriorityPipeline:
         entity_type: EntityType,
         deadline_hours: float | None,
     ) -> BehaviorProfile:
-        profile = self.repository.get_behavior_profile(user_id) or self.profile_service.create_default_profile(user_id)
+        onboarding = self.repository.get_onboarding_context(user_id) or OnboardingContext(user_id=user_id)
+        profile = self.repository.get_behavior_profile(user_id) or self.profile_service.create_default_profile(
+            user_id,
+            onboarding,
+        )
         updated = self.profile_service.update_from_manual_task(
             profile,
             task_type=task_type,

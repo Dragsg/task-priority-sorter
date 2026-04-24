@@ -32,9 +32,11 @@ You are a student priority reasoning engine.
 You receive a structured task object, a generic pre-scored priority tier, user profile context, and calendar context.
 
 Rules:
-- Start from the pre-scored tier and only adjust it when can_personalize is true.
-- If can_personalize is false, preserve the pre-scored tier and explain why personalization was not applied.
+- Start from the pre-scored tier.
+- If can_personalize is true, use learned profile weights as the strongest personalization signals.
+- If can_personalize is false, you may use onboarding preferences as a lightweight starter signal, but any onboarding-only priority change must be at most one tier.
 - Use task_type_priority_multiplier, entity_priority_multiplier, sender_weight, tag preferences, and start-lead signals only when they are present.
+- Treat onboarding preferences as initial setup only. Behavioral history should outweigh onboarding once available.
 - Timetable context can affect action timing and rationale, but must not directly change the priority tier.
 - Return up to 3 tags.
 - Tags must come only from available_tags.
@@ -265,6 +267,7 @@ class PriorityReasoner:
                 "score_reasons": task.score_reasons,
                 "manual_tags": task.manual_tags,
                 "origin": task.origin.value,
+                "sender_roles": [role.value for role in task.sender_roles],
             },
             "user_context": {
                 "task_type_start_lead_hours": profile.task_type_start_leads.get(task.task_type),
@@ -284,6 +287,9 @@ class PriorityReasoner:
                 "current_hour": now_hour,
                 "profile_confidence": profile.confidence,
                 "can_personalize": can_personalize,
+                "initial_performance_time": onboarding.static_preferences.get("performance_time"),
+                "initial_focus_area": onboarding.static_preferences.get("important_topic"),
+                "initial_priority_lens": onboarding.static_preferences.get("prioritise_by"),
             },
             "calendar_context": {
                 "timezone": onboarding.timezone,
@@ -447,6 +453,9 @@ class PriorityReasoner:
                 tier = self._raise_tier(tier)
                 adjusted = True
                 adjustment_reason = "Escalated because this task type usually matters more for this user."
+        else:
+            tier, adjustment_reason = self._apply_onboarding_preference_nudge(task=task, user=user, tier=tier)
+            adjusted = adjustment_reason is not None
 
         action_window = self._choose_action_window(task=task, user=user, calendar_context=calendar)
         rationale = self._build_rationale(task=task, user=user, action_window=action_window)
@@ -577,6 +586,10 @@ class PriorityReasoner:
             fragments.append(
                 f"This is close to the user's usual start buffer of {round(user['task_type_start_lead_hours'], 1)} hours."
             )
+        elif user.get("initial_performance_time"):
+            fragments.append(
+                f"The current timing still leans on the user's onboarding preference for {str(user['initial_performance_time']).lower()} work."
+            )
         elif not user.get("can_personalize"):
             fragments.append("The base tier was kept because there is not enough reliable profile history yet.")
 
@@ -604,3 +617,68 @@ class PriorityReasoner:
         if tier == PriorityTier.HIGH:
             return PriorityTier.MEDIUM
         return PriorityTier.LOW
+
+    def _apply_onboarding_preference_nudge(
+        self,
+        *,
+        task: dict[str, Any],
+        user: dict[str, Any],
+        tier: PriorityTier,
+    ) -> tuple[PriorityTier, str | None]:
+        priority_lens = user.get("initial_priority_lens")
+        focus_area = user.get("initial_focus_area")
+        deadline_hours = task.get("deadline_hours")
+        sender_roles = set(task.get("sender_roles") or [])
+        task_type = task.get("type")
+
+        if priority_lens == "Urgency" and deadline_hours is not None and deadline_hours <= 24 and tier != PriorityTier.CRITICAL:
+            return (
+                self._raise_tier(tier),
+                "Escalated one tier because the user's onboarding preference leans toward urgency-first triage.",
+            )
+        if (
+            priority_lens == "Who it's from"
+            and sender_roles.intersection({"lecturer", "institution"})
+            and tier != PriorityTier.CRITICAL
+        ):
+            return (
+                self._raise_tier(tier),
+                "Escalated one tier because the user's onboarding preference gives more weight to sender importance.",
+            )
+        if (
+            priority_lens == "Overall importance"
+            and task_type in {TaskType.SUBMISSION.value, TaskType.MEETING.value}
+            and tier != PriorityTier.CRITICAL
+        ):
+            return (
+                self._raise_tier(tier),
+                "Escalated one tier because the user's onboarding preference leans toward overall importance.",
+            )
+        if (
+            focus_area == "Classes and assignments"
+            and task_type in {TaskType.SUBMISSION.value, TaskType.READING.value}
+            and tier != PriorityTier.CRITICAL
+        ):
+            return (
+                self._raise_tier(tier),
+                "Escalated one tier because the user's onboarding context emphasizes classes and assignments.",
+            )
+        if (
+            focus_area == "External meetings and events"
+            and task_type == TaskType.MEETING.value
+            and tier != PriorityTier.CRITICAL
+        ):
+            return (
+                self._raise_tier(tier),
+                "Escalated one tier because the user's onboarding context emphasizes meetings and events.",
+            )
+        if (
+            focus_area == "Personal goals"
+            and task_type == TaskType.SOCIAL.value
+            and tier != PriorityTier.CRITICAL
+        ):
+            return (
+                self._raise_tier(tier),
+                "Escalated one tier because the user's onboarding context emphasizes personal goals.",
+            )
+        return tier, None

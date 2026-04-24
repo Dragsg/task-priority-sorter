@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from pipeline.config import PipelineSettings
-from pipeline.models import BehaviorProfile, FeedbackEvent
+from pipeline.models import BehaviorProfile, FeedbackEvent, OnboardingContext
 from pipeline.models.enums import EntityType, FeedbackAction, FeedbackDirection, TaskType
 from pipeline.services.profile import ProfileService
 
@@ -82,3 +82,18 @@ def test_manual_task_updates_task_type_and_entity_context_without_touching_confi
     assert updated.entity_weights["cs2103t"].observation_count == 1
     assert updated.entity_weights["cs2103t"].priority_multiplier >= 1.2
     assert updated.confidence == 0.0
+
+
+def test_create_default_profile_seeds_time_pattern_from_onboarding_preferences():
+    service = ProfileService(PipelineSettings())
+
+    profile = service.create_default_profile(
+        "user-1",
+        OnboardingContext(
+            user_id="user-1",
+            static_preferences={"performance_time": "Evening"},
+        ),
+    )
+
+    assert profile.peak_action_hour == 20
+    assert profile.low_energy_hours == [8, 9, 10, 13, 14]

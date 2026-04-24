@@ -316,6 +316,10 @@ export default function Onboarding() {
 
   const calendarSource = onboarding.calendar_source;
   const busyWindowCount = onboarding.busy_windows?.length ?? 0;
+  const recurringInsightCount = onboarding.recurring_task_notes?.length ?? 0;
+  const displayedInsightCount = busyWindowCount > 0
+    ? Math.min(recurringInsightCount, busyWindowCount)
+    : recurringInsightCount;
   const isCalendarStep = stepIndex === QUESTION_STEPS.length;
   const currentQuestion = QUESTION_STEPS[stepIndex];
   const totalSteps = QUESTION_STEPS.length + 1;
@@ -399,7 +403,13 @@ export default function Onboarding() {
                 </div>
                 <div className="summary-value summary-value-stack">
                   <span>{calendarSource ? "Calendar linked" : "No calendar linked"}</span>
-                  <span>{busyWindowCount} busy windows stored</span>
+                  <span>
+                    {calendarSource
+                      ? displayedInsightCount > 0
+                        ? `${displayedInsightCount} availability insights`
+                        : `${busyWindowCount} upcoming busy windows`
+                      : "0 availability insights"}
+                  </span>
                 </div>
               </div>
 

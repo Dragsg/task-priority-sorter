@@ -105,6 +105,10 @@ export default function Preferences() {
 
   const calendarSource = onboarding.calendar_source;
   const busyWindowCount = onboarding.busy_windows?.length ?? 0;
+  const recurringInsightCount = onboarding.recurring_task_notes?.length ?? 0;
+  const displayedInsightCount = busyWindowCount > 0
+    ? Math.min(recurringInsightCount, busyWindowCount)
+    : recurringInsightCount;
 
   return (
     <main className="simple-shell">
@@ -167,7 +171,13 @@ export default function Preferences() {
             </div>
             <div className="summary-value summary-value-stack">
               <span>{calendarSource ? "Calendar linked" : "No calendar linked"}</span>
-              <span>{busyWindowCount} busy windows stored</span>
+              <span>
+                {calendarSource
+                  ? displayedInsightCount > 0
+                    ? `${displayedInsightCount} availability insights`
+                    : `${busyWindowCount} upcoming busy windows`
+                  : "0 availability insights"}
+              </span>
             </div>
           </div>
 

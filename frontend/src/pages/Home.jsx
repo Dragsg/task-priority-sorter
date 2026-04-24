@@ -14,7 +14,6 @@ import {
   updatePrioritizedTask,
   updateTaskTags,
 } from "../api";
-import { PRIORITISE_BY_OPTIONS, getOnboardingAnswerLabel } from "../onboardingOptions";
 import PageNav from "../components/PageNav";
 
 const TASK_TYPE_OPTIONS = [
@@ -1473,12 +1472,6 @@ export default function Home() {
           <article className="summary-card">
             <p className="summary-label">Signed in as</p>
             <p className="summary-value">{user?.username ?? "Refreshing your account..."}</p>
-          </article>
-          <article className="summary-card">
-            <p className="summary-label">Prioritise by</p>
-            <p className="summary-value">
-              {getOnboardingAnswerLabel(PRIORITISE_BY_OPTIONS, user?.prioritiseBy)}
-            </p>
           </article>
           <article className="summary-card">
             <p className="summary-label">Profile confidence</p>
