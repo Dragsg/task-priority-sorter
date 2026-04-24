@@ -15,7 +15,7 @@ class AccountRoutesTestCase(unittest.TestCase):
     def test_signup_rejects_short_password(self, get_user_by_username):
         response = self.client.post(
             "/api/signup",
-            json={"username": "taylor", "password": "short", "name": "Taylor"},
+            json={"username": "taylor", "password": "short"},
         )
 
         self.assertEqual(response.status_code, 422)
@@ -34,7 +34,6 @@ class AccountRoutesTestCase(unittest.TestCase):
         get_user_by_username.return_value = None
         create_user.return_value = {
             "user_id": 12,
-            "name": "Taylor",
             "username": "taylor",
             "preferences": None,
             "performance_time": None,
@@ -47,7 +46,6 @@ class AccountRoutesTestCase(unittest.TestCase):
             json={
                 "username": " taylor ",
                 "password": "long-enough",
-                "name": " Taylor ",
             },
         )
 
@@ -56,7 +54,6 @@ class AccountRoutesTestCase(unittest.TestCase):
             response.get_json()["user"],
             {
                 "userId": 12,
-                "name": "Taylor",
                 "username": "taylor",
                 "preferences": None,
                 "performanceTime": None,
@@ -66,7 +63,6 @@ class AccountRoutesTestCase(unittest.TestCase):
             },
         )
         create_user.assert_called_once()
-        self.assertEqual(create_user.call_args.kwargs["name"], "Taylor")
         self.assertEqual(create_user.call_args.kwargs["username"], "taylor")
         self.assertTrue(create_user.call_args.kwargs["password_hash"])
 
@@ -99,7 +95,6 @@ class AccountRoutesTestCase(unittest.TestCase):
         }
         update_user_username.return_value = {
             "user_id": 5,
-            "name": "Taylor",
             "username": "new-name",
             "preferences": None,
             "performance_time": "Morning",
@@ -120,7 +115,6 @@ class AccountRoutesTestCase(unittest.TestCase):
                 "success": True,
                 "user": {
                     "userId": 5,
-                    "name": "Taylor",
                     "username": "new-name",
                     "preferences": None,
                     "performanceTime": "Morning",

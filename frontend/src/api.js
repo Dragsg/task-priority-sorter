@@ -95,11 +95,11 @@ async function sendJson(path, options = {}) {
   return readJson(response);
 }
 
-export async function signUp({ username, password, name }) {
+export async function signUp({ username, password }) {
   return sendJson("/signup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password, name }),
+    body: JSON.stringify({ username, password }),
   });
 }
 

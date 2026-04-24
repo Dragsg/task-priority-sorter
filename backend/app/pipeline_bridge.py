@@ -834,7 +834,7 @@ def create_manual_task(
                 "source_id": source_id,
                 "thread_id": source_id,
                 "timestamp_iso": now_sgt().isoformat(),
-                "sender_display": user["name"] if user else "You",
+                "sender_display": user["username"] if user else "You",
                 "sender_email": None,
                 "subject": cleaned_title,
                 "snippet": cleaned_description or cleaned_title,

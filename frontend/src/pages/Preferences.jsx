@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
@@ -8,29 +8,19 @@ import {
   updateCurrentUser,
   uploadOnboardingCalendar,
 } from "../api";
+import CalendarContextSummary from "../components/CalendarContextSummary";
 import PageNav from "../components/PageNav";
-
-function formatCalendarTimestamp(value) {
-  if (!value) {
-    return null;
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed.toLocaleString();
-}
 
 export default function Preferences() {
   const navigate = useNavigate();
   const [user, setUser] = useState(() => getStoredUser());
   const [onboarding, setOnboarding] = useState(null);
   const [username, setUsername] = useState("");
-  const [calendarFile, setCalendarFile] = useState(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [usernameBusy, setUsernameBusy] = useState(false);
+  const calendarInputRef = useRef(null);
 
   useEffect(() => {
     async function loadContext() {
@@ -48,10 +38,16 @@ export default function Preferences() {
     loadContext();
   }, [navigate]);
 
-  async function handleCalendarUpload(event) {
-    event.preventDefault();
-    if (!calendarFile) {
-      setError("Choose a .ics file to upload.");
+  function handleCalendarPickerOpen() {
+    if (calendarBusy) {
+      return;
+    }
+    calendarInputRef.current?.click();
+  }
+
+  async function handleCalendarSelection(event) {
+    const selectedFile = event.target.files?.[0] ?? null;
+    if (!selectedFile) {
       return;
     }
 
@@ -59,13 +55,13 @@ export default function Preferences() {
       setCalendarBusy(true);
       setError("");
       setStatus("");
-      const result = await uploadOnboardingCalendar(calendarFile);
+      const result = await uploadOnboardingCalendar(selectedFile);
       setOnboarding(result.onboarding);
-      setCalendarFile(null);
       setStatus("Calendar context updated.");
     } catch (uploadError) {
       setError(uploadError.message);
     } finally {
+      event.target.value = "";
       setCalendarBusy(false);
     }
   }
@@ -133,7 +129,6 @@ export default function Preferences() {
               </p>
             </div>
             <div className="summary-value summary-value-stack">
-              <span>Display name: {user.name}</span>
               <span>Current username: {user.username}</span>
             </div>
           </div>
@@ -176,38 +171,23 @@ export default function Preferences() {
             </div>
           </div>
 
-          {calendarSource ? (
-            <div className="calendar-summary">
-              <p className="task-source-line">
-                <span>File:</span> {calendarSource.filename}
-              </p>
-              <p className="task-source-line">
-                <span>Uploaded:</span> {formatCalendarTimestamp(calendarSource.uploaded_at)}
-              </p>
-              <p className="task-source-line">
-                <span>Timezone:</span>{" "}
-                {calendarSource.calendar_timezone || onboarding.timezone || "Asia/Singapore"}
-              </p>
-              {onboarding.timetable_summary ? (
-                <p className="task-source-line task-source-preview">
-                  <span>Summary:</span> {onboarding.timetable_summary}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+          <CalendarContextSummary onboarding={onboarding} />
 
-          <form className="calendar-upload-form" onSubmit={handleCalendarUpload}>
-            <label className="field-group">
-              <span>Calendar file</span>
-              <input
-                accept=".ics"
-                className="auth-input auth-file-input"
-                onChange={(event) => setCalendarFile(event.target.files?.[0] ?? null)}
-                type="file"
-              />
-            </label>
+          <div className="calendar-upload-form">
+            <input
+              accept=".ics"
+              className="onboarding-calendar-input"
+              onChange={handleCalendarSelection}
+              ref={calendarInputRef}
+              type="file"
+            />
             <div className="manual-task-actions">
-              <button className="auth-button" disabled={calendarBusy} type="submit">
+              <button
+                className="auth-button"
+                disabled={calendarBusy}
+                onClick={handleCalendarPickerOpen}
+                type="button"
+              >
                 {calendarBusy ? "Uploading..." : calendarSource ? "Replace calendar" : "Upload calendar"}
               </button>
               {calendarSource ? (
@@ -220,11 +200,8 @@ export default function Preferences() {
                   Remove calendar
                 </button>
               ) : null}
-              <Link className="secondary-button" to="/home">
-                Back to dashboard
-              </Link>
             </div>
-          </form>
+          </div>
         </section>
 
         {status ? <p className="success-text">{status}</p> : null}

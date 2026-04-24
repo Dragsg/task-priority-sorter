@@ -48,7 +48,6 @@ class TaskRoutesTestCase(unittest.TestCase):
     ):
         get_user_by_id.return_value = {
             "user_id": 7,
-            "name": "Avery",
             "username": "avery",
             "preferences": "School",
             "performance_time": "Evening",
@@ -77,7 +76,6 @@ class TaskRoutesTestCase(unittest.TestCase):
     ):
         get_user_by_id.return_value = {
             "user_id": 7,
-            "name": "Avery",
             "username": "avery",
             "preferences": "School",
             "performance_time": "Evening",
@@ -171,7 +169,6 @@ class TaskRoutesTestCase(unittest.TestCase):
     def test_onboarding_context_route_returns_payload(self, get_user_by_id, get_onboarding_context_snapshot):
         get_user_by_id.return_value = {
             "user_id": 7,
-            "name": "Avery",
             "username": "avery",
             "preferences": "School",
             "performance_time": "Evening",
@@ -203,7 +200,6 @@ class TaskRoutesTestCase(unittest.TestCase):
     def test_onboarding_route_saves_new_answers(self, sync_onboarding_context, update_user_onboarding_answers):
         update_user_onboarding_answers.return_value = {
             "user_id": 7,
-            "name": "Avery",
             "username": "avery",
             "preferences": "School",
             "performance_time": "Evening",

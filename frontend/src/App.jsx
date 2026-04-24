@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { getStoredToken } from "./api";
+import { clearStoredToken, fetchCurrentUser, getStoredToken, getStoredUser } from "./api";
+import { isOnboardingComplete } from "./onboardingOptions";
 import Home from "./pages/Home";
 import Kanban from "./pages/Kanban";
 import Linking from "./pages/Linking";
@@ -8,11 +10,75 @@ import Onboarding from "./pages/Onboarding";
 import Preferences from "./pages/Preferences";
 import Statistics from "./pages/Statistics";
 
-function ProtectedRoute({ children }) {
+function ProtectedRoute({
+  children,
+  onboardingOnly = false,
+  requireCompletedOnboarding = false,
+}) {
   const token = getStoredToken();
+  const cachedUser = getStoredUser();
+  const cachedUserId = cachedUser?.userId ?? null;
+  const cachedUserCompleted = isOnboardingComplete(cachedUser);
+  const [resolvedUser, setResolvedUser] = useState(() => cachedUser);
+  const [loading, setLoading] = useState(() => Boolean(token && !cachedUser));
+
+  useEffect(() => {
+    let active = true;
+
+    if (!token) {
+      setResolvedUser(null);
+      setLoading(false);
+      return undefined;
+    }
+
+    if (cachedUser) {
+      setLoading(false);
+      return undefined;
+    }
+
+    setLoading(true);
+    fetchCurrentUser()
+      .then((user) => {
+        if (!active) {
+          return;
+        }
+        setResolvedUser(user);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        clearStoredToken();
+        setResolvedUser(null);
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [cachedUserCompleted, cachedUserId, token]);
 
   if (!token) {
     return <Navigate replace to="/" />;
+  }
+
+  const user = cachedUser ?? resolvedUser;
+
+  if (loading) {
+    return <main className="simple-shell">Checking your account...</main>;
+  }
+
+  if (!user) {
+    return <Navigate replace to="/" />;
+  }
+
+  const completed = isOnboardingComplete(user);
+  if (onboardingOnly && completed) {
+    return <Navigate replace to="/home" />;
+  }
+  if (requireCompletedOnboarding && !completed) {
+    return <Navigate replace to="/onboarding" />;
   }
 
   return children;
@@ -25,7 +91,7 @@ export default function App() {
         <Route element={<Login />} path="/" />
         <Route
           element={
-            <ProtectedRoute>
+            <ProtectedRoute onboardingOnly>
               <Onboarding />
             </ProtectedRoute>
           }
@@ -33,7 +99,7 @@ export default function App() {
         />
         <Route
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireCompletedOnboarding>
               <Preferences />
             </ProtectedRoute>
           }
@@ -41,7 +107,7 @@ export default function App() {
         />
         <Route
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireCompletedOnboarding>
               <Home />
             </ProtectedRoute>
           }
@@ -49,7 +115,7 @@ export default function App() {
         />
         <Route
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireCompletedOnboarding>
               <Kanban />
             </ProtectedRoute>
           }
@@ -57,7 +123,7 @@ export default function App() {
         />
         <Route
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireCompletedOnboarding>
               <Linking />
             </ProtectedRoute>
           }
@@ -65,7 +131,7 @@ export default function App() {
         />
         <Route
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireCompletedOnboarding>
               <Statistics />
             </ProtectedRoute>
           }

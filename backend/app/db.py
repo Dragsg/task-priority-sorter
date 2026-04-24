@@ -529,14 +529,57 @@ def update_outlook_last_received_at(user_id: int, last_received_at):
     )
 
 
+def ensure_user_details_table():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS public.user_details (
+                    user_id BIGSERIAL PRIMARY KEY,
+                    username TEXT NOT NULL UNIQUE,
+                    password TEXT NOT NULL,
+                    preferences TEXT,
+                    performance_time TEXT,
+                    important_topic TEXT,
+                    prioritise_by TEXT
+                )
+                """
+            )
+            cursor.execute(
+                """
+                ALTER TABLE public.user_details
+                ADD COLUMN IF NOT EXISTS username TEXT,
+                ADD COLUMN IF NOT EXISTS password TEXT,
+                ADD COLUMN IF NOT EXISTS preferences TEXT,
+                ADD COLUMN IF NOT EXISTS performance_time TEXT,
+                ADD COLUMN IF NOT EXISTS important_topic TEXT,
+                ADD COLUMN IF NOT EXISTS prioritise_by TEXT
+                """
+            )
+            cursor.execute(
+                """
+                ALTER TABLE public.user_details
+                DROP COLUMN IF EXISTS name
+                """
+            )
+            cursor.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS user_details_username_key
+                ON public.user_details (username)
+                """
+            )
+        connection.commit()
+
+
 def get_user_by_username(username: str):
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT
                     user_id,
-                    name,
                     username,
                     password,
                     preferences,
@@ -552,13 +595,14 @@ def get_user_by_username(username: str):
 
 
 def get_user_by_id(user_id: int) -> DbRow | None:
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
                 SELECT
                     user_id,
-                    name,
                     username,
                     preferences,
                     performance_time,
@@ -572,23 +616,24 @@ def get_user_by_id(user_id: int) -> DbRow | None:
             return cast(DbRow | None, cursor.fetchone())
 
 
-def create_user(name: str, username: str, password_hash: str) -> DbRow:
+def create_user(username: str, password_hash: str) -> DbRow:
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO public.user_details (name, username, password)
-                VALUES (%s, %s, %s)
+                INSERT INTO public.user_details (username, password)
+                VALUES (%s, %s)
                 RETURNING
                     user_id,
-                    name,
                     username,
                     preferences,
                     performance_time,
                     important_topic,
                     prioritise_by
                 """,
-                (name, username, password_hash),
+                (username, password_hash),
             )
             user = cast(DbRow | None, cursor.fetchone())
         connection.commit()
@@ -601,6 +646,8 @@ def create_user(name: str, username: str, password_hash: str) -> DbRow:
 
 
 def update_user_preferences(user_id: int, preferences: str) -> DbRow:
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -610,7 +657,6 @@ def update_user_preferences(user_id: int, preferences: str) -> DbRow:
                 WHERE user_id = %s
                 RETURNING
                     user_id,
-                    name,
                     username,
                     preferences,
                     performance_time,
@@ -634,6 +680,8 @@ def update_user_preferences(user_id: int, preferences: str) -> DbRow:
 
 
 def update_user_username(user_id: int, username: str) -> DbRow | None:
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -643,7 +691,6 @@ def update_user_username(user_id: int, username: str) -> DbRow | None:
                 WHERE user_id = %s
                 RETURNING
                     user_id,
-                    name,
                     username,
                     preferences,
                     performance_time,
@@ -668,6 +715,8 @@ def update_user_onboarding_answers(
     important_topic: str,
     prioritise_by: str,
 ) -> DbRow | None:
+    ensure_user_details_table()
+
     with get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -679,7 +728,6 @@ def update_user_onboarding_answers(
                 WHERE user_id = %s
                 RETURNING
                     user_id,
-                    name,
                     username,
                     preferences,
                     performance_time,

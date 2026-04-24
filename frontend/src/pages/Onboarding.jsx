@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
@@ -10,18 +10,40 @@ import {
   storeUser,
   uploadOnboardingCalendar,
 } from "../api";
-import PageNav from "../components/PageNav";
 import {
   IMPORTANT_TOPIC_OPTIONS,
   PERFORMANCE_TIME_OPTIONS,
   PRIORITISE_BY_OPTIONS,
-  hasOnboardingAccess,
   isOnboardingComplete,
   normalizeOnboardingAnswer,
   revokeOnboardingAccess,
 } from "../onboardingOptions";
+import CalendarContextSummary from "../components/CalendarContextSummary";
 
 const ONBOARDING_CACHE_VERSION = 2;
+const QUESTION_STEPS = [
+  {
+    key: "performanceTime",
+    title: "When is it easiest for you to get important work done?",
+    description:
+      "This helps the app understand when you naturally have the most momentum for important tasks.",
+    options: PERFORMANCE_TIME_OPTIONS,
+  },
+  {
+    key: "importantTopic",
+    title: "Which topics or areas matter most to you right now?",
+    description:
+      "Pick the area that matters most right now, so the queue can frame your work with the right context.",
+    options: IMPORTANT_TOPIC_OPTIONS,
+  },
+  {
+    key: "prioritiseBy",
+    title: "When choosing what to surface first, what should matter most?",
+    description:
+      "Choose the main lens you want the system to use when deciding what should surface first.",
+    options: PRIORITISE_BY_OPTIONS,
+  },
+];
 
 function getOnboardingCacheKey(userId) {
   return `task-priority-onboarding:v${ONBOARDING_CACHE_VERSION}:${userId}`;
@@ -66,15 +88,17 @@ function writeOnboardingCache(userId, user, onboarding) {
   }
 }
 
-function formatCalendarTimestamp(value) {
-  if (!value) {
-    return null;
+function getStepIndexFromAnswers({ performanceTime, importantTopic, prioritiseBy }) {
+  if (!performanceTime) {
+    return 0;
   }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
+  if (!importantTopic) {
+    return 1;
   }
-  return parsed.toLocaleString();
+  if (!prioritiseBy) {
+    return 2;
+  }
+  return QUESTION_STEPS.length;
 }
 
 function QuestionGroup({ description, name, onChange, options, title, value }) {
@@ -115,25 +139,46 @@ export default function Onboarding() {
   const [performanceTime, setPerformanceTime] = useState("");
   const [importantTopic, setImportantTopic] = useState("");
   const [prioritiseBy, setPrioritiseBy] = useState("");
-  const [calendarFile, setCalendarFile] = useState(null);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [calendarBusy, setCalendarBusy] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const calendarInputRef = useRef(null);
+
+  function syncAnswers(nextUser) {
+    const nextPerformanceTime = normalizeOnboardingAnswer(
+      PERFORMANCE_TIME_OPTIONS,
+      nextUser?.performanceTime
+    );
+    const nextImportantTopic = normalizeOnboardingAnswer(
+      IMPORTANT_TOPIC_OPTIONS,
+      nextUser?.importantTopic
+    );
+    const nextPrioritiseBy = normalizeOnboardingAnswer(
+      PRIORITISE_BY_OPTIONS,
+      nextUser?.prioritiseBy
+    );
+
+    setPerformanceTime(nextPerformanceTime);
+    setImportantTopic(nextImportantTopic);
+    setPrioritiseBy(nextPrioritiseBy);
+    setStepIndex(
+      getStepIndexFromAnswers({
+        performanceTime: nextPerformanceTime,
+        importantTopic: nextImportantTopic,
+        prioritiseBy: nextPrioritiseBy,
+      })
+    );
+  }
 
   useEffect(() => {
     async function loadContext() {
       try {
         const data = await fetchOnboardingContext();
-        if (!hasOnboardingAccess(data.user?.userId)) {
-          navigate("/home", { replace: true });
-          return;
-        }
         setUser(data.user);
         setOnboarding(data.onboarding);
-        setPerformanceTime(normalizeOnboardingAnswer(PERFORMANCE_TIME_OPTIONS, data.user?.performanceTime));
-        setImportantTopic(normalizeOnboardingAnswer(IMPORTANT_TOPIC_OPTIONS, data.user?.importantTopic));
-        setPrioritiseBy(normalizeOnboardingAnswer(PRIORITISE_BY_OPTIONS, data.user?.prioritiseBy));
+        syncAnswers(data.user);
       } catch (loadError) {
         if (cachedOnboarding) {
           setError(loadError.message || "Using your saved setup while fresh context loads.");
@@ -145,9 +190,7 @@ export default function Onboarding() {
     }
 
     if (cachedOnboarding?.user) {
-      setPerformanceTime(normalizeOnboardingAnswer(PERFORMANCE_TIME_OPTIONS, cachedOnboarding.user.performanceTime));
-      setImportantTopic(normalizeOnboardingAnswer(IMPORTANT_TOPIC_OPTIONS, cachedOnboarding.user.importantTopic));
-      setPrioritiseBy(normalizeOnboardingAnswer(PRIORITISE_BY_OPTIONS, cachedOnboarding.user.prioritiseBy));
+      syncAnswers(cachedOnboarding.user);
     }
 
     loadContext();
@@ -197,10 +240,43 @@ export default function Onboarding() {
     }
   }
 
-  async function handleCalendarUpload(event) {
-    event.preventDefault();
-    if (!calendarFile) {
-      setError("Choose a .ics file to upload.");
+  function handleNextStep() {
+    const currentStep = QUESTION_STEPS[stepIndex];
+    if (!currentStep) {
+      return;
+    }
+
+    const answers = {
+      performanceTime,
+      importantTopic,
+      prioritiseBy,
+    };
+    if (!answers[currentStep.key]) {
+      setError("Choose one option before continuing.");
+      return;
+    }
+
+    setError("");
+    setStatus("");
+    setStepIndex((current) => Math.min(current + 1, QUESTION_STEPS.length));
+  }
+
+  function handlePreviousStep() {
+    setError("");
+    setStatus("");
+    setStepIndex((current) => Math.max(current - 1, 0));
+  }
+
+  function handleCalendarPickerOpen() {
+    if (calendarBusy) {
+      return;
+    }
+    calendarInputRef.current?.click();
+  }
+
+  async function handleCalendarSelection(event) {
+    const selectedFile = event.target.files?.[0] ?? null;
+    if (!selectedFile) {
       return;
     }
 
@@ -208,13 +284,13 @@ export default function Onboarding() {
       setCalendarBusy(true);
       setError("");
       setStatus("");
-      const result = await uploadOnboardingCalendar(calendarFile);
+      const result = await uploadOnboardingCalendar(selectedFile);
       setOnboarding(result.onboarding);
-      setCalendarFile(null);
-      setStatus("Calendar context updated.");
+      setStatus("Calendar context updated. You can finish setup now.");
     } catch (uploadError) {
       setError(uploadError.message);
     } finally {
+      event.target.value = "";
       setCalendarBusy(false);
     }
   }
@@ -240,124 +316,186 @@ export default function Onboarding() {
 
   const calendarSource = onboarding.calendar_source;
   const busyWindowCount = onboarding.busy_windows?.length ?? 0;
+  const isCalendarStep = stepIndex === QUESTION_STEPS.length;
+  const currentQuestion = QUESTION_STEPS[stepIndex];
+  const totalSteps = QUESTION_STEPS.length + 1;
+  const answeredQuestionCount = [performanceTime, importantTopic, prioritiseBy].filter(Boolean).length;
+  const progressPercent = Math.round((answeredQuestionCount / QUESTION_STEPS.length) * 100);
+  const selectedAnswers = {
+    performanceTime,
+    importantTopic,
+    prioritiseBy,
+  };
 
   return (
     <main className="simple-shell">
-      <PageNav />
       <section className="simple-hero">
         <p className="auth-eyebrow">Onboarding</p>
-        <h1 className="simple-title">Help the queue learn your working style</h1>
+        <p className="summary-label">
+          Step {stepIndex + 1} of {totalSteps}
+        </p>
+        <h1 className="simple-title">
+          {isCalendarStep ? "Optional calendar context" : "Help the queue learn your working style"}
+        </h1>
         <p className="simple-copy">
-          You&apos;re signed in as <strong>{user.username}</strong>. Answer three quick questions,
-          then optionally add a calendar file for timing context.
+          You&apos;re signed in as <strong>{user.username}</strong>.{" "}
+          {isCalendarStep
+            ? "You can upload a calendar file now, or skip this step and add it later under Preferences."
+            : "We'll ask one question at a time, and the rest of the app will unlock after these answers are saved."}
         </p>
         <p className="simple-note">
-          Calendar uploads are optional. They are used only to extract busy windows and summaries,
-          not to store the raw `.ics` text.
+          {isCalendarStep
+            ? "Calendar uploads are optional. They are used only to extract busy windows and summaries, not to store the raw `.ics` text."
+            : "Other tabs stay locked until onboarding is complete."}
         </p>
       </section>
 
       <section className="simple-card">
-        <form className="option-form" onSubmit={handleSubmit}>
-          <QuestionGroup
-            description="This helps the app understand when you naturally have the most momentum for important tasks."
-            name="performanceTime"
-            onChange={setPerformanceTime}
-            options={PERFORMANCE_TIME_OPTIONS}
-            title="When is it easiest for you to get important work done?"
-            value={performanceTime}
-          />
-          <QuestionGroup
-            description="Pick the area that matters most right now, so the queue can frame your work with the right context."
-            name="importantTopic"
-            onChange={setImportantTopic}
-            options={IMPORTANT_TOPIC_OPTIONS}
-            title="Which topics or areas matter most to you right now?"
-            value={importantTopic}
-          />
-          <QuestionGroup
-            description="Choose the main lens you want the system to use when deciding what should surface first."
-            name="prioritiseBy"
-            onChange={setPrioritiseBy}
-            options={PRIORITISE_BY_OPTIONS}
-            title="When choosing what to surface first, what should matter most?"
-            value={prioritiseBy}
-          />
+        <section className="onboarding-progress-panel" aria-label="Onboarding progress">
+          <div className="onboarding-progress-header">
+            <p className="summary-label">Progress</p>
+            <p className="summary-value">{progressPercent}% complete</p>
+          </div>
+          <div
+            aria-hidden="true"
+            className="onboarding-progress-track"
+          >
+            <span
+              className="onboarding-progress-fill"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        </section>
 
-          <section className="calendar-panel">
-            <div className="calendar-panel-header">
-              <div>
-                <p className="summary-label">Optional calendar upload (.ics)</p>
-                <p className="panel-copy">
-                  Upload one active `.ics` file to give the pipeline timetable context for the next
-                  21 days.
-                </p>
-              </div>
-              <div className="summary-value summary-value-stack">
-                <span>{calendarSource ? "Calendar linked" : "No calendar linked"}</span>
-                <span>{busyWindowCount} busy windows stored</span>
-              </div>
+        {isCalendarStep ? (
+          <form className="option-form" onSubmit={handleSubmit}>
+            <div className="summary-grid">
+              <article className="summary-card">
+                <p className="summary-label">Best work window</p>
+                <p className="summary-value">{selectedAnswers.performanceTime}</p>
+              </article>
+              <article className="summary-card">
+                <p className="summary-label">Most important area</p>
+                <p className="summary-value">{selectedAnswers.importantTopic}</p>
+              </article>
+              <article className="summary-card">
+                <p className="summary-label">Prioritise by</p>
+                <p className="summary-value">{selectedAnswers.prioritiseBy}</p>
+              </article>
+              <article className="summary-card">
+                <p className="summary-label">Calendar status</p>
+                <p className="summary-value">{calendarSource ? "Ready to use" : "Not linked yet"}</p>
+              </article>
             </div>
 
-            {calendarSource ? (
-              <div className="calendar-summary">
-                <p className="task-source-line">
-                  <span>File:</span> {calendarSource.filename}
-                </p>
-                <p className="task-source-line">
-                  <span>Uploaded:</span> {formatCalendarTimestamp(calendarSource.uploaded_at)}
-                </p>
-                <p className="task-source-line">
-                  <span>Timezone:</span>{" "}
-                  {calendarSource.calendar_timezone || onboarding.timezone || "Asia/Singapore"}
-                </p>
-                {onboarding.timetable_summary ? (
-                  <p className="task-source-line task-source-preview">
-                    <span>Summary:</span> {onboarding.timetable_summary}
+            <section className="calendar-panel">
+              <div className="calendar-panel-header">
+                <div>
+                  <p className="summary-label">Optional calendar upload (.ics)</p>
+                  <p className="panel-copy">
+                    Upload one active `.ics` file to give the pipeline timetable context for the
+                    next 21 days. You can also skip this now and add it later in Preferences.
                   </p>
-                ) : null}
+                </div>
+                <div className="summary-value summary-value-stack">
+                  <span>{calendarSource ? "Calendar linked" : "No calendar linked"}</span>
+                  <span>{busyWindowCount} busy windows stored</span>
+                </div>
               </div>
-            ) : null}
 
-            <div className="calendar-upload-form">
-              <label className="field-group">
-                <span>Calendar file</span>
+              <CalendarContextSummary onboarding={onboarding} />
+
+              <div className="calendar-upload-form">
                 <input
                   accept=".ics"
-                  className="auth-input auth-file-input"
-                  onChange={(event) => setCalendarFile(event.target.files?.[0] ?? null)}
+                  className="onboarding-calendar-input"
+                  onChange={handleCalendarSelection}
+                  ref={calendarInputRef}
                   type="file"
                 />
-              </label>
-              <div className="manual-task-actions">
-                <button
-                  className="auth-button"
-                  disabled={calendarBusy}
-                  onClick={handleCalendarUpload}
-                  type="button"
-                >
-                  {calendarBusy ? "Uploading..." : calendarSource ? "Replace calendar" : "Upload calendar"}
-                </button>
-                {calendarSource ? (
+                <div className="manual-task-actions">
                   <button
-                    className="secondary-button"
+                    className="auth-button"
                     disabled={calendarBusy}
-                    onClick={handleCalendarRemove}
+                    onClick={handleCalendarPickerOpen}
                     type="button"
                   >
-                    Remove calendar
+                    {calendarBusy
+                      ? "Uploading..."
+                      : calendarSource
+                        ? "Replace calendar"
+                        : "Upload calendar"}
                   </button>
-                ) : null}
+                  {calendarSource ? (
+                    <button
+                      className="secondary-button"
+                      disabled={calendarBusy}
+                      onClick={handleCalendarRemove}
+                      type="button"
+                    >
+                      Remove calendar
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <div className="manual-task-actions">
-            <button className="auth-button" disabled={busy} type="submit">
-              {busy ? "Saving..." : "Finish setup"}
-            </button>
-          </div>
-        </form>
+            <div className="manual-task-actions">
+              <button
+                className="secondary-button"
+                disabled={busy || calendarBusy}
+                onClick={handlePreviousStep}
+                type="button"
+              >
+                Back
+              </button>
+              {!calendarSource ? (
+                <button className="secondary-button" disabled={busy || calendarBusy} type="submit">
+                  {busy ? "Finishing..." : "Skip for now"}
+                </button>
+              ) : null}
+              {calendarSource ? (
+                <button className="auth-button" disabled={busy || calendarBusy} type="submit">
+                  {busy ? "Finishing..." : "Finish setup"}
+                </button>
+              ) : null}
+            </div>
+          </form>
+        ) : (
+          <>
+            <QuestionGroup
+              description={currentQuestion.description}
+              name={currentQuestion.key}
+              onChange={(nextValue) => {
+                setError("");
+                setStatus("");
+                if (currentQuestion.key === "performanceTime") {
+                  setPerformanceTime(nextValue);
+                  return;
+                }
+                if (currentQuestion.key === "importantTopic") {
+                  setImportantTopic(nextValue);
+                  return;
+                }
+                setPrioritiseBy(nextValue);
+              }}
+              options={currentQuestion.options}
+              title={currentQuestion.title}
+              value={selectedAnswers[currentQuestion.key]}
+            />
+
+            <div className="manual-task-actions">
+              {stepIndex > 0 ? (
+                <button className="secondary-button" onClick={handlePreviousStep} type="button">
+                  Back
+                </button>
+              ) : null}
+              <button className="auth-button" onClick={handleNextStep} type="button">
+                Continue
+              </button>
+            </div>
+          </>
+        )}
 
         {status ? <p className="success-text">{status}</p> : null}
         {error ? <p className="error-text auth-error">{error}</p> : null}

@@ -37,13 +37,11 @@ from .pipeline_bridge import (
 from .account_utils import (
     normalize_username,
     normalize_important_topic,
-    normalize_name,
     normalize_performance_time,
     normalize_prioritise_by,
     serialize_user,
     validate_username,
     validate_important_topic,
-    validate_name,
     validate_password,
     validate_performance_time,
     validate_prioritise_by,
@@ -115,11 +113,9 @@ def signup():
         data = request.get_json() or {}
         username = normalize_username(data.get("username"))
         password = data.get("password") or ""
-        name = normalize_name(data.get("name"))
 
         validate_username(username)
         validate_password(password)
-        validate_name(name)
 
         existing_user = get_user_by_username(username)
         if existing_user:
@@ -129,7 +125,7 @@ def signup():
             password.encode("utf-8"),
             bcrypt.gensalt(),
         ).decode("utf-8")
-        user = create_user(name=name, username=username, password_hash=password_hash)
+        user = create_user(username=username, password_hash=password_hash)
         token = build_token(user["user_id"])
     except ValueError as error:
         return jsonify({"success": False, "error": str(error)}), 422

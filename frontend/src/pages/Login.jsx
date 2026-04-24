@@ -10,6 +10,7 @@ import {
 } from "../api";
 import {
   grantOnboardingAccess,
+  isOnboardingComplete,
   revokeOnboardingAccess,
 } from "../onboardingOptions";
 
@@ -23,14 +24,12 @@ export default function Login() {
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const trimmedUsername = username.trim();
-  const trimmedName = name.trim();
   const canSubmit = isSignUp
-    ? trimmedUsername && password.length >= 8 && trimmedName.length >= 2
+    ? trimmedUsername && password.length >= 8
     : trimmedUsername && password;
 
   useEffect(() => {
@@ -42,8 +41,16 @@ export default function Login() {
 
       try {
         const user = await fetchCurrentUser();
-        revokeOnboardingAccess();
-        navigate("/home", { replace: true });
+        if (isOnboardingComplete(user)) {
+          revokeOnboardingAccess();
+          navigate("/home", { replace: true });
+          return;
+        }
+
+        if (user?.userId) {
+          grantOnboardingAccess(user.userId);
+        }
+        navigate("/onboarding", { replace: true });
       } catch {
         clearStoredToken();
       }
@@ -59,7 +66,7 @@ export default function Login() {
 
     try {
       const payload = isSignUp
-        ? await signUp({ username, password, name })
+        ? await signUp({ username, password })
         : await signIn({ username, password });
       const nextUser = payload.user ?? null;
 
@@ -67,8 +74,11 @@ export default function Login() {
       if (nextUser) {
         storeUser(nextUser);
       }
-      if (isSignUp && nextUser?.userId) {
-        grantOnboardingAccess(nextUser.userId);
+
+      if (nextUser && !isOnboardingComplete(nextUser)) {
+        if (nextUser.userId) {
+          grantOnboardingAccess(nextUser.userId);
+        }
         navigate("/onboarding");
       } else {
         revokeOnboardingAccess();
@@ -108,7 +118,7 @@ export default function Login() {
             <p className="auth-section-label">{isSignUp ? "Create account" : "Sign in"}</p>
             <p className="auth-card-copy">
               {isSignUp
-                ? "A few details and you are in."
+                ? "Pick a username and password and you are in."
                 : "Use the username and password you signed up with."}
             </p>
           </div>
@@ -144,26 +154,8 @@ export default function Login() {
               />
             </label>
             {isSignUp ? (
-              <label className="field-group">
-                <span>Name</span>
-                <input
-                  className="auth-input"
-                  disabled={busy}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="What should we call you?"
-                  type="text"
-                  value={name}
-                  autoComplete="name"
-                  minLength={2}
-                  maxLength={80}
-                  required
-                />
-              </label>
-            ) : null}
-
-            {isSignUp ? (
               <p className="field-hint">
-                Use a name with at least 2 characters and a password with at least 8.
+                Use a username with at least 3 characters and a password with at least 8.
               </p>
             ) : null}
 

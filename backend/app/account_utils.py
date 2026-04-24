@@ -21,7 +21,6 @@ ALLOWED_PRIORITISE_BY = {
 def serialize_user(user: dict) -> dict:
     return {
         "userId": user["user_id"],
-        "name": user["name"],
         "username": user["username"],
         "preferences": user["preferences"],
         "performanceTime": user.get("performance_time"),
@@ -33,10 +32,6 @@ def serialize_user(user: dict) -> dict:
 
 def normalize_username(value) -> str:
     return (value or "").strip()
-
-
-def normalize_name(value) -> str:
-    return " ".join((value or "").strip().split())
 
 
 def normalize_preference(value) -> str:
@@ -108,17 +103,6 @@ def validate_password(password: str):
 
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters long.")
-
-
-def validate_name(name: str):
-    if not name:
-        raise ValueError("Name is required.")
-
-    if len(name) < 2:
-        raise ValueError("Name must be at least 2 characters long.")
-
-    if len(name) > 80:
-        raise ValueError("Name must be 80 characters or fewer.")
 
 
 def validate_preference(preference: str):

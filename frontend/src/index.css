@@ -555,6 +555,38 @@ select {
   margin-top: 14px;
 }
 
+.onboarding-progress-panel {
+  margin-bottom: 24px;
+}
+
+.onboarding-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.onboarding-progress-track {
+  width: 100%;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(111, 88, 67, 0.12);
+  overflow: hidden;
+}
+
+.onboarding-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6f5843, #9b7b5d);
+  transition: width 180ms ease;
+}
+
+.onboarding-calendar-input {
+  display: none;
+}
+
 .option-row {
   display: flex;
   align-items: flex-start;
@@ -868,6 +900,16 @@ select {
   display: grid;
   gap: 14px;
   margin-top: 18px;
+}
+
+.calendar-note-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--ink-soft);
+}
+
+.calendar-note-list li + li {
+  margin-top: 8px;
 }
 
 .auth-file-input {
