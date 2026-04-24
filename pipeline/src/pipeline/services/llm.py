@@ -318,12 +318,14 @@ class PriorityReasoner:
             "schema": self._response_schema(),
         }
 
-        output = self._sanitize_output(self._call_openai(request_payload), llm_input)
+        raw_output, provider = self._call_openai(request_payload)
+        output = self._sanitize_output(raw_output, llm_input)
         decision = LlmDecision(
             run_id=run_id,
             canonical_task_id=task.canonical_task_id,
             prompt_version=self.settings.llm_prompt_version,
             schema_version_ref=self.settings.llm_schema_version,
+            provider=provider,
             model=self.settings.llm_model,
             request_payload=request_payload,
             response_payload=output.model_dump(mode="json"),
@@ -335,14 +337,14 @@ class PriorityReasoner:
         tags = filter_allowed_tags(output.tags, available_tags, max_count=3)
         return output.model_copy(update={"tags": tags})
 
-    def _call_openai(self, request_payload: dict[str, Any]) -> StructuredLlmOutput:
+    def _call_openai(self, request_payload: dict[str, Any]) -> tuple[StructuredLlmOutput, str]:
         api_key = os.environ.get("OPENAI_API_KEY") or load_dotenv_value("OPENAI_API_KEY")
         self._log_provider_status_once(api_key=api_key)
         if self.client is None and OpenAI is not None and api_key:  # pragma: no cover - networkless by default
             self.client = OpenAI(api_key=api_key)
 
         if self.client is None:
-            return self._fallback_reasoning(request_payload["input"])
+            return self._fallback_reasoning(request_payload["input"]), "fallback"
 
         try:  # pragma: no cover - external API
             response = self.client.responses.create(
@@ -357,9 +359,9 @@ class PriorityReasoner:
                     }
                 },
             )
-            return StructuredLlmOutput.model_validate_json(response.output_text)
+            return StructuredLlmOutput.model_validate_json(response.output_text), "openai"
         except Exception:
-            return self._fallback_reasoning(request_payload["input"])
+            return self._fallback_reasoning(request_payload["input"]), "fallback"
 
     def _log_provider_status_once(self, *, api_key: str | None) -> None:
         if self._provider_status_logged:
