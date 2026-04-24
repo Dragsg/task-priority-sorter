@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
   fetchDashboardBootstrap,
@@ -32,8 +32,6 @@ const DEADLINE_FILTER_OPTIONS = [
   { value: "7d", label: "Due within 7 days" },
   { value: "urgent", label: "Overdue / urgent" },
 ];
-
-const TASK_STATUS_OPTIONS = ["OPEN", "COMPLETED"];
 
 function normalizeTag(value) {
   if (typeof value !== "string") {
@@ -169,6 +167,80 @@ function applyTaskPatch(task, payload) {
   return { ...task, ...updates };
 }
 
+function createNormalizedLocalTaskPatch(payload = {}) {
+  const normalized = {};
+  if ("title" in payload) {
+    normalized.title = payload.title;
+  }
+  if ("description" in payload) {
+    normalized.description = payload.description;
+  }
+  if ("deadlineAt" in payload) {
+    normalized.deadlineAt = payload.deadlineAt ?? null;
+  }
+  if ("priorityTier" in payload) {
+    normalized.priorityTier = payload.priorityTier;
+  }
+  if ("status" in payload) {
+    if (payload.status === "COMPLETED") {
+      normalized.status = payload.status;
+    }
+  }
+  if ("tags" in payload) {
+    normalized.tags = dedupeTags(payload.tags);
+  }
+  return normalized;
+}
+
+const KANBAN_LOCAL_OVERRIDE_VERSION = 1;
+
+function getKanbanLocalOverrideKey(userId) {
+  return `task-priority-kanban-overrides:v${KANBAN_LOCAL_OVERRIDE_VERSION}:${userId}`;
+}
+
+function readKanbanLocalOverrides(userId) {
+  if (!userId) {
+    return {};
+  }
+
+  try {
+    const raw = localStorage.getItem(getKanbanLocalOverrideKey(userId));
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeKanbanLocalOverrides(userId, overrides) {
+  if (!userId) {
+    return;
+  }
+
+  try {
+    if (!overrides || !Object.keys(overrides).length) {
+      localStorage.removeItem(getKanbanLocalOverrideKey(userId));
+      return;
+    }
+    localStorage.setItem(getKanbanLocalOverrideKey(userId), JSON.stringify(overrides));
+  } catch {
+    // Ignore cache write failures so local-only board changes still work in-memory.
+  }
+}
+
+function applyLocalTaskOverride(task, override) {
+  return override ? applyTaskPatch(task, override) : task;
+}
+
+function applyLocalTaskOverrides(items, overrides = {}) {
+  return (items ?? []).map((task) =>
+    applyLocalTaskOverride(task, overrides?.[task.canonical_task_id])
+  );
+}
+
 function mergeTaskIntoBoard(currentTasks, updatedTask) {
   const hasTask = currentTasks.some(
     (task) => task.canonical_task_id === updatedTask.canonical_task_id
@@ -211,6 +283,16 @@ function formatDeadline(hours) {
     return `${days}d left`;
   }
   return `${rounded}h left`;
+}
+
+function formatActionWindow(value) {
+  const labels = {
+    NOW: "Do this now",
+    TODAY: "Do this today",
+    THIS_WEEK: "Do this this week",
+    DEFER: "Can wait",
+  };
+  return labels[value] || value;
 }
 
 function formatDateTimeLocalInput(value) {
@@ -260,7 +342,6 @@ function createTaskEditDraft(task) {
     description: task.task_description || "",
     deadlineAt: formatDateTimeLocalInput(task.deadline_at_iso),
     priorityTier: task.priority_tier || "MEDIUM",
-    status: getTaskWorkflowStatus(task),
     tags: getVisibleTaskTags(task),
   };
 }
@@ -404,7 +485,6 @@ function TaskEditModal({
       description: draft.description,
       deadlineAt: draft.deadlineAt || null,
       priorityTier: draft.priorityTier,
-      status: draft.status,
       tags: draft.tags,
     });
   }
@@ -428,7 +508,7 @@ function TaskEditModal({
               {cleanPreviewText(task.task_title) || "Untitled task"}
             </h2>
             <p className="kanban-modal-copy">
-              Update the details here without shifting the rest of the board.
+              Update the details here without shifting the rest of Kanban.
             </p>
           </div>
           <button
@@ -478,21 +558,6 @@ function TaskEditModal({
                 type="datetime-local"
                 value={draft.deadlineAt}
               />
-            </label>
-            <label className="field-group">
-              <span>Status</span>
-              <select
-                className="auth-input"
-                disabled={editState?.isSaving}
-                onChange={(event) => updateDraft("status", event.target.value)}
-                value={draft.status}
-              >
-                {TASK_STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>
-                    {status === "COMPLETED" ? "Completed" : "Open"}
-                  </option>
-                ))}
-              </select>
             </label>
           </div>
 
@@ -603,7 +668,7 @@ function KanbanCard({
   return (
     <article
       className={`kanban-card task-card task-card-tier-${task.priority_tier.toLowerCase()}${isCompleted ? " kanban-card-completed" : ""}${isDragging ? " kanban-card-dragging" : ""}${isMovePending ? " kanban-card-moving" : ""}${isExpanded ? " kanban-card-expanded" : ""}`}
-      draggable={!isSaving && !isMovePending}
+      draggable={!isSaving}
       onDragEnd={onDragEnd}
       onDragStart={(event) => onDragStart(event, task)}
     >
@@ -651,9 +716,7 @@ function KanbanCard({
       <div className="kanban-card-footer">
         <div className="kanban-card-meta">
           <span>{formatDeadline(task.deadline_hours)}</span>
-          {typeof task.confidence === "number" ? (
-            <span>{Math.round(task.confidence * 100)}% confidence</span>
-          ) : null}
+          {task.action_window ? <span>{formatActionWindow(task.action_window)}</span> : null}
         </div>
 
         <div className="kanban-card-actions">
@@ -777,13 +840,28 @@ export default function Kanban() {
   const [editStates, setEditStates] = useState({});
   const [savingStates, setSavingStates] = useState({});
   const [movingStates, setMovingStates] = useState({});
+  const [localTaskOverrides, setLocalTaskOverrides] = useState(() => readKanbanLocalOverrides(storedUserId));
   const [dragState, setDragState] = useState({
     taskId: null,
     fromTier: null,
     overTier: null,
   });
   const [expandedTaskIds, setExpandedTaskIds] = useState({});
+  const tasksRef = useRef(sortBoardTasks(cachedBoardItems ?? []));
   const dragPreviewRef = useRef(null);
+  const priorityMoveQueueRef = useRef(new Map());
+
+  function applyBoardSnapshot(dashboard) {
+    setUser(dashboard.user);
+    setTasks(sortBoardTasks(applyLocalTaskOverrides(dashboard.items ?? [], localTaskOverrides)));
+    setAvailableTags(dashboard.availableTags ?? []);
+  }
+
+  async function reloadBoardFromServer() {
+    const dashboard = await fetchDashboardBootstrap();
+    applyBoardSnapshot(dashboard);
+    return dashboard;
+  }
 
   useEffect(() => {
     let isCancelled = false;
@@ -797,16 +875,14 @@ export default function Kanban() {
         if (isCancelled) {
           return;
         }
-        setUser(dashboard.user);
-        setTasks(sortBoardTasks(dashboard.items ?? []));
-        setAvailableTags(dashboard.availableTags ?? []);
+        applyBoardSnapshot(dashboard);
         setError("");
       } catch (loadError) {
         if (isCancelled) {
           return;
         }
         if (cachedDashboard || getStoredUser()) {
-          setError(loadError.message || "Unable to load the latest board right now.");
+          setError(loadError.message || "Unable to load the latest Kanban board right now.");
         } else {
           clearStoredToken();
           navigate("/", { replace: true });
@@ -835,6 +911,14 @@ export default function Kanban() {
     });
   }, [availableTags, tasks, user]);
 
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
+  useEffect(() => {
+    writeKanbanLocalOverrides(user?.userId ?? storedUserId, localTaskOverrides);
+  }, [localTaskOverrides, storedUserId, user]);
+
   const hasEditInFlight = Object.values(editStates).some((state) => state?.isSaving);
   const hasTaskSaveInFlight = Object.keys(savingStates).length > 0;
   const hasTaskMoveInFlight = Object.keys(movingStates).length > 0;
@@ -860,9 +944,7 @@ export default function Kanban() {
         if (isCancelled) {
           return;
         }
-        setUser(dashboard.user);
-        setTasks(sortBoardTasks(dashboard.items ?? []));
-        setAvailableTags(dashboard.availableTags ?? []);
+        applyBoardSnapshot(dashboard);
       } catch {
         // Keep the current board visible if an automatic refresh misses a cycle.
       } finally {
@@ -876,7 +958,7 @@ export default function Kanban() {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [isLiveRefreshPaused]);
+  }, [isLiveRefreshPaused, localTaskOverrides]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
@@ -917,12 +999,32 @@ export default function Kanban() {
     () => tasks.find((task) => task.canonical_task_id === editingTaskId) ?? null,
     [editingTaskId, tasks]
   );
+  const boardTasks = useMemo(() => tasks.filter((task) => isTaskVisibleOnKanban(task)), [tasks]);
+  const dueSoonCount = useMemo(
+    () =>
+      boardTasks.filter(
+        (task) =>
+          typeof task.deadline_hours === "number" &&
+          task.deadline_hours >= 0 &&
+          task.deadline_hours <= 24
+      ).length,
+    [boardTasks]
+  );
+  const activeFilterCount = [
+    searchQuery.trim() ? 1 : 0,
+    deadlineFilter !== "all" ? 1 : 0,
+    selectedTags.length ? 1 : 0,
+  ].reduce((total, value) => total + value, 0);
 
   function updateBoardFromResult(result) {
     if (result?.task) {
-      setTasks((current) => mergeTaskIntoBoard(current, result.task));
+      const overriddenTask = applyLocalTaskOverride(
+        result.task,
+        localTaskOverrides[result.task.canonical_task_id]
+      );
+      setTasks((current) => mergeTaskIntoBoard(current, overriddenTask));
     } else if (result?.items) {
-      setTasks(sortBoardTasks(result.items));
+      setTasks(sortBoardTasks(applyLocalTaskOverrides(result.items, localTaskOverrides)));
     }
     if (result?.availableTags) {
       setAvailableTags(result.availableTags);
@@ -957,6 +1059,110 @@ export default function Kanban() {
       delete updated[canonicalTaskId];
       return updated;
     });
+  }
+
+  function saveLocalTaskOverride(canonicalTaskId, payload) {
+    const normalizedPatch = createNormalizedLocalTaskPatch(payload);
+    setLocalTaskOverrides((current) => ({
+      ...current,
+      [canonicalTaskId]: {
+        ...(current[canonicalTaskId] ?? {}),
+        ...normalizedPatch,
+      },
+    }));
+  }
+
+  function clearLocalTaskOverride(canonicalTaskId) {
+    setLocalTaskOverrides((current) => {
+      if (!current[canonicalTaskId]) {
+        return current;
+      }
+      const updated = { ...current };
+      delete updated[canonicalTaskId];
+      return updated;
+    });
+  }
+
+  function waitForPriorityMoveToSettle(canonicalTaskId) {
+    const moveState = priorityMoveQueueRef.current.get(canonicalTaskId);
+    if (!moveState || (!moveState.inFlight && !moveState.queuedTier)) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      moveState.waiters.push(resolve);
+    });
+  }
+
+  function resolvePriorityMoveWaiters(canonicalTaskId) {
+    const moveState = priorityMoveQueueRef.current.get(canonicalTaskId);
+    if (!moveState?.waiters?.length) {
+      return;
+    }
+    const waiters = [...moveState.waiters];
+    moveState.waiters = [];
+    waiters.forEach((resolve) => resolve());
+  }
+
+  function finishPriorityMove(canonicalTaskId) {
+    resolvePriorityMoveWaiters(canonicalTaskId);
+    priorityMoveQueueRef.current.delete(canonicalTaskId);
+    clearTaskMoving(canonicalTaskId);
+  }
+
+  async function flushPriorityMove(canonicalTaskId) {
+    const moveState = priorityMoveQueueRef.current.get(canonicalTaskId);
+    if (!moveState || moveState.inFlight || !moveState.queuedTier) {
+      return;
+    }
+
+    const priorityTier = moveState.queuedTier;
+    moveState.inFlight = true;
+    moveState.queuedTier = null;
+
+    try {
+      const result = await updatePrioritizedTask(canonicalTaskId, { priorityTier });
+      const latestMoveState = priorityMoveQueueRef.current.get(canonicalTaskId);
+      if (!latestMoveState || !latestMoveState.queuedTier) {
+        updateBoardFromResult(result);
+      }
+    } catch (saveError) {
+      setError(saveError.message);
+      finishPriorityMove(canonicalTaskId);
+      try {
+        await reloadBoardFromServer();
+      } catch {
+        // Keep the optimistic board visible if recovery also fails.
+      }
+      return;
+    }
+
+    const latestMoveState = priorityMoveQueueRef.current.get(canonicalTaskId);
+    if (!latestMoveState) {
+      clearTaskMoving(canonicalTaskId);
+      return;
+    }
+
+    latestMoveState.inFlight = false;
+    if (latestMoveState.queuedTier && latestMoveState.queuedTier !== priorityTier) {
+      void flushPriorityMove(canonicalTaskId);
+      return;
+    }
+
+    finishPriorityMove(canonicalTaskId);
+  }
+
+  function queuePriorityMove(canonicalTaskId, priorityTier) {
+    const moveState = priorityMoveQueueRef.current.get(canonicalTaskId) ?? {
+      inFlight: false,
+      queuedTier: null,
+      waiters: [],
+    };
+    moveState.queuedTier = priorityTier;
+    priorityMoveQueueRef.current.set(canonicalTaskId, moveState);
+    markTaskMoving(canonicalTaskId);
+    if (!moveState.inFlight) {
+      void flushPriorityMove(canonicalTaskId);
+    }
   }
 
   function openTaskEditor(canonicalTaskId) {
@@ -1050,7 +1256,6 @@ export default function Kanban() {
     event.preventDefault();
     const canonicalTaskId = event.dataTransfer.getData("text/plain") || dragState.taskId;
     const selectedTask = tasks.find((task) => task.canonical_task_id === canonicalTaskId);
-    const previousTasks = tasks;
 
     cleanupDragPreview();
     setDragState({ taskId: null, fromTier: null, overTier: null });
@@ -1060,7 +1265,6 @@ export default function Kanban() {
     }
 
     setError("");
-    markTaskMoving(canonicalTaskId);
     setTasks((current) =>
       sortBoardTasks(
         current.map((task) =>
@@ -1070,52 +1274,29 @@ export default function Kanban() {
         )
       )
     );
-
-    try {
-      const result = await updatePrioritizedTask(canonicalTaskId, { priorityTier });
-      updateBoardFromResult(result);
-    } catch (saveError) {
-      setTasks(previousTasks);
-      setError(saveError.message);
-    } finally {
-      clearTaskMoving(canonicalTaskId);
-    }
+    saveLocalTaskOverride(canonicalTaskId, { priorityTier });
   }
 
-  async function handleTaskEditSave(canonicalTaskId, payload) {
-    const previousTasks = tasks;
+  function handleTaskEditSave(canonicalTaskId, payload) {
+    const normalizedPayload = createNormalizedLocalTaskPatch(payload);
     setError("");
-    setEditStates((current) => ({
-      ...current,
-      [canonicalTaskId]: { isSaving: true, error: "" },
-    }));
-    markTaskBusy(canonicalTaskId);
     setTasks((current) =>
       sortBoardTasks(
         current.map((task) =>
-          task.canonical_task_id === canonicalTaskId ? applyTaskPatch(task, payload) : task
+          task.canonical_task_id === canonicalTaskId ? applyTaskPatch(task, normalizedPayload) : task
         )
       )
     );
-
-    try {
-      const result = await updatePrioritizedTask(canonicalTaskId, payload);
-      updateBoardFromResult(result);
-      closeTaskEditor(canonicalTaskId);
-    } catch (saveError) {
-      setTasks(previousTasks);
-      setEditStates((current) => ({
-        ...current,
-        [canonicalTaskId]: { isSaving: false, error: saveError.message },
-      }));
-      setError(saveError.message);
-    } finally {
-      clearTaskBusy(canonicalTaskId);
+    saveLocalTaskOverride(canonicalTaskId, normalizedPayload);
+    if (normalizedPayload.tags) {
+      setAvailableTags((current) => dedupeTags([...current, ...normalizedPayload.tags]));
     }
+    closeTaskEditor(canonicalTaskId);
   }
 
   async function handleDelete(task) {
-    const previousTasks = tasks;
+    await waitForPriorityMoveToSettle(task.canonical_task_id);
+    const previousTasks = tasksRef.current;
     setError("");
     markTaskBusy(task.canonical_task_id);
     setTasks((current) =>
@@ -1126,6 +1307,7 @@ export default function Kanban() {
 
     try {
       await removePrioritizedTask(task.canonical_task_id);
+      clearLocalTaskOverride(task.canonical_task_id);
       closeTaskEditor(task.canonical_task_id);
     } catch (removeError) {
       setTasks(previousTasks);
@@ -1139,7 +1321,13 @@ export default function Kanban() {
     if (getTaskWorkflowStatus(task) === "COMPLETED") {
       return;
     }
-    const previousTasks = tasks;
+    await waitForPriorityMoveToSettle(task.canonical_task_id);
+    const previousTasks = tasksRef.current;
+    const completionPayload = {
+      priorityTier: task.priority_tier,
+      status: "COMPLETED",
+      tags: getVisibleTaskTags(task),
+    };
 
     setError("");
     markTaskBusy(task.canonical_task_id);
@@ -1154,7 +1342,8 @@ export default function Kanban() {
     );
 
     try {
-      const result = await updatePrioritizedTask(task.canonical_task_id, { status: "COMPLETED" });
+      const result = await updatePrioritizedTask(task.canonical_task_id, completionPayload);
+      clearLocalTaskOverride(task.canonical_task_id);
       updateBoardFromResult(result);
     } catch (saveError) {
       setTasks(previousTasks);
@@ -1173,133 +1362,142 @@ export default function Kanban() {
   return (
     <main className="simple-shell">
       <PageNav />
-      <section className="simple-hero">
-        <p className="auth-eyebrow">Kanban</p>
-        <h1 className="simple-title">Move work where it belongs</h1>
-        <p className="simple-copy">
-          Drag tasks across priority lanes, filter the board, and keep details up to date without leaving the app.
-        </p>
-      </section>
-
-      <section className="simple-card">
-        <div className="summary-grid summary-grid-wide">
-          <article className="summary-card">
-            <p className="summary-label">Signed in as</p>
-            <p className="summary-value">{user?.username ?? "Refreshing your account..."}</p>
+      <section className="structured-page" aria-label="Kanban">
+        <section className="structured-overview workspace-overview" aria-label="Kanban overview">
+          <article className="structured-overview-item">
+            <p className="overview-label">Signed in as</p>
+            <p className="overview-value">{user?.username ?? "Loading..."}</p>
           </article>
-          <article className="summary-card">
-            <p className="summary-label">Visible tasks</p>
-            <p className="summary-value">{filteredTasks.length}</p>
+          <article className="structured-overview-item">
+            <p className="overview-label">In Kanban</p>
+            <p className="overview-value">{boardTasks.length}</p>
           </article>
-          <article className="summary-card">
-            <p className="summary-label">Board scope</p>
-            <p className="summary-value">Accepted tasks only</p>
+          <article className="structured-overview-item">
+            <p className="overview-label">Matching filters</p>
+            <p className="overview-value">{filteredTasks.length}</p>
           </article>
-          <article className="summary-card">
-            <p className="summary-label">Quick links</p>
-            <p className="summary-value summary-value-stack">
-              <span>
-                <Link className="inline-button" to="/home">Dashboard</Link>
-              </span>
-              <span>
-                <Link className="inline-button" to="/statistics">Statistics</Link>
-              </span>
-            </p>
+          <article className="structured-overview-item">
+            <p className="overview-label">Due within 24h</p>
+            <p className="overview-value">{dueSoonCount}</p>
           </article>
-        </div>
-
-        <section className="kanban-filter-bar">
-          <label className="field-group kanban-filter-field">
-            <span>Search</span>
-            <input
-              className="auth-input"
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search title, description, sender, subject, or tags"
-              type="text"
-              value={searchQuery}
-            />
-          </label>
-          <label className="field-group kanban-filter-field">
-            <span>Deadline</span>
-            <select
-              className="auth-input"
-              onChange={(event) => setDeadlineFilter(event.target.value)}
-              value={deadlineFilter}
-            >
-              {DEADLINE_FILTER_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
         </section>
 
-        {availableTags.length ? (
-          <section className="kanban-tag-filter">
-            <div className="task-tag-header">
-              <span className="task-tag-label">Filter by tags</span>
-              {selectedTags.length ? (
-                <button
-                  className="task-tag-inline-action"
-                  onClick={() => setSelectedTags([])}
-                  type="button"
-                >
-                  Clear filters
-                </button>
-              ) : null}
+        <section className="structured-section">
+          <div className="structured-section-header">
+            <div className="structured-section-copy">
+              <h2 className="structured-section-title">Filter and move tasks</h2>
+              <p className="panel-copy">
+                Only tasks you accepted from the dashboard appear here. Tighten Kanban with
+                filters, then drag cards into the priority lane that fits best.
+              </p>
             </div>
-            <div className="task-tag-list">
-              {availableTags.map((tag) => {
-                const normalizedTag = normalizeTag(tag);
-                const isActive = selectedTags.includes(normalizedTag);
-                return (
-                  <button
-                    className={`task-tag-chip kanban-filter-chip${isActive ? " kanban-filter-chip-active" : ""}`}
-                    key={normalizedTag}
-                    onClick={() => handleTagFilterToggle(normalizedTag)}
-                    type="button"
-                  >
-                    {normalizedTag.replace(/_/g, " ")}
-                  </button>
-                );
-              })}
+            <div className="structured-meta">
+              <span>{activeFilterCount ? `${activeFilterCount} active filters` : "No active filters"}</span>
+              <span>Accepted tasks stay grouped by their current priority lane.</span>
             </div>
-          </section>
-        ) : null}
-
-        {error ? <p className="error-text">{error}</p> : null}
-
-        {filteredTasks.length ? (
-          <section className="kanban-board">
-            {PRIORITY_COLUMNS.map((column) => (
-              <KanbanColumn
-                column={column}
-                dragState={dragState}
-                key={column.value}
-                onDelete={handleDelete}
-                onDragEnd={handleDragEnd}
-                onDragOver={handleDragOver}
-                onDragStart={handleDragStart}
-                onDrop={handlePriorityDrop}
-                movingStates={movingStates}
-                onEditOpen={openTaskEditor}
-                onToggleExpanded={handleToggleExpanded}
-                onToggleCompleted={handleToggleCompleted}
-                expandedTaskIds={expandedTaskIds}
-                savingStates={savingStates}
-                tasks={groupedTasks[column.value]}
-              />
-            ))}
-          </section>
-        ) : (
-          <div className="task-card task-card-empty">
-            <p className="summary-value">No tasks match the current board filters.</p>
-            <p className="panel-copy">
-              Try clearing search or tag filters to widen the board.
-            </p>
           </div>
-        )}
+
+          <div className="structured-section-body">
+            <section className="kanban-filter-bar">
+              <label className="field-group kanban-filter-field">
+                <span>Search</span>
+                <input
+                  className="auth-input"
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search title, description, sender, subject, or tags"
+                  type="text"
+                  value={searchQuery}
+                />
+              </label>
+              <label className="field-group kanban-filter-field">
+                <span>Deadline</span>
+                <select
+                  className="auth-input"
+                  onChange={(event) => setDeadlineFilter(event.target.value)}
+                  value={deadlineFilter}
+                >
+                  {DEADLINE_FILTER_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
+
+            {availableTags.length ? (
+              <section className="kanban-tag-filter">
+                <div className="task-tag-header">
+                  <span className="task-tag-label">Filter by tags</span>
+                  {selectedTags.length ? (
+                    <button
+                      className="task-tag-inline-action"
+                      onClick={() => setSelectedTags([])}
+                      type="button"
+                    >
+                      Clear filters
+                    </button>
+                  ) : null}
+                </div>
+                <div className="task-tag-list">
+                  {availableTags.map((tag) => {
+                    const normalizedTag = normalizeTag(tag);
+                    const isActive = selectedTags.includes(normalizedTag);
+                    return (
+                      <button
+                        className={`task-tag-chip kanban-filter-chip${isActive ? " kanban-filter-chip-active" : ""}`}
+                        key={normalizedTag}
+                        onClick={() => handleTagFilterToggle(normalizedTag)}
+                        type="button"
+                      >
+                        {normalizedTag.replace(/_/g, " ")}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
+            {error ? <p className="error-text">{error}</p> : null}
+
+            {filteredTasks.length ? (
+              <section className="kanban-board">
+                {PRIORITY_COLUMNS.map((column) => (
+                  <KanbanColumn
+                    column={column}
+                    dragState={dragState}
+                    key={column.value}
+                    onDelete={handleDelete}
+                    onDragEnd={handleDragEnd}
+                    onDragOver={handleDragOver}
+                    onDragStart={handleDragStart}
+                    onDrop={handlePriorityDrop}
+                    movingStates={movingStates}
+                    onEditOpen={openTaskEditor}
+                    onToggleExpanded={handleToggleExpanded}
+                    onToggleCompleted={handleToggleCompleted}
+                    expandedTaskIds={expandedTaskIds}
+                    savingStates={savingStates}
+                    tasks={groupedTasks[column.value]}
+                  />
+                ))}
+              </section>
+            ) : (
+              <div className="task-card task-card-empty">
+                <p className="summary-value">
+                  {boardTasks.length
+                    ? "No Kanban tasks match the current filters."
+                    : "You have not accepted any tasks yet."}
+                </p>
+                <p className="panel-copy">
+                  {boardTasks.length
+                    ? "Try clearing search or tag filters to widen Kanban."
+                    : "Accept tasks from the Dashboard and they will show up here."}
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
       </section>
 
       {activeEditingTask ? (

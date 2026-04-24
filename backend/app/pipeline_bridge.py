@@ -10,6 +10,8 @@ from typing import Any, cast
 from uuid import uuid4
 
 from dotenv import load_dotenv
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from config import Config
 from .calendar_service import clear_calendar_context, parse_calendar_context
@@ -56,6 +58,7 @@ from pipeline.models import (
 from pipeline.services.pipeline import PriorityPipeline
 from pipeline.storage.db import create_engine_from_url, create_schema
 from pipeline.storage.repositories import SqlAlchemyPipelineRepository, compute_priority_adjustment
+from pipeline.storage.tables import PipelineTaskRecord
 from pipeline.utils.tags import dedupe_tags, merge_tag_catalog
 
 logger = logging.getLogger(__name__)
@@ -68,6 +71,7 @@ _RECOMPUTE_STATES: dict[int, dict] = {}
 _DASHBOARD_CACHE_LOCK = RLock()
 _TASK_CACHE: dict[int, dict] = {}
 _PROFILE_CACHE: dict[int, dict] = {}
+_FALSE_NEGATIVE_CACHE: dict[int, dict] = {}
 _DASHBOARD_CACHE_TTL_SECONDS = 60.0
 _ALLOWED_TASK_PATCH_FIELDS = {"title", "description", "deadlineAt", "priorityTier", "status", "tags"}
 _ALLOWED_PRIORITY_TIERS = {"CRITICAL", "HIGH", "MEDIUM", "LOW"}
@@ -99,6 +103,7 @@ def _invalidate_dashboard_cache(user_id: int) -> None:
     with _DASHBOARD_CACHE_LOCK:
         _TASK_CACHE.pop(user_id, None)
         _PROFILE_CACHE.pop(user_id, None)
+        _FALSE_NEGATIVE_CACHE.pop(user_id, None)
 
 
 def clear_user_runtime_state(user_id: int) -> None:
@@ -363,8 +368,165 @@ def _build_dashboard_items(repository: SqlAlchemyPipelineRepository, user_id: in
     return items
 
 
+def _build_task_board_payload(
+    repository: SqlAlchemyPipelineRepository,
+    user_id: int,
+    *,
+    include_false_negatives: bool = False,
+) -> dict[str, Any]:
+    payload = {
+        "items": _build_dashboard_items(repository, user_id),
+        "availableTags": get_available_tags(user_id),
+    }
+    if include_false_negatives:
+        payload["falseNegativeItems"] = _rebuild_false_negative_items(repository, user_id)
+    return payload
+
+
+def _dump_profile_to_payload(user_id: int, profile: BehaviorProfile) -> dict:
+    payload = profile.model_dump(mode="json")
+    _set_cached_value(_PROFILE_CACHE, user_id, payload)
+    return payload
+
+
+def _resolve_profile_payload(user_id: int, profile: BehaviorProfile | None) -> dict:
+    if profile is None:
+        return get_profile_snapshot(user_id)
+    return _dump_profile_to_payload(user_id, profile)
+
+
+def _upsert_custom_tags_if_present(
+    repository: SqlAlchemyPipelineRepository,
+    user_id: int,
+    tags: list[str],
+) -> None:
+    if tags:
+        repository.upsert_custom_tags(str(user_id), tags)
+
+
+def _build_false_negative_payload(message: RawMessage, *, preview: str | None) -> dict[str, Any]:
+    platform = getattr(message.platform, "value", message.platform)
+    return {
+        "sourceId": message.source_id,
+        "platform": str(platform),
+        "subject": message.subject,
+        "sender": message.sender_display or message.sender_email or message.from_raw,
+        "senderEmail": message.sender_email,
+        "preview": preview or message.snippet or None,
+        "receivedAt": message.timestamp_iso,
+    }
+
+
+def _list_task_source_ids(repository: SqlAlchemyPipelineRepository, user_id: int) -> set[str]:
+    source_ids: set[str] = set()
+    with Session(repository.engine) as session:
+        rows = session.scalars(
+            select(PipelineTaskRecord).where(PipelineTaskRecord.user_id == str(user_id))
+        ).all()
+
+    for row in rows:
+        payload = row.payload if isinstance(row.payload, dict) else {}
+        task_card_payload = payload.get("task_card") if isinstance(payload.get("task_card"), dict) else {}
+        canonical_task_payload = (
+            payload.get("canonical_task") if isinstance(payload.get("canonical_task"), dict) else {}
+        )
+        evidence_source_ids = task_card_payload.get("evidence_source_ids") or canonical_task_payload.get("source_ids") or []
+        for source_id in evidence_source_ids:
+            if source_id:
+                source_ids.add(str(source_id))
+    return source_ids
+
+
+def _build_false_negative_items(
+    raw_messages: list[RawMessage],
+    *,
+    task_source_ids: set[str],
+) -> list[dict]:
+    extractor = get_priority_pipeline().extractor
+    items: list[dict] = []
+
+    for message in raw_messages:
+        platform = str(getattr(message.platform, "value", message.platform)).lower()
+        if platform == "manual" or not message.source_id:
+            continue
+        if extractor.is_hard_discarded(message):
+            continue
+        if message.source_id in task_source_ids:
+            continue
+
+        signal = extractor.extract(message)
+        items.append(
+            _build_false_negative_payload(
+                message,
+                preview=signal.body_excerpt or signal.snippet or message.snippet,
+            )
+        )
+
+    return items
+
+
 def _task_payload_is_completed(task: dict) -> bool:
     return str(task.get("status") or "").lower() == "completed"
+
+
+def _normalize_task_updates(updates: dict[str, Any]) -> dict[str, object]:
+    if not isinstance(updates, dict):
+        raise ValueError("Task updates must be a JSON object.")
+
+    unknown_fields = sorted(set(updates) - _ALLOWED_TASK_PATCH_FIELDS)
+    if unknown_fields:
+        raise ValueError(f"Unsupported task fields: {', '.join(unknown_fields)}")
+    if not updates:
+        raise ValueError("At least one editable field is required.")
+
+    normalized_updates: dict[str, object] = {}
+
+    if "title" in updates:
+        title = updates.get("title")
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("title cannot be blank.")
+        normalized_updates["title"] = title.strip()
+
+    if "description" in updates:
+        description = updates.get("description")
+        if not isinstance(description, str):
+            raise ValueError("description must be a string.")
+        normalized_updates["description"] = description
+
+    if "deadlineAt" in updates:
+        deadline_at = updates.get("deadlineAt")
+        if deadline_at in {None, ""}:
+            normalized_updates["deadline_at"] = None
+        elif not isinstance(deadline_at, str):
+            raise ValueError("deadlineAt must be a valid ISO datetime or null.")
+        else:
+            normalized_updates["deadline_at"] = _normalize_manual_deadline(deadline_at)
+
+    if "priorityTier" in updates:
+        priority_tier = updates.get("priorityTier")
+        if not isinstance(priority_tier, str):
+            raise ValueError("priorityTier must be a string.")
+        normalized_priority = priority_tier.strip().upper()
+        if normalized_priority not in _ALLOWED_PRIORITY_TIERS:
+            raise ValueError("priorityTier must be one of CRITICAL, HIGH, MEDIUM, or LOW.")
+        normalized_updates["priority_tier"] = normalized_priority
+
+    if "status" in updates:
+        status = updates.get("status")
+        if not isinstance(status, str):
+            raise ValueError("status must be a string.")
+        normalized_status = status.strip().upper()
+        if normalized_status not in _ALLOWED_TASK_STATUSES:
+            raise ValueError("status must be OPEN or COMPLETED.")
+        normalized_updates["status"] = normalized_status
+
+    if "tags" in updates:
+        tags = updates.get("tags")
+        if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
+            raise ValueError("tags must be an array of strings.")
+        normalized_updates["tags"] = dedupe_tags(tags)
+
+    return normalized_updates
 
 
 def _find_task_card_with_source_id(task_cards, source_id: str):
@@ -396,6 +558,113 @@ def list_prioritized_tasks(user_id: int) -> list[dict]:
         return cached
     repository = get_pipeline_repository()
     return _build_dashboard_items(repository, user_id)
+
+
+def list_false_negative_items(user_id: int) -> list[dict]:
+    cached = _get_cached_value(_FALSE_NEGATIVE_CACHE, user_id)
+    if cached is not None:
+        return cached
+
+    repository = get_pipeline_repository()
+    return _rebuild_false_negative_items(repository, user_id)
+
+
+def _rebuild_false_negative_items(
+    repository: SqlAlchemyPipelineRepository,
+    user_id: int,
+) -> list[dict]:
+    stored_rows = list_stored_messages(user_id)
+    raw_messages = [_row_to_raw_message(user_id, row) for row in stored_rows]
+    items = _build_false_negative_items(
+        raw_messages,
+        task_source_ids=_list_task_source_ids(repository, user_id),
+    )
+    _set_cached_value(_FALSE_NEGATIVE_CACHE, user_id, items)
+    return items
+
+
+def promote_false_negative_email(
+    user_id: int,
+    *,
+    source_id: str,
+    platform: str | None = None,
+) -> dict:
+    cleaned_source_id = source_id.strip()
+    cleaned_platform = (platform or "").strip().lower() or None
+    if not cleaned_source_id:
+        raise ValueError("sourceId is required")
+
+    repository = get_pipeline_repository()
+    task_source_ids = _list_task_source_ids(repository, user_id)
+    if cleaned_source_id in task_source_ids:
+        return {
+            **_build_task_board_payload(repository, user_id, include_false_negatives=True),
+            "profile": get_profile_snapshot(user_id),
+            "promotedSourceId": cleaned_source_id,
+        }
+
+    matching_row = None
+    for row in list_stored_messages(user_id):
+        row_source_id = str(row.get("source_id") or "").strip()
+        row_platform = str(row.get("platform") or "").strip().lower()
+        if row_source_id != cleaned_source_id:
+            continue
+        if cleaned_platform is not None and row_platform != cleaned_platform:
+            continue
+        matching_row = row
+        break
+
+    if matching_row is None:
+        raise LookupError("Email not found for this user.")
+
+    message = _row_to_raw_message(user_id, matching_row)
+    extractor = get_priority_pipeline().extractor
+    if extractor.is_hard_discarded(message):
+        raise ValueError("This email was removed by the hard filter and cannot be added to the queue.")
+
+    updated_row = dict(matching_row)
+    provider_metadata = dict(updated_row.get("provider_metadata") or {})
+    extra = dict(provider_metadata.get("extra") or {})
+    manual_task = extra.get("manual_task")
+    updated_manual_task = dict(manual_task) if isinstance(manual_task, dict) else {}
+    updated_manual_task["user_promoted"] = True
+    extra["manual_task"] = updated_manual_task
+    provider_metadata["extra"] = extra
+    updated_row["provider_metadata"] = provider_metadata
+    updated_row["timestamp_iso"] = (
+        updated_row["timestamp_iso"].isoformat()
+        if updated_row.get("timestamp_iso")
+        else None
+    )
+
+    save_messages(user_id, [updated_row])
+    sync_onboarding_context(user_id)
+    updated_message = RawMessage.model_validate(
+        {
+            **updated_row,
+            "user_id": str(user_id),
+        }
+    )
+    bundle = get_priority_pipeline().run_messages(str(user_id), [updated_message])
+
+    result = {
+        "runId": bundle.run_id,
+        "rawMessageCount": 1,
+        "signalCount": len(bundle.signals),
+        "canonicalTaskCount": len(bundle.canonical_tasks),
+        "taskCardCount": len(bundle.task_cards),
+        **_build_task_board_payload(repository, user_id, include_false_negatives=True),
+        "profile": _resolve_profile_payload(user_id, bundle.profile),
+        "promotedSourceId": cleaned_source_id,
+    }
+    logger.info(
+        "Promoted false negative user_id=%s source_id=%s provider=%s run_id=%s",
+        user_id,
+        cleaned_source_id,
+        _summarize_llm_provider(bundle.decisions),
+        bundle.run_id,
+    )
+    return result
 
 
 def _resolve_feedback_profile_inputs(
@@ -526,16 +795,12 @@ def update_prioritized_task_tags(
     if updated_card is None:
         raise LookupError("Task card not found for this user.")
 
-    if normalized_tags:
-        repository.upsert_custom_tags(str(user_id), normalized_tags)
-
-    items = _build_dashboard_items(repository, user_id)
+    _upsert_custom_tags_if_present(repository, user_id, normalized_tags)
     return {
         "success": True,
         "canonicalTaskId": canonical_task_id,
         "task": updated_card.model_dump(mode="json"),
-        "items": items,
-        "availableTags": get_available_tags(user_id),
+        **_build_task_board_payload(repository, user_id),
     }
 
 
@@ -545,94 +810,12 @@ def update_prioritized_task(
     *,
     updates: dict,
 ) -> dict:
-    if not isinstance(updates, dict):
-        raise ValueError("Task updates must be a JSON object.")
-
-    unknown_fields = sorted(set(updates) - _ALLOWED_TASK_PATCH_FIELDS)
-    if unknown_fields:
-        raise ValueError(f"Unsupported task fields: {', '.join(unknown_fields)}")
-    if not updates:
-        raise ValueError("At least one editable field is required.")
-
-    normalized_updates: dict[str, object] = {}
-
-    if "title" in updates:
-        title = updates.get("title")
-        if not isinstance(title, str) or not title.strip():
-            raise ValueError("title cannot be blank.")
-        normalized_updates["title"] = title.strip()
-
-    if "description" in updates:
-        description = updates.get("description")
-        if not isinstance(description, str):
-            raise ValueError("description must be a string.")
-        normalized_updates["description"] = description
-
-    if "deadlineAt" in updates:
-        deadline_at = updates.get("deadlineAt")
-        if deadline_at in {None, ""}:
-            normalized_updates["deadline_at"] = None
-        elif not isinstance(deadline_at, str):
-            raise ValueError("deadlineAt must be a valid ISO datetime or null.")
-        else:
-            normalized_updates["deadline_at"] = _normalize_manual_deadline(deadline_at)
-
-    if "priorityTier" in updates:
-        priority_tier = updates.get("priorityTier")
-        if not isinstance(priority_tier, str):
-            raise ValueError("priorityTier must be a string.")
-        normalized_priority = priority_tier.strip().upper()
-        if normalized_priority not in _ALLOWED_PRIORITY_TIERS:
-            raise ValueError("priorityTier must be one of CRITICAL, HIGH, MEDIUM, or LOW.")
-        normalized_updates["priority_tier"] = normalized_priority
-
-    if "status" in updates:
-        status = updates.get("status")
-        if not isinstance(status, str):
-            raise ValueError("status must be a string.")
-        normalized_status = status.strip().upper()
-        if normalized_status not in _ALLOWED_TASK_STATUSES:
-            raise ValueError("status must be OPEN or COMPLETED.")
-        normalized_updates["status"] = normalized_status
-
-    if "tags" in updates:
-        tags = updates.get("tags")
-        if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
-            raise ValueError("tags must be an array of strings.")
-        normalized_updates["tags"] = dedupe_tags(tags)
-
+    normalized_updates = _normalize_task_updates(updates)
     repository = get_pipeline_repository()
     feedback_context = repository.get_feedback_update_context(str(user_id), canonical_task_id)
     if feedback_context is None:
         raise LookupError("Task card not found for this user.")
-
-    updated_profile = None
-    if "priority_tier" in normalized_updates:
-        priority_feedback = _priority_feedback_change(
-            feedback_context.task,
-            str(normalized_updates["priority_tier"]),
-        )
-        if priority_feedback is not None:
-            updated_profile, _ = _apply_profile_feedback(
-                user_id,
-                feedback_context,
-                action=FeedbackAction.WRONG_PRIORITY,
-                direction=priority_feedback["direction"],
-                priority_after=priority_feedback["priority_after"],
-                incremental_priority_delta=priority_feedback["incremental_priority_delta"],
-                profile=updated_profile,
-            )
-
-    if (
-        normalized_updates.get("status") == "COMPLETED"
-        and feedback_context.task.status.value != "completed"
-    ):
-        updated_profile, _ = _apply_profile_feedback(
-            user_id,
-            feedback_context,
-            action=FeedbackAction.COMPLETED,
-            profile=updated_profile,
-        )
+    was_completed = feedback_context.task.status.value == "completed"
 
     updated_card = repository.update_task(
         str(user_id),
@@ -643,23 +826,26 @@ def update_prioritized_task(
         raise LookupError("Task card not found for this user.")
 
     tags_update = cast(list[str] | None, normalized_updates.get("tags"))
-    if tags_update:
-        repository.upsert_custom_tags(str(user_id), tags_update)
-
-    items = _build_dashboard_items(repository, user_id)
-    profile = (
-        updated_profile.model_dump(mode="json")
-        if updated_profile is not None
-        else get_profile_snapshot(user_id)
-    )
-    return {
+    _upsert_custom_tags_if_present(repository, user_id, tags_update or [])
+    result = {
         "success": True,
         "taskId": canonical_task_id,
         "task": updated_card.model_dump(mode="json"),
-        "items": items,
-        "profile": profile,
-        "availableTags": get_available_tags(user_id),
+        **_build_task_board_payload(repository, user_id),
     }
+    if normalized_updates.get("status") == "COMPLETED" and not was_completed:
+        refreshed_feedback_context = repository.get_feedback_update_context(
+            str(user_id),
+            canonical_task_id,
+        )
+        if refreshed_feedback_context is not None:
+            updated_profile, _ = _apply_profile_feedback(
+                user_id,
+                refreshed_feedback_context,
+                action=FeedbackAction.COMPLETED,
+            )
+            result["profile"] = updated_profile.model_dump(mode="json")
+    return result
 
 
 def get_profile_snapshot(user_id: int) -> dict:
@@ -774,10 +960,14 @@ def refresh_linked_email_sources(user_id: int, *, recent_limit: int = 20) -> dic
         summary["outlook"]["linked"] = True
         try:
             if outlook_link.get("last_received_at"):
-                result = list_new_outlook_messages(user_id)
+                result = list_new_outlook_messages(user_id, link=outlook_link)
                 summary["outlook"]["mode"] = "new"
             else:
-                result = list_recent_outlook_messages(user_id, limit=recent_limit)
+                result = list_recent_outlook_messages(
+                    user_id,
+                    limit=recent_limit,
+                    link=outlook_link,
+                )
                 summary["outlook"]["mode"] = "recent"
             summary["outlook"]["fetchedCount"] = len(result.get("messages", []))
         except Exception as exc:
@@ -865,6 +1055,7 @@ def run_background_refresh_for_user(user_id: int, limit: int | None = None) -> d
             "taskCardCount": 0,
             "emailSync": email_sync,
             "items": list_prioritized_tasks(user_id),
+            "falseNegativeItems": list_false_negative_items(user_id),
             "availableTags": get_available_tags(user_id),
         }
 
@@ -928,7 +1119,7 @@ def create_manual_task(
         ],
     )
     if normalized_tags:
-        repository.upsert_custom_tags(str(user_id), normalized_tags)
+        _upsert_custom_tags_if_present(repository, user_id, normalized_tags)
     result = _run_pipeline_from_stored_messages(user_id, refresh_sources=False)
     manual_task_card = _find_task_card_with_source_id(
         repository.get_current_task_cards(str(user_id)),
@@ -985,7 +1176,6 @@ def _run_pipeline_from_stored_messages(
     raw_messages = [_row_to_raw_message(user_id, row) for row in stored_rows]
     bundle = pipeline.run_messages(str(user_id), raw_messages)
     current_cards = repository.get_current_task_cards(str(user_id))
-    card_payloads = _build_dashboard_items(repository, user_id)
     run_task_status_counts = _summarize_run_task_statuses(repository, user_id, bundle.task_cards)
     new_task_card_count = run_task_status_counts[TaskStatus.PENDING_REVIEW.value]
     filtered_non_task_count = max(len(raw_messages) - len(bundle.signals), 0)
@@ -994,13 +1184,7 @@ def _run_pipeline_from_stored_messages(
         for card in current_cards
         if card.canonical_task_id not in previous_task_ids
     ]
-    if bundle.profile is not None:
-        _set_cached_value(_PROFILE_CACHE, user_id, bundle.profile.model_dump(mode="json"))
-    profile_payload = (
-        bundle.profile.model_dump(mode="json")
-        if bundle.profile is not None
-        else get_profile_snapshot(user_id)
-    )
+    profile_payload = _resolve_profile_payload(user_id, bundle.profile)
 
     if new_task_payloads:
         try:
@@ -1027,9 +1211,8 @@ def _run_pipeline_from_stored_messages(
         "canonicalTaskCount": len(bundle.canonical_tasks),
         "taskCardCount": new_task_card_count,
         "emailSync": email_sync,
-        "items": card_payloads,
+        **_build_task_board_payload(repository, user_id, include_false_negatives=True),
         "profile": profile_payload,
-        "availableTags": get_available_tags(user_id),
     }
 
 
@@ -1052,44 +1235,37 @@ def submit_task_feedback(
     if feedback_context is None:
         raise LookupError("Task card not found for this user.")
 
-    task_context = feedback_context.task
-    if feedback_action == FeedbackAction.WRONG_PRIORITY and feedback_direction is not None:
-        priority_after, _, incremental_delta = compute_priority_adjustment(
-            suggested_priority_tier=task_context.suggested_priority_tier,
-            effective_priority_tier=task_context.effective_priority_tier,
-            applied_priority_delta=task_context.applied_priority_delta,
-            direction=feedback_direction,
-        )
+    updated_profile = None
+    if feedback_action in {FeedbackAction.ACCEPT, FeedbackAction.REJECT}:
         updated_profile, event = _apply_profile_feedback(
             user_id,
             feedback_context,
             action=feedback_action,
             direction=feedback_direction,
-            priority_after=priority_after,
-            incremental_priority_delta=incremental_delta,
         )
+        feedback_event_payload = event.model_dump(mode="json")
     else:
-        updated_profile, event = _apply_profile_feedback(
-            user_id,
-            feedback_context,
-            action=feedback_action,
-            direction=feedback_direction,
-        )
+        feedback_event_payload = {
+            "canonical_task_id": canonical_task_id,
+            "action": feedback_action.value,
+            "direction": feedback_direction.value if feedback_direction is not None else None,
+        }
     repository.apply_task_action(
         pipeline_user_id,
         canonical_task_id,
         action=feedback_action,
         direction=feedback_direction,
     )
-    items = _build_dashboard_items(repository, user_id)
-    return {
+    result = {
         "success": True,
-        "feedbackEvent": event.model_dump(mode="json"),
-        "profile": updated_profile.model_dump(mode="json"),
+        "feedbackEvent": feedback_event_payload,
         "canonicalTaskId": canonical_task_id,
         "action": feedback_action.value,
-        "items": items,
+        **_build_task_board_payload(repository, user_id),
     }
+    if updated_profile is not None:
+        result["profile"] = updated_profile.model_dump(mode="json")
+    return result
 
 
 def _row_to_raw_message(user_id: int, row: dict) -> RawMessage:

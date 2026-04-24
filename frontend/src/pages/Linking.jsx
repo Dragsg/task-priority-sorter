@@ -17,7 +17,7 @@ import PageNav from "../components/PageNav";
 
 function EmailList({ title, description, emails }) {
   return (
-    <section className="emails-card">
+    <section className="structured-subsection connection-email-section">
       <div className="section-heading">
         <div>
           <h2>{title}</h2>
@@ -60,7 +60,6 @@ function ConnectionCard({
   errorMessage,
   onConnect,
   onOpenTools,
-  canOpenTools,
   connectLabel,
 }) {
   return (
@@ -84,7 +83,7 @@ function ConnectionCard({
       <p className="connection-status-text">{statusText}</p>
 
       <div className="connection-account-line">
-        <span className="connection-account-label">Account</span>
+        <span className="connection-account-label">Linked address</span>
         <strong>{accountLabel}</strong>
       </div>
 
@@ -102,11 +101,11 @@ function ConnectionCard({
         </button>
         <button
           className="secondary-button"
-          disabled={!canOpenTools}
+          disabled={!onOpenTools}
           onClick={onOpenTools}
           type="button"
         >
-          Open tools
+          Advanced tools
         </button>
       </div>
     </section>
@@ -364,298 +363,324 @@ export default function Linking() {
       ? "Your Outlook inbox is connected and ready for sync."
       : "Connect Outlook to import emails and turn them into task cards.";
   const syncStatusLabel = backgroundSyncStatus.last_success_at ? "Active" : "Waiting";
-  const syncHelperCopy = backgroundSyncStatus.last_success_at
-    ? `Last successful refresh ${formatSyncTimestamp(backgroundSyncStatus.last_success_at)}.`
-    : "Automatic refresh has not completed yet.";
+  const lastSuccessfulRefresh = formatSyncTimestamp(backgroundSyncStatus.last_success_at);
 
   return (
-    <main className="app-shell">
+    <main className="simple-shell">
       <PageNav />
-      <section className="hero linking-hero">
-        <p className="eyebrow">Email Linking</p>
-        <h1>Connect your email accounts</h1>
-        <p className="subtitle">
-          Link Gmail or Outlook so we can fetch emails, detect new messages, and
-          build task cards for you.
-        </p>
-        <section className="linking-summary-card">
-          <div>
-            <p className="linking-summary-label">Signed in as</p>
-            <p className="linking-summary-value">{user?.username ?? "Loading..."}</p>
-          </div>
-          <div>
-            <p className="linking-summary-label">Connected</p>
-            <p className="linking-summary-value">
+      <section className="structured-page connections-page">
+        <section className="structured-overview workspace-overview" aria-label="Connection overview">
+          <article className="structured-overview-item">
+            <p className="overview-label">Signed in as</p>
+            <p className="overview-value">{user?.username ?? "Loading..."}</p>
+          </article>
+          <article className="structured-overview-item">
+            <p className="overview-label">Linked inboxes</p>
+            <p className="overview-value">
               {linkedAccountCount} of {totalAccountCount} accounts
             </p>
+          </article>
+          <article className="structured-overview-item">
+            <p className="overview-label">Background refresh</p>
+            <p className="overview-value">{syncStatusLabel}</p>
+          </article>
+          <article className="structured-overview-item">
+            <p className="overview-label">Last successful refresh</p>
+            <p className="overview-value">{lastSuccessfulRefresh}</p>
+          </article>
+        </section>
+
+        <section className="structured-section connections-section">
+          <div className="structured-section-header">
+            <div className="structured-section-copy">
+              <h2 className="structured-section-title">Inbox connections</h2>
+              <p className="panel-copy">
+                Link Gmail and Outlook here so new emails can be turned into task cards automatically.
+              </p>
+            </div>
+            <div className="structured-meta">
+              <span>{linkedAccountCount} of {totalAccountCount} inboxes linked</span>
+              <span>{user?.username ? `Account: ${user.username}` : "Loading account"}</span>
+            </div>
           </div>
-          <div>
-            <p className="linking-summary-label">Auto refresh</p>
-            <div className="linking-summary-inline">
-              <StatusPill
-                label={syncStatusLabel}
-                tone={backgroundSyncStatus.last_success_at ? "live" : "neutral"}
+
+          <div className="structured-section-body">
+            <section className="connection-grid" aria-label="Available email providers">
+              <ConnectionCard
+                accountLabel={gmailStatus.emailAddress || "No Gmail account linked"}
+                connectLabel={gmailStatus.linked ? "Reconnect Gmail" : "Connect Gmail"}
+                connected={gmailStatus.linked}
+                description="Use your Google account to sync Gmail messages into your task list."
+                errorMessage={gmailError}
+                flashMessage={gmailFlash}
+                loading={gmailLoading}
+                onConnect={user ? startGmailLink : undefined}
+                onOpenTools={() => setShowAdvanced(true)}
+                providerMark="G"
+                providerName="Gmail"
+                statusText={gmailStatusText}
               />
-              <p className="linking-summary-copy">{syncHelperCopy}</p>
+
+              <ConnectionCard
+                accountLabel={outlookStatus.emailAddress || "No Outlook account linked"}
+                connectLabel={outlookStatus.linked ? "Reconnect Outlook" : "Connect Outlook"}
+                connected={outlookStatus.linked}
+                description="Use your Microsoft account to sync Outlook mail into your task list."
+                errorMessage={outlookError}
+                flashMessage={outlookFlash}
+                loading={outlookLoading}
+                onConnect={user ? startOutlookLink : undefined}
+                onOpenTools={() => setShowAdvanced(true)}
+                providerMark="O"
+                providerName="Outlook"
+                statusText={outlookStatusText}
+              />
+            </section>
+          </div>
+        </section>
+
+        <section className="structured-section connections-section">
+          <div className="structured-section-header">
+            <div className="structured-section-copy">
+              <h2 className="structured-section-title">Advanced sync tools</h2>
+              <p className="panel-copy">
+                Inspect background refresh activity, pull sample emails manually, and verify new message detection.
+              </p>
             </div>
+            <div className="connections-section-side">
+              <div className="structured-meta">
+                <span>{syncStatusLabel} background refresh</span>
+                <span>{showAdvanced ? "Advanced details open" : "Advanced details hidden"}</span>
+              </div>
+              <button
+                className="secondary-button"
+                onClick={() => setShowAdvanced((current) => !current)}
+                type="button"
+              >
+                {showAdvanced ? "Hide advanced details" : "Show advanced details"}
+              </button>
+            </div>
+          </div>
+
+          <div className="structured-section-body">
+            {showAdvanced ? (
+              <div className="advanced-details-stack">
+                <section className="structured-subsection connections-sync-panel">
+                  <div className="advanced-section-heading">
+                    <div>
+                      <p className="linking-summary-label">Automatic refresh</p>
+                      <h2>Background sync snapshot</h2>
+                    </div>
+                    <StatusPill
+                      label={syncStatusLabel}
+                      tone={backgroundSyncStatus.last_success_at ? "live" : "neutral"}
+                    />
+                  </div>
+                  <div className="sync-metrics-grid">
+                    <article className="sync-metric-card">
+                      <p className="sync-metric-label">Last run</p>
+                      <p className="sync-metric-value">
+                        {formatSyncTimestamp(backgroundSyncStatus.last_run_at)}
+                      </p>
+                    </article>
+                    <article className="sync-metric-card">
+                      <p className="sync-metric-label">Last success</p>
+                      <p className="sync-metric-value">
+                        {formatSyncTimestamp(backgroundSyncStatus.last_success_at)}
+                      </p>
+                    </article>
+                    <article className="sync-metric-card">
+                      <p className="sync-metric-label">Linked accounts checked</p>
+                      <p className="sync-metric-value">{backgroundSyncStatus.linked_users_checked}</p>
+                    </article>
+                    <article className="sync-metric-card">
+                      <p className="sync-metric-label">Accounts refreshed</p>
+                      <p className="sync-metric-value">{backgroundSyncStatus.users_refreshed}</p>
+                    </article>
+                    <article className="sync-metric-card">
+                      <p className="sync-metric-label">Task cards rebuilt</p>
+                      <p className="sync-metric-value">{backgroundSyncStatus.last_total_task_cards}</p>
+                    </article>
+                    <article className="sync-metric-card">
+                      <p className="sync-metric-label">Failures</p>
+                      <p className="sync-metric-value">{backgroundSyncStatus.users_failed}</p>
+                    </article>
+                  </div>
+                  <p className="status-copy">
+                    Latest cycle checked {backgroundSyncStatus.gmail_users_checked} Gmail link
+                    {backgroundSyncStatus.gmail_users_checked === 1 ? "" : "s"} and{" "}
+                    {backgroundSyncStatus.outlook_users_checked} Outlook link
+                    {backgroundSyncStatus.outlook_users_checked === 1 ? "" : "s"}.
+                  </p>
+                </section>
+
+                <section className="structured-subsection">
+                  <div className="structured-subsection-header">
+                    <h3 className="structured-subsection-title">Manual inbox checks</h3>
+                    <p className="panel-copy">
+                      Load recent mail samples or inspect only the messages that arrived after the saved cursor.
+                    </p>
+                  </div>
+
+                  <section className="advanced-tool-grid">
+                    <section className="structured-subsection connection-tool-panel">
+                      <div className="advanced-section-heading">
+                        <div>
+                          <p className="linking-summary-label">Gmail tools</p>
+                          <h2>Inspect Gmail sync</h2>
+                        </div>
+                        <StatusPill
+                          label={gmailStatus.linked ? "Ready" : "Link first"}
+                          tone={gmailStatus.linked ? "linked" : "idle"}
+                        />
+                      </div>
+
+                      <p className="helper-text">
+                        Load a recent Gmail sample or check for messages that arrived after
+                        the saved history point.
+                      </p>
+
+                      {!gmailStatus.linked ? (
+                        <p className="tool-hint">Link Gmail first to use these tools.</p>
+                      ) : null}
+
+                      <div className="selector-row">
+                        <label className="count-selector-label" htmlFor="gmail-recent-limit">
+                          Recent email count
+                        </label>
+                        <select
+                          className="count-selector"
+                          id="gmail-recent-limit"
+                          onChange={(event) => setGmailRecentLimit(Number(event.target.value))}
+                          value={gmailRecentLimit}
+                        >
+                          {EMAIL_COUNT_OPTIONS.map((count) => (
+                            <option key={count} value={count}>
+                              {count}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="button-row">
+                        <button
+                          className="secondary-button"
+                          disabled={!gmailStatus.linked || gmailBusyAction === "recent"}
+                          onClick={handleLoadRecentEmails}
+                          type="button"
+                        >
+                          {gmailBusyAction === "recent"
+                            ? "Loading..."
+                            : `Load last ${gmailRecentLimit} emails`}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={!gmailStatus.linked || gmailBusyAction === "new"}
+                          onClick={handleLoadNewEmails}
+                          type="button"
+                        >
+                          {gmailBusyAction === "new" ? "Checking..." : "Check new emails"}
+                        </button>
+                      </div>
+                    </section>
+
+                    <section className="structured-subsection connection-tool-panel">
+                      <div className="advanced-section-heading">
+                        <div>
+                          <p className="linking-summary-label">Outlook tools</p>
+                          <h2>Inspect Outlook sync</h2>
+                        </div>
+                        <StatusPill
+                          label={outlookStatus.linked ? "Ready" : "Link first"}
+                          tone={outlookStatus.linked ? "linked" : "idle"}
+                        />
+                      </div>
+
+                      <p className="helper-text">
+                        Load a recent Outlook sample or check for messages that arrived
+                        after the saved cursor.
+                      </p>
+
+                      {!outlookStatus.linked ? (
+                        <p className="tool-hint">Link Outlook first to use these tools.</p>
+                      ) : null}
+
+                      <div className="selector-row">
+                        <label className="count-selector-label" htmlFor="outlook-recent-limit">
+                          Recent email count
+                        </label>
+                        <select
+                          className="count-selector"
+                          id="outlook-recent-limit"
+                          onChange={(event) => setOutlookRecentLimit(Number(event.target.value))}
+                          value={outlookRecentLimit}
+                        >
+                          {EMAIL_COUNT_OPTIONS.map((count) => (
+                            <option key={count} value={count}>
+                              {count}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="button-row">
+                        <button
+                          className="secondary-button"
+                          disabled={!outlookStatus.linked || outlookBusyAction === "recent"}
+                          onClick={handleLoadRecentOutlookEmails}
+                          type="button"
+                        >
+                          {outlookBusyAction === "recent"
+                            ? "Loading..."
+                            : `Load last ${outlookRecentLimit} emails`}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={!outlookStatus.linked || outlookBusyAction === "new"}
+                          onClick={handleLoadNewOutlookEmails}
+                          type="button"
+                        >
+                          {outlookBusyAction === "new" ? "Checking..." : "Check new emails"}
+                        </button>
+                      </div>
+                    </section>
+                  </section>
+                </section>
+
+                <div className="connections-email-grid">
+                  <EmailList
+                    description="These are the latest inbox emails loaded after the account was linked."
+                    emails={gmailRecentEmails}
+                    title={`Gmail: Last ${gmailRecentLimit} emails`}
+                  />
+
+                  <EmailList
+                    description="These are emails Gmail reports as new since the last saved history point."
+                    emails={gmailNewEmails}
+                    title="Gmail: New incoming emails"
+                  />
+
+                  <EmailList
+                    description="These are the latest Outlook inbox emails loaded after the account was linked."
+                    emails={outlookRecentEmails}
+                    title={`Outlook: Last ${outlookRecentLimit} emails`}
+                  />
+
+                  <EmailList
+                    description="These are newer Outlook inbox emails received after the saved cursor."
+                    emails={outlookNewEmails}
+                    title="Outlook: New incoming emails"
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="panel-copy">
+                Open this section if you want to inspect refresh activity, pull recent emails manually, or verify new message detection.
+              </p>
+            )}
           </div>
         </section>
       </section>
-
-      <section className="connection-grid" aria-label="Available email providers">
-        <ConnectionCard
-          accountLabel={gmailStatus.emailAddress || "No Gmail account linked"}
-          canOpenTools={gmailStatus.linked}
-          connectLabel={gmailStatus.linked ? "Reconnect Gmail" : "Connect Gmail"}
-          connected={gmailStatus.linked}
-          description="Use your Google account to sync Gmail messages into your task list."
-          errorMessage={gmailError}
-          flashMessage={gmailFlash}
-          loading={gmailLoading}
-          onConnect={user ? startGmailLink : undefined}
-          onOpenTools={() => setShowAdvanced(true)}
-          providerMark="G"
-          providerName="Gmail"
-          statusText={gmailStatusText}
-        />
-
-        <ConnectionCard
-          accountLabel={outlookStatus.emailAddress || "No Outlook account linked"}
-          canOpenTools={outlookStatus.linked}
-          connectLabel={outlookStatus.linked ? "Reconnect Outlook" : "Connect Outlook"}
-          connected={outlookStatus.linked}
-          description="Use your Microsoft account to sync Outlook mail into your task list."
-          errorMessage={outlookError}
-          flashMessage={outlookFlash}
-          loading={outlookLoading}
-          onConnect={user ? startOutlookLink : undefined}
-          onOpenTools={() => setShowAdvanced(true)}
-          providerMark="O"
-          providerName="Outlook"
-          statusText={outlookStatusText}
-        />
-      </section>
-
-      <section className="advanced-toggle-card">
-        <div>
-          <p className="linking-summary-label">Advanced details</p>
-          <h2>Sync status and manual email tools</h2>
-          <p className="status-copy">
-            Open this section if you want to inspect refresh activity, pull recent
-            emails manually, or verify new message detection.
-          </p>
-        </div>
-        <button
-          className="secondary-button"
-          onClick={() => setShowAdvanced((current) => !current)}
-          type="button"
-        >
-          {showAdvanced ? "Hide advanced details" : "Show advanced details"}
-        </button>
-      </section>
-
-      {showAdvanced ? (
-        <section className="advanced-details-stack">
-          <section className="status-card sync-status-card">
-            <div>
-              <div className="advanced-section-heading">
-                <div>
-                  <p className="linking-summary-label">Automatic refresh</p>
-                  <h2>Background sync snapshot</h2>
-                </div>
-                <StatusPill
-                  label={syncStatusLabel}
-                  tone={backgroundSyncStatus.last_success_at ? "live" : "neutral"}
-                />
-              </div>
-              <div className="sync-metrics-grid">
-                <article className="sync-metric-card">
-                  <p className="sync-metric-label">Last run</p>
-                  <p className="sync-metric-value">
-                    {formatSyncTimestamp(backgroundSyncStatus.last_run_at)}
-                  </p>
-                </article>
-                <article className="sync-metric-card">
-                  <p className="sync-metric-label">Last success</p>
-                  <p className="sync-metric-value">
-                    {formatSyncTimestamp(backgroundSyncStatus.last_success_at)}
-                  </p>
-                </article>
-                <article className="sync-metric-card">
-                  <p className="sync-metric-label">Linked accounts checked</p>
-                  <p className="sync-metric-value">{backgroundSyncStatus.linked_users_checked}</p>
-                </article>
-                <article className="sync-metric-card">
-                  <p className="sync-metric-label">Accounts refreshed</p>
-                  <p className="sync-metric-value">{backgroundSyncStatus.users_refreshed}</p>
-                </article>
-                <article className="sync-metric-card">
-                  <p className="sync-metric-label">Task cards rebuilt</p>
-                  <p className="sync-metric-value">{backgroundSyncStatus.last_total_task_cards}</p>
-                </article>
-                <article className="sync-metric-card">
-                  <p className="sync-metric-label">Failures</p>
-                  <p className="sync-metric-value">{backgroundSyncStatus.users_failed}</p>
-                </article>
-              </div>
-              <p className="status-copy">
-                Latest cycle checked {backgroundSyncStatus.gmail_users_checked} Gmail link
-                {backgroundSyncStatus.gmail_users_checked === 1 ? "" : "s"} and{" "}
-                {backgroundSyncStatus.outlook_users_checked} Outlook link
-                {backgroundSyncStatus.outlook_users_checked === 1 ? "" : "s"}.
-              </p>
-            </div>
-          </section>
-
-          <section className="advanced-tool-grid">
-            <section className="tasks-card linking-tool-card">
-              <div className="advanced-section-heading">
-                <div>
-                  <p className="linking-summary-label">Gmail tools</p>
-                  <h2>Inspect Gmail sync</h2>
-                </div>
-                <StatusPill
-                  label={gmailStatus.linked ? "Ready" : "Link first"}
-                  tone={gmailStatus.linked ? "linked" : "idle"}
-                />
-              </div>
-
-              <p className="helper-text">
-                Load a recent Gmail sample or check for messages that arrived after
-                the saved history point.
-              </p>
-
-              {!gmailStatus.linked ? (
-                <p className="tool-hint">Link Gmail first to use these tools.</p>
-              ) : null}
-
-              <div className="selector-row">
-                <label className="count-selector-label" htmlFor="gmail-recent-limit">
-                  Recent email count
-                </label>
-                <select
-                  className="count-selector"
-                  id="gmail-recent-limit"
-                  onChange={(event) => setGmailRecentLimit(Number(event.target.value))}
-                  value={gmailRecentLimit}
-                >
-                  {EMAIL_COUNT_OPTIONS.map((count) => (
-                    <option key={count} value={count}>
-                      {count}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="button-row">
-                <button
-                  className="secondary-button"
-                  disabled={!gmailStatus.linked || gmailBusyAction === "recent"}
-                  onClick={handleLoadRecentEmails}
-                  type="button"
-                >
-                  {gmailBusyAction === "recent"
-                    ? "Loading..."
-                    : `Load last ${gmailRecentLimit} emails`}
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={!gmailStatus.linked || gmailBusyAction === "new"}
-                  onClick={handleLoadNewEmails}
-                  type="button"
-                >
-                  {gmailBusyAction === "new" ? "Checking..." : "Check new emails"}
-                </button>
-              </div>
-            </section>
-
-            <section className="tasks-card linking-tool-card">
-              <div className="advanced-section-heading">
-                <div>
-                  <p className="linking-summary-label">Outlook tools</p>
-                  <h2>Inspect Outlook sync</h2>
-                </div>
-                <StatusPill
-                  label={outlookStatus.linked ? "Ready" : "Link first"}
-                  tone={outlookStatus.linked ? "linked" : "idle"}
-                />
-              </div>
-
-              <p className="helper-text">
-                Load a recent Outlook sample or check for messages that arrived
-                after the saved cursor.
-              </p>
-
-              {!outlookStatus.linked ? (
-                <p className="tool-hint">Link Outlook first to use these tools.</p>
-              ) : null}
-
-              <div className="selector-row">
-                <label className="count-selector-label" htmlFor="outlook-recent-limit">
-                  Recent email count
-                </label>
-                <select
-                  className="count-selector"
-                  id="outlook-recent-limit"
-                  onChange={(event) => setOutlookRecentLimit(Number(event.target.value))}
-                  value={outlookRecentLimit}
-                >
-                  {EMAIL_COUNT_OPTIONS.map((count) => (
-                    <option key={count} value={count}>
-                      {count}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="button-row">
-                <button
-                  className="secondary-button"
-                  disabled={!outlookStatus.linked || outlookBusyAction === "recent"}
-                  onClick={handleLoadRecentOutlookEmails}
-                  type="button"
-                >
-                  {outlookBusyAction === "recent"
-                    ? "Loading..."
-                    : `Load last ${outlookRecentLimit} emails`}
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={!outlookStatus.linked || outlookBusyAction === "new"}
-                  onClick={handleLoadNewOutlookEmails}
-                  type="button"
-                >
-                  {outlookBusyAction === "new" ? "Checking..." : "Check new emails"}
-                </button>
-              </div>
-            </section>
-          </section>
-
-          <EmailList
-            description="These are the latest inbox emails loaded after the account was linked."
-            emails={gmailRecentEmails}
-            title={`Gmail: Last ${gmailRecentLimit} emails`}
-          />
-
-          <EmailList
-            description="These are emails Gmail reports as new since the last saved history point."
-            emails={gmailNewEmails}
-            title="Gmail: New incoming emails"
-          />
-
-          <EmailList
-            description="These are the latest Outlook inbox emails loaded after the account was linked."
-            emails={outlookRecentEmails}
-            title={`Outlook: Last ${outlookRecentLimit} emails`}
-          />
-
-          <EmailList
-            description="These are newer Outlook inbox emails received after the saved cursor."
-            emails={outlookNewEmails}
-            title="Outlook: New incoming emails"
-          />
-        </section>
-      ) : null}
     </main>
   );
 }

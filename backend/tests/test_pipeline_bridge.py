@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -6,13 +8,786 @@ from app.pipeline_bridge import (
     _build_dashboard_items,
     create_manual_task,
     get_task_statistics_snapshot,
+    remove_prioritized_task,
     refresh_linked_email_sources,
     _run_pipeline_from_stored_messages,
+    submit_task_feedback,
+    update_prioritized_task,
 )
-from pipeline.models import TaskStatus
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from pipeline.models import (
+    ActionWindow,
+    CanonicalTask,
+    EntityType,
+    FeedbackAction,
+    Platform,
+    PrioritizedTaskCard,
+    PriorityTier,
+    TaskOrigin,
+    TaskStatus,
+    TaskType,
+    TopicEntity,
+)
+from pipeline.storage.db import create_engine_from_url, create_schema
+from pipeline.storage.repositories import (
+    InMemoryPipelineRepository,
+    PipelineRunBundle,
+    SqlAlchemyPipelineRepository,
+)
+from pipeline.storage.tables import PipelineTaskRecord
 
 
 class PipelineBridgeTestCase(unittest.TestCase):
+    def test_rejected_task_does_not_return_to_pending_review_on_rerun(self):
+        repository = InMemoryPipelineRepository()
+        user_id = "14"
+        source_id = "email-1"
+        topic_entity = TopicEntity(
+            entity_name="CS2103T",
+            entity_type=EntityType.TOPIC,
+            entity_key="cs2103t",
+        )
+
+        def build_bundle(*, run_id: str, canonical_task_id: str) -> PipelineRunBundle:
+            task = CanonicalTask(
+                canonical_task_id=canonical_task_id,
+                user_id=user_id,
+                run_id=run_id,
+                origin=TaskOrigin.EMAIL,
+                task_type=TaskType.ADMIN,
+                topic_entity=topic_entity,
+                source_ids=[source_id],
+                priority_tier=PriorityTier.MEDIUM,
+                platforms_seen=[Platform.GMAIL],
+                sender_ids=["lecturer@example.edu"],
+                representative_source_id=source_id,
+                representative_subject="Project reminder",
+                representative_snippet="Please submit the project update.",
+                representative_sender_display="Lecturer",
+            )
+            task_card = PrioritizedTaskCard(
+                task_id=f"task-{canonical_task_id}",
+                canonical_task_id=canonical_task_id,
+                user_id=user_id,
+                run_id=run_id,
+                status=TaskStatus.PENDING_REVIEW,
+                origin=TaskOrigin.EMAIL,
+                task_type=TaskType.ADMIN,
+                entity_key=topic_entity.entity_key,
+                priority_tier=PriorityTier.MEDIUM,
+                action_window=ActionWindow.TODAY,
+                rationale="Looks actionable.",
+                confidence=0.8,
+                needs_user_review=False,
+                platforms_seen=[Platform.GMAIL],
+                evidence_source_ids=[source_id],
+                task_title="Project reminder",
+                task_description="Please submit the project update.",
+                source_subject="Project reminder",
+                source_snippet="Please submit the project update.",
+                source_sender="Lecturer",
+                entity_name=topic_entity.entity_name,
+                entity_type=topic_entity.entity_type,
+                sender_ids=["lecturer@example.edu"],
+            )
+            return PipelineRunBundle(
+                run_id=run_id,
+                signals=[],
+                canonical_tasks=[task],
+                decisions=[],
+                task_cards=[task_card],
+                profile=None,
+            )
+
+        repository.save_pipeline_results(build_bundle(run_id="run-1", canonical_task_id="canon-1"))
+        self.assertEqual(
+            [card.canonical_task_id for card in repository.get_current_task_cards(user_id)],
+            ["canon-1"],
+        )
+
+        repository.apply_task_action(
+            user_id,
+            "canon-1",
+            action=FeedbackAction.REJECT,
+        )
+        self.assertEqual(repository.get_current_task_cards(user_id), [])
+
+        repository.save_pipeline_results(build_bundle(run_id="run-2", canonical_task_id="canon-2"))
+
+        self.assertEqual(repository.get_current_task_cards(user_id), [])
+        updated_context = repository.get_feedback_task_context(user_id, "canon-2")
+        self.assertIsNotNone(updated_context)
+        self.assertEqual(updated_context.status, TaskStatus.REJECTED)
+        self.assertIsNone(repository.get_feedback_task_context(user_id, "canon-1"))
+
+    @patch("app.pipeline_bridge._apply_profile_feedback")
+    @patch("app.pipeline_bridge.get_pipeline_repository")
+    def test_submit_task_feedback_reject_persists_rejected_status_to_pipeline_tasks(
+        self,
+        get_pipeline_repository,
+        apply_profile_feedback,
+    ):
+        user_id = "14"
+        source_id = "email-1"
+        topic_entity = TopicEntity(
+            entity_name="CS2103T",
+            entity_type=EntityType.TOPIC,
+            entity_key="cs2103t",
+        )
+
+        def build_bundle(*, run_id: str, canonical_task_id: str) -> PipelineRunBundle:
+            task = CanonicalTask(
+                canonical_task_id=canonical_task_id,
+                user_id=user_id,
+                run_id=run_id,
+                origin=TaskOrigin.EMAIL,
+                task_type=TaskType.ADMIN,
+                topic_entity=topic_entity,
+                source_ids=[source_id],
+                priority_tier=PriorityTier.MEDIUM,
+                platforms_seen=[Platform.GMAIL],
+                sender_ids=["lecturer@example.edu"],
+                representative_source_id=source_id,
+                representative_subject="Project reminder",
+                representative_snippet="Please submit the project update.",
+                representative_sender_display="Lecturer",
+            )
+            task_card = PrioritizedTaskCard(
+                task_id=f"task-{canonical_task_id}",
+                canonical_task_id=canonical_task_id,
+                user_id=user_id,
+                run_id=run_id,
+                status=TaskStatus.PENDING_REVIEW,
+                origin=TaskOrigin.EMAIL,
+                task_type=TaskType.ADMIN,
+                entity_key=topic_entity.entity_key,
+                priority_tier=PriorityTier.MEDIUM,
+                action_window=ActionWindow.TODAY,
+                rationale="Looks actionable.",
+                confidence=0.8,
+                needs_user_review=False,
+                platforms_seen=[Platform.GMAIL],
+                evidence_source_ids=[source_id],
+                task_title="Project reminder",
+                task_description="Please submit the project update.",
+                source_subject="Project reminder",
+                source_snippet="Please submit the project update.",
+                source_sender="Lecturer",
+                entity_name=topic_entity.entity_name,
+                entity_type=topic_entity.entity_type,
+                sender_ids=["lecturer@example.edu"],
+            )
+            return PipelineRunBundle(
+                run_id=run_id,
+                signals=[],
+                canonical_tasks=[task],
+                decisions=[],
+                task_cards=[task_card],
+                profile=None,
+            )
+
+        with TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "pipeline-test.db"
+            engine = create_engine_from_url(f"sqlite+pysqlite:///{db_path}")
+            self.addCleanup(engine.dispose)
+            create_schema(engine)
+            repository = SqlAlchemyPipelineRepository(engine)
+            repository.save_pipeline_results(build_bundle(run_id="run-1", canonical_task_id="canon-1"))
+            get_pipeline_repository.return_value = repository
+
+            updated_profile = MagicMock()
+            updated_profile.model_dump.return_value = {"profile_version": 2}
+            feedback_event = MagicMock()
+            feedback_event.model_dump.return_value = {
+                "canonical_task_id": "canon-1",
+                "action": "REJECT",
+            }
+            apply_profile_feedback.return_value = (updated_profile, feedback_event)
+
+            result = submit_task_feedback(14, "canon-1", action="REJECT")
+
+            with Session(engine) as session:
+                row = session.scalar(
+                    select(PipelineTaskRecord).where(
+                        PipelineTaskRecord.user_id == user_id,
+                        PipelineTaskRecord.canonical_task_id == "canon-1",
+                    )
+                )
+
+            self.assertIsNotNone(row)
+            self.assertEqual(row.status, TaskStatus.REJECTED.value)
+            self.assertIsNotNone(row.rejected_at)
+            self.assertEqual(repository.get_current_task_cards(user_id), [])
+            self.assertEqual(result["action"], "REJECT")
+            self.assertEqual(result["canonicalTaskId"], "canon-1")
+            self.assertEqual(result["feedbackEvent"]["action"], "REJECT")
+            self.assertEqual(result["items"], [])
+
+    @patch("app.pipeline_bridge._apply_profile_feedback")
+    @patch("app.pipeline_bridge.get_pipeline_repository")
+    def test_submit_task_feedback_accept_persists_accepted_status_to_pipeline_tasks(
+        self,
+        get_pipeline_repository,
+        apply_profile_feedback,
+    ):
+        user_id = "14"
+        source_id = "email-1"
+        topic_entity = TopicEntity(
+            entity_name="CS2103T",
+            entity_type=EntityType.TOPIC,
+            entity_key="cs2103t",
+        )
+
+        def build_bundle(*, run_id: str, canonical_task_id: str) -> PipelineRunBundle:
+            task = CanonicalTask(
+                canonical_task_id=canonical_task_id,
+                user_id=user_id,
+                run_id=run_id,
+                origin=TaskOrigin.EMAIL,
+                task_type=TaskType.ADMIN,
+                topic_entity=topic_entity,
+                source_ids=[source_id],
+                priority_tier=PriorityTier.MEDIUM,
+                platforms_seen=[Platform.GMAIL],
+                sender_ids=["lecturer@example.edu"],
+                representative_source_id=source_id,
+                representative_subject="Project reminder",
+                representative_snippet="Please submit the project update.",
+                representative_sender_display="Lecturer",
+            )
+            task_card = PrioritizedTaskCard(
+                task_id=f"task-{canonical_task_id}",
+                canonical_task_id=canonical_task_id,
+                user_id=user_id,
+                run_id=run_id,
+                status=TaskStatus.PENDING_REVIEW,
+                origin=TaskOrigin.EMAIL,
+                task_type=TaskType.ADMIN,
+                entity_key=topic_entity.entity_key,
+                priority_tier=PriorityTier.MEDIUM,
+                action_window=ActionWindow.TODAY,
+                rationale="Looks actionable.",
+                confidence=0.8,
+                needs_user_review=False,
+                platforms_seen=[Platform.GMAIL],
+                evidence_source_ids=[source_id],
+                task_title="Project reminder",
+                task_description="Please submit the project update.",
+                source_subject="Project reminder",
+                source_snippet="Please submit the project update.",
+                source_sender="Lecturer",
+                entity_name=topic_entity.entity_name,
+                entity_type=topic_entity.entity_type,
+                sender_ids=["lecturer@example.edu"],
+            )
+            return PipelineRunBundle(
+                run_id=run_id,
+                signals=[],
+                canonical_tasks=[task],
+                decisions=[],
+                task_cards=[task_card],
+                profile=None,
+            )
+
+        with TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "pipeline-test.db"
+            engine = create_engine_from_url(f"sqlite+pysqlite:///{db_path}")
+            self.addCleanup(engine.dispose)
+            create_schema(engine)
+            repository = SqlAlchemyPipelineRepository(engine)
+            repository.save_pipeline_results(build_bundle(run_id="run-1", canonical_task_id="canon-1"))
+            get_pipeline_repository.return_value = repository
+
+            updated_profile = MagicMock()
+            updated_profile.model_dump.return_value = {"profile_version": 3}
+            feedback_event = MagicMock()
+            feedback_event.model_dump.return_value = {
+                "canonical_task_id": "canon-1",
+                "action": "ACCEPT",
+            }
+            apply_profile_feedback.return_value = (updated_profile, feedback_event)
+
+            result = submit_task_feedback(14, "canon-1", action="ACCEPT")
+
+            with Session(engine) as session:
+                row = session.scalar(
+                    select(PipelineTaskRecord).where(
+                        PipelineTaskRecord.user_id == user_id,
+                        PipelineTaskRecord.canonical_task_id == "canon-1",
+                    )
+                )
+
+            self.assertIsNotNone(row)
+            self.assertEqual(row.status, TaskStatus.ACCEPTED.value)
+            self.assertIsNotNone(row.accepted_at)
+            self.assertEqual(repository.get_current_task_cards(user_id), [])
+            self.assertEqual(
+                [card.canonical_task_id for card in repository.get_accepted_task_cards(user_id)],
+                ["canon-1"],
+            )
+            self.assertEqual(result["action"], "ACCEPT")
+            self.assertEqual(result["canonicalTaskId"], "canon-1")
+            self.assertEqual(result["feedbackEvent"]["action"], "ACCEPT")
+            self.assertEqual(result["profile"], {"profile_version": 3})
+
+    @patch("app.pipeline_bridge._apply_profile_feedback")
+    @patch("app.pipeline_bridge.get_pipeline_repository")
+    def test_submit_task_feedback_accept_uses_final_priority_and_tags(
+        self,
+        get_pipeline_repository,
+        apply_profile_feedback,
+    ):
+        repository = InMemoryPipelineRepository()
+        user_id = "14"
+        source_id = "email-1"
+        topic_entity = TopicEntity(
+            entity_name="CS2103T",
+            entity_type=EntityType.TOPIC,
+            entity_key="cs2103t",
+        )
+
+        task = CanonicalTask(
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            topic_entity=topic_entity,
+            source_ids=[source_id],
+            priority_tier=PriorityTier.MEDIUM,
+            platforms_seen=[Platform.GMAIL],
+            sender_ids=["lecturer@example.edu"],
+            representative_source_id=source_id,
+            representative_subject="Project reminder",
+            representative_snippet="Please submit the project update.",
+            representative_sender_display="Lecturer",
+        )
+        task_card = PrioritizedTaskCard(
+            task_id="task-canon-1",
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            status=TaskStatus.PENDING_REVIEW,
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            entity_key=topic_entity.entity_key,
+            priority_tier=PriorityTier.MEDIUM,
+            action_window=ActionWindow.TODAY,
+            rationale="Looks actionable.",
+            confidence=0.8,
+            needs_user_review=False,
+            platforms_seen=[Platform.GMAIL],
+            evidence_source_ids=[source_id],
+            task_title="Project reminder",
+            task_description="Please submit the project update.",
+            source_subject="Project reminder",
+            source_snippet="Please submit the project update.",
+            source_sender="Lecturer",
+            entity_name=topic_entity.entity_name,
+            entity_type=topic_entity.entity_type,
+            sender_ids=["lecturer@example.edu"],
+        )
+        repository.save_pipeline_results(
+            PipelineRunBundle(
+                run_id="run-1",
+                signals=[],
+                canonical_tasks=[task],
+                decisions=[],
+                task_cards=[task_card],
+                profile=None,
+            )
+        )
+        repository.update_task(
+            user_id,
+            "canon-1",
+            updates={"priority_tier": "HIGH"},
+        )
+        repository.replace_task_tags(
+            user_id,
+            "canon-1",
+            tags=["deadline"],
+        )
+        get_pipeline_repository.return_value = repository
+
+        updated_profile = MagicMock()
+        updated_profile.model_dump.return_value = {"profile_version": 3}
+        feedback_event = MagicMock()
+        feedback_event.model_dump.return_value = {
+            "canonical_task_id": "canon-1",
+            "action": "ACCEPT",
+        }
+        apply_profile_feedback.return_value = (updated_profile, feedback_event)
+
+        result = submit_task_feedback(14, "canon-1", action="ACCEPT")
+
+        apply_profile_feedback.assert_called_once()
+        feedback_context = apply_profile_feedback.call_args.args[1]
+        self.assertEqual(feedback_context.task.effective_priority_tier, PriorityTier.HIGH)
+        self.assertEqual(feedback_context.task.task_tags, ["deadline"])
+        self.assertEqual(result["profile"], {"profile_version": 3})
+        self.assertEqual(result["feedbackEvent"]["action"], "ACCEPT")
+
+    @patch("app.pipeline_bridge._apply_profile_feedback")
+    @patch("app.pipeline_bridge.get_pipeline_repository")
+    def test_submit_task_feedback_wrong_priority_does_not_update_profile(
+        self,
+        get_pipeline_repository,
+        apply_profile_feedback,
+    ):
+        repository = InMemoryPipelineRepository()
+        user_id = "14"
+        source_id = "email-1"
+        topic_entity = TopicEntity(
+            entity_name="CS2103T",
+            entity_type=EntityType.TOPIC,
+            entity_key="cs2103t",
+        )
+
+        task = CanonicalTask(
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            topic_entity=topic_entity,
+            source_ids=[source_id],
+            priority_tier=PriorityTier.MEDIUM,
+            platforms_seen=[Platform.GMAIL],
+            sender_ids=["lecturer@example.edu"],
+            representative_source_id=source_id,
+            representative_subject="Project reminder",
+            representative_snippet="Please submit the project update.",
+            representative_sender_display="Lecturer",
+        )
+        task_card = PrioritizedTaskCard(
+            task_id="task-canon-1",
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            status=TaskStatus.PENDING_REVIEW,
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            entity_key=topic_entity.entity_key,
+            priority_tier=PriorityTier.MEDIUM,
+            action_window=ActionWindow.TODAY,
+            rationale="Looks actionable.",
+            confidence=0.8,
+            needs_user_review=False,
+            platforms_seen=[Platform.GMAIL],
+            evidence_source_ids=[source_id],
+            task_title="Project reminder",
+            task_description="Please submit the project update.",
+            source_subject="Project reminder",
+            source_snippet="Please submit the project update.",
+            source_sender="Lecturer",
+            entity_name=topic_entity.entity_name,
+            entity_type=topic_entity.entity_type,
+            sender_ids=["lecturer@example.edu"],
+        )
+        repository.save_pipeline_results(
+            PipelineRunBundle(
+                run_id="run-1",
+                signals=[],
+                canonical_tasks=[task],
+                decisions=[],
+                task_cards=[task_card],
+                profile=None,
+            )
+        )
+        get_pipeline_repository.return_value = repository
+
+        result = submit_task_feedback(14, "canon-1", action="WRONG_PRIORITY", direction="too_low")
+
+        apply_profile_feedback.assert_not_called()
+        self.assertNotIn("profile", result)
+        self.assertEqual(result["feedbackEvent"]["action"], "WRONG_PRIORITY")
+        updated_context = repository.get_feedback_task_context(user_id, "canon-1")
+        self.assertIsNotNone(updated_context)
+        self.assertEqual(updated_context.effective_priority_tier, PriorityTier.HIGH)
+        self.assertEqual(updated_context.status, TaskStatus.PENDING_REVIEW)
+
+    @patch("app.pipeline_bridge._apply_profile_feedback")
+    @patch("app.pipeline_bridge.get_pipeline_repository")
+    def test_update_prioritized_task_priority_and_tags_do_not_update_profile(
+        self,
+        get_pipeline_repository,
+        apply_profile_feedback,
+    ):
+        repository = InMemoryPipelineRepository()
+        user_id = "14"
+        source_id = "email-1"
+        topic_entity = TopicEntity(
+            entity_name="CS2103T",
+            entity_type=EntityType.TOPIC,
+            entity_key="cs2103t",
+        )
+
+        task = CanonicalTask(
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            topic_entity=topic_entity,
+            source_ids=[source_id],
+            priority_tier=PriorityTier.MEDIUM,
+            platforms_seen=[Platform.GMAIL],
+            sender_ids=["lecturer@example.edu"],
+            representative_source_id=source_id,
+            representative_subject="Project reminder",
+            representative_snippet="Please submit the project update.",
+            representative_sender_display="Lecturer",
+        )
+        task_card = PrioritizedTaskCard(
+            task_id="task-canon-1",
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            status=TaskStatus.PENDING_REVIEW,
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            entity_key=topic_entity.entity_key,
+            priority_tier=PriorityTier.MEDIUM,
+            action_window=ActionWindow.TODAY,
+            rationale="Looks actionable.",
+            confidence=0.8,
+            needs_user_review=False,
+            platforms_seen=[Platform.GMAIL],
+            evidence_source_ids=[source_id],
+            task_title="Project reminder",
+            task_description="Please submit the project update.",
+            source_subject="Project reminder",
+            source_snippet="Please submit the project update.",
+            source_sender="Lecturer",
+            entity_name=topic_entity.entity_name,
+            entity_type=topic_entity.entity_type,
+            sender_ids=["lecturer@example.edu"],
+        )
+        repository.save_pipeline_results(
+            PipelineRunBundle(
+                run_id="run-1",
+                signals=[],
+                canonical_tasks=[task],
+                decisions=[],
+                task_cards=[task_card],
+                profile=None,
+            )
+        )
+        get_pipeline_repository.return_value = repository
+
+        result = update_prioritized_task(
+            14,
+            "canon-1",
+            updates={
+                "priorityTier": "HIGH",
+                "tags": ["deadline"],
+            },
+        )
+
+        apply_profile_feedback.assert_not_called()
+        self.assertNotIn("profile", result)
+        self.assertEqual(result["task"]["priority_tier"], "HIGH")
+        self.assertEqual(result["task"]["tags"], ["deadline"])
+        self.assertIn("deadline", result["availableTags"])
+
+    @patch("app.pipeline_bridge._apply_profile_feedback")
+    @patch("app.pipeline_bridge.get_pipeline_repository")
+    def test_update_prioritized_task_completed_uses_final_priority_and_tags(
+        self,
+        get_pipeline_repository,
+        apply_profile_feedback,
+    ):
+        repository = InMemoryPipelineRepository()
+        user_id = "14"
+        source_id = "email-1"
+        topic_entity = TopicEntity(
+            entity_name="CS2103T",
+            entity_type=EntityType.TOPIC,
+            entity_key="cs2103t",
+        )
+
+        task = CanonicalTask(
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            topic_entity=topic_entity,
+            source_ids=[source_id],
+            priority_tier=PriorityTier.MEDIUM,
+            platforms_seen=[Platform.GMAIL],
+            sender_ids=["lecturer@example.edu"],
+            representative_source_id=source_id,
+            representative_subject="Project reminder",
+            representative_snippet="Please submit the project update.",
+            representative_sender_display="Lecturer",
+        )
+        task_card = PrioritizedTaskCard(
+            task_id="task-canon-1",
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            status=TaskStatus.ACCEPTED,
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            entity_key=topic_entity.entity_key,
+            priority_tier=PriorityTier.MEDIUM,
+            action_window=ActionWindow.TODAY,
+            rationale="Looks actionable.",
+            confidence=0.8,
+            needs_user_review=False,
+            platforms_seen=[Platform.GMAIL],
+            evidence_source_ids=[source_id],
+            task_title="Project reminder",
+            task_description="Please submit the project update.",
+            source_subject="Project reminder",
+            source_snippet="Please submit the project update.",
+            source_sender="Lecturer",
+            entity_name=topic_entity.entity_name,
+            entity_type=topic_entity.entity_type,
+            sender_ids=["lecturer@example.edu"],
+        )
+        repository.save_pipeline_results(
+            PipelineRunBundle(
+                run_id="run-1",
+                signals=[],
+                canonical_tasks=[task],
+                decisions=[],
+                task_cards=[task_card],
+                profile=None,
+            )
+        )
+        repository.apply_task_action(user_id, "canon-1", action=FeedbackAction.ACCEPT)
+        get_pipeline_repository.return_value = repository
+
+        updated_profile = MagicMock()
+        updated_profile.model_dump.return_value = {"profile_version": 4}
+        feedback_event = MagicMock()
+        feedback_event.model_dump.return_value = {
+            "canonical_task_id": "canon-1",
+            "action": "COMPLETED",
+        }
+        apply_profile_feedback.return_value = (updated_profile, feedback_event)
+
+        result = update_prioritized_task(
+            14,
+            "canon-1",
+            updates={
+                "priorityTier": "HIGH",
+                "tags": ["deadline"],
+                "status": "COMPLETED",
+            },
+        )
+
+        apply_profile_feedback.assert_called_once()
+        feedback_context = apply_profile_feedback.call_args.args[1]
+        self.assertEqual(feedback_context.task.effective_priority_tier, PriorityTier.HIGH)
+        self.assertEqual(feedback_context.task.task_tags, ["deadline"])
+        self.assertEqual(result["profile"], {"profile_version": 4})
+        self.assertEqual(result["task"]["priority_tier"], "HIGH")
+        self.assertEqual(result["task"]["tags"], ["deadline"])
+        self.assertEqual(result["task"]["status"], "completed")
+
+    @patch("app.pipeline_bridge._apply_profile_feedback")
+    @patch("app.pipeline_bridge.get_pipeline_repository")
+    def test_remove_prioritized_task_delete_uses_final_priority_and_tags(
+        self,
+        get_pipeline_repository,
+        apply_profile_feedback,
+    ):
+        repository = InMemoryPipelineRepository()
+        user_id = "14"
+        source_id = "email-1"
+        topic_entity = TopicEntity(
+            entity_name="CS2103T",
+            entity_type=EntityType.TOPIC,
+            entity_key="cs2103t",
+        )
+
+        task = CanonicalTask(
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            topic_entity=topic_entity,
+            source_ids=[source_id],
+            priority_tier=PriorityTier.MEDIUM,
+            platforms_seen=[Platform.GMAIL],
+            sender_ids=["lecturer@example.edu"],
+            representative_source_id=source_id,
+            representative_subject="Project reminder",
+            representative_snippet="Please submit the project update.",
+            representative_sender_display="Lecturer",
+        )
+        task_card = PrioritizedTaskCard(
+            task_id="task-canon-1",
+            canonical_task_id="canon-1",
+            user_id=user_id,
+            run_id="run-1",
+            status=TaskStatus.ACCEPTED,
+            origin=TaskOrigin.EMAIL,
+            task_type=TaskType.ADMIN,
+            entity_key=topic_entity.entity_key,
+            priority_tier=PriorityTier.MEDIUM,
+            action_window=ActionWindow.TODAY,
+            rationale="Looks actionable.",
+            confidence=0.8,
+            needs_user_review=False,
+            platforms_seen=[Platform.GMAIL],
+            evidence_source_ids=[source_id],
+            task_title="Project reminder",
+            task_description="Please submit the project update.",
+            source_subject="Project reminder",
+            source_snippet="Please submit the project update.",
+            source_sender="Lecturer",
+            entity_name=topic_entity.entity_name,
+            entity_type=topic_entity.entity_type,
+            sender_ids=["lecturer@example.edu"],
+        )
+        repository.save_pipeline_results(
+            PipelineRunBundle(
+                run_id="run-1",
+                signals=[],
+                canonical_tasks=[task],
+                decisions=[],
+                task_cards=[task_card],
+                profile=None,
+            )
+        )
+        repository.apply_task_action(user_id, "canon-1", action=FeedbackAction.ACCEPT)
+        repository.update_task(
+            user_id,
+            "canon-1",
+            updates={"priority_tier": "HIGH"},
+        )
+        repository.replace_task_tags(
+            user_id,
+            "canon-1",
+            tags=["deadline"],
+        )
+        get_pipeline_repository.return_value = repository
+
+        updated_profile = MagicMock()
+        updated_profile.model_dump.return_value = {"profile_version": 5}
+        feedback_event = MagicMock()
+        feedback_event.model_dump.return_value = {
+            "canonical_task_id": "canon-1",
+            "action": "DELETE",
+        }
+        apply_profile_feedback.return_value = (updated_profile, feedback_event)
+
+        result = remove_prioritized_task(14, "canon-1")
+
+        apply_profile_feedback.assert_called_once()
+        feedback_context = apply_profile_feedback.call_args.args[1]
+        self.assertEqual(apply_profile_feedback.call_args.kwargs["action"], FeedbackAction.DELETE)
+        self.assertEqual(feedback_context.task.effective_priority_tier, PriorityTier.HIGH)
+        self.assertEqual(feedback_context.task.task_tags, ["deadline"])
+        self.assertEqual(feedback_context.task.status, TaskStatus.ACCEPTED)
+        self.assertEqual(result["profile"], {"profile_version": 5})
+
     def test_build_dashboard_items_includes_accepted_cards_for_kanban(self):
         repository = MagicMock()
         pending_card = MagicMock()
@@ -104,6 +879,7 @@ class PipelineBridgeTestCase(unittest.TestCase):
     @patch("app.pipeline_bridge.logger")
     @patch("app.pipeline_bridge.get_profile_snapshot")
     @patch("app.pipeline_bridge.get_available_tags")
+    @patch("app.pipeline_bridge._rebuild_false_negative_items")
     @patch("app.pipeline_bridge._build_dashboard_items")
     @patch("app.pipeline_bridge._row_to_raw_message")
     @patch("app.pipeline_bridge.list_stored_messages")
@@ -118,6 +894,7 @@ class PipelineBridgeTestCase(unittest.TestCase):
         list_stored_messages,
         row_to_raw_message,
         build_dashboard_items,
+        rebuild_false_negative_items,
         get_available_tags,
         get_profile_snapshot,
         logger,
@@ -133,6 +910,7 @@ class PipelineBridgeTestCase(unittest.TestCase):
             {"canonical_task_id": "run-open", "status": "pending_review"},
             {"canonical_task_id": "run-completed", "status": "completed"},
         ]
+        rebuild_false_negative_items.return_value = []
         get_available_tags.return_value = ["assignment"]
         get_profile_snapshot.return_value = {"profile_version": 9}
         pipeline.run_messages.return_value = SimpleNamespace(
@@ -196,7 +974,11 @@ class PipelineBridgeTestCase(unittest.TestCase):
         summary = refresh_linked_email_sources(11, recent_limit=25)
 
         list_new_messages.assert_called_once_with(11, link={"history_id": "123"})
-        list_recent_outlook_messages.assert_called_once_with(11, limit=25)
+        list_recent_outlook_messages.assert_called_once_with(
+            11,
+            limit=25,
+            link={"last_received_at": None},
+        )
         list_recent_messages.assert_not_called()
         list_new_outlook_messages.assert_not_called()
         self.assertEqual(summary["gmail"]["mode"], "new")

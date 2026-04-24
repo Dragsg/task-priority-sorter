@@ -1,11 +1,11 @@
 import { NavLink } from "react-router-dom";
 
 const LINKS = [
-  { to: "/home", label: "Home" },
+  { to: "/home", label: "Dashboard" },
   { to: "/kanban", label: "Kanban" },
-  { to: "/statistics", label: "Statistics" },
-  { to: "/linking", label: "Linking" },
-  { to: "/preferences", label: "Account" },
+  { to: "/statistics", label: "Insights" },
+  { to: "/linking", label: "Connections" },
+  { to: "/preferences", label: "Settings" },
 ];
 
 export default function PageNav() {

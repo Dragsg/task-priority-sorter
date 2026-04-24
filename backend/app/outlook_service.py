@@ -38,6 +38,14 @@ def parse_graph_datetime(value: str | None):
     return to_sgt(datetime.fromisoformat(value.replace("Z", "+00:00")))
 
 
+def _require_outlook_link(user_id: int, link: dict | None = None) -> dict:
+    resolved_link = link or get_outlook_link(user_id)
+    if not resolved_link:
+        logger.info("No saved Outlook link available for user_id=%s", user_id)
+        raise RuntimeError("No Outlook account is linked for this user yet.")
+    return resolved_link
+
+
 def build_microsoft_authorize_url(state: str) -> str:
     if not Config.MICROSOFT_CLIENT_ID or not Config.MICROSOFT_CLIENT_SECRET:
         raise RuntimeError(
@@ -299,12 +307,8 @@ def complete_outlook_link(user_id: int, code: str) -> str:
     return profile["emailAddress"]
 
 
-def build_outlook_access_token(user_id: int) -> str:
-    link = get_outlook_link(user_id)
-
-    if not link:
-        logger.info("No saved Outlook link available for user_id=%s", user_id)
-        raise RuntimeError("No Outlook account is linked for this user yet.")
+def build_outlook_access_token(user_id: int, *, link: dict | None = None) -> str:
+    link = _require_outlook_link(user_id, link)
 
     expiry = normalize_expiry(link["token_expiry"])
     is_expired = expiry and expiry <= datetime.utcnow()
@@ -346,8 +350,9 @@ def build_outlook_access_token(user_id: int) -> str:
     return link["access_token"]
 
 
-def list_recent_outlook_messages(user_id: int, limit: int = 5) -> dict:
-    access_token = build_outlook_access_token(user_id)
+def list_recent_outlook_messages(user_id: int, limit: int = 5, *, link: dict | None = None) -> dict:
+    link = _require_outlook_link(user_id, link)
+    access_token = build_outlook_access_token(user_id, link=link)
     logger.info(
         "Loading recent Outlook inbox messages for user_id=%s limit=%s",
         user_id,
@@ -388,10 +393,8 @@ def list_recent_outlook_messages(user_id: int, limit: int = 5) -> dict:
     }
 
 
-def list_new_outlook_messages(user_id: int) -> dict:
-    link = get_outlook_link(user_id)
-    if not link:
-        raise RuntimeError("No Outlook account is linked for this user yet.")
+def list_new_outlook_messages(user_id: int, *, link: dict | None = None) -> dict:
+    link = _require_outlook_link(user_id, link)
 
     if not link["last_received_at"]:
         logger.info(
@@ -400,7 +403,7 @@ def list_new_outlook_messages(user_id: int) -> dict:
         )
         return {"messages": [], "lastReceivedAt": None}
 
-    access_token = build_outlook_access_token(user_id)
+    access_token = build_outlook_access_token(user_id, link=link)
     last_received_at = link["last_received_at"].astimezone(timezone.utc).isoformat()
     logger.info(
         "Loading new Outlook inbox messages for user_id=%s after %s",

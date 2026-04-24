@@ -24,11 +24,13 @@ from .pipeline_bridge import (
     clear_user_runtime_state,
     create_manual_task,
     get_available_tags,
+    list_false_negative_items,
     get_onboarding_context_snapshot,
     get_pipeline_recompute_status,
     get_profile_snapshot,
     get_task_statistics_snapshot,
     list_prioritized_tasks,
+    promote_false_negative_email,
     remove_prioritized_task,
     remove_calendar_context,
     run_prioritization_for_user,
@@ -74,6 +76,13 @@ from .telegram_service import (
 api = Blueprint("api", __name__)
 ALLOWED_RECENT_LIMITS = {5, 10, 20, 50, 100}
 logger = logging.getLogger(__name__)
+
+
+def build_frontend_redirect_url(*, path: str = "", query_params: dict[str, str] | None = None) -> str:
+    base_url = current_app.config["FRONTEND_URL"].rstrip("/")
+    normalized_path = f"/{path.lstrip('/')}" if path else ""
+    query = urlencode(query_params or {})
+    return f"{base_url}{normalized_path}?{query}" if query else f"{base_url}{normalized_path}"
 
 
 def build_token(user_id: int) -> str:
@@ -401,29 +410,41 @@ def gmail_link():
         authorization_url, state = flow.authorization_url(
             access_type="offline",
             include_granted_scopes="true",
-            prompt="consent",
+            prompt="select_account consent",
         )
         session["gmail_oauth_state"] = state
         session["gmail_code_verifier"] = flow.code_verifier
         session["gmail_oauth_user_id"] = user_id
         return redirect(authorization_url)
     except Exception as error:
-        query = urlencode({"gmail": "error", "reason": str(error)})
-        return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
+        return redirect(
+            build_frontend_redirect_url(
+                path="/linking",
+                query_params={"gmail": "error", "reason": str(error)},
+            )
+        )
 
 
 @api.get("/gmail/callback")
 def gmail_callback():
     if request.args.get("error"):
-        query = urlencode({"gmail": "error", "reason": request.args["error"]})
-        return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
+        return redirect(
+            build_frontend_redirect_url(
+                path="/linking",
+                query_params={"gmail": "error", "reason": request.args["error"]},
+            )
+        )
 
     saved_state = session.get("gmail_oauth_state")
     saved_code_verifier = session.get("gmail_code_verifier")
     incoming_state = request.args.get("state")
     if not saved_state or saved_state != incoming_state:
-        query = urlencode({"gmail": "error", "reason": "state_mismatch"})
-        return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
+        return redirect(
+            build_frontend_redirect_url(
+                path="/linking",
+                query_params={"gmail": "error", "reason": "state_mismatch"},
+            )
+        )
 
     try:
         user_id = session.get("gmail_oauth_user_id")
@@ -437,11 +458,19 @@ def gmail_callback():
         session.pop("gmail_code_verifier", None)
         session.pop("gmail_oauth_user_id", None)
     except Exception as error:
-        query = urlencode({"gmail": "error", "reason": str(error)})
-        return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
+        return redirect(
+            build_frontend_redirect_url(
+                path="/linking",
+                query_params={"gmail": "error", "reason": str(error)},
+            )
+        )
 
-    query = urlencode({"gmail": "linked", "email": email_address})
-    return redirect(f"{current_app.config['FRONTEND_URL']}?{query}")
+    return redirect(
+        build_frontend_redirect_url(
+            path="/linking",
+            query_params={"gmail": "linked", "email": email_address},
+        )
+    )
 
 
 @api.get("/gmail/messages/recent")
@@ -699,10 +728,37 @@ def prioritized_tasks():
     try:
         user_id = get_authenticated_user_id(required=True)
         items = list_prioritized_tasks(user_id)
+        false_negative_items = list_false_negative_items(user_id)
     except Exception as error:
         return jsonify({"error": str(error)}), get_status_code(error)
 
-    return jsonify({"items": items})
+    return jsonify({"items": items, "falseNegativeItems": false_negative_items})
+
+
+@api.post("/false-negatives/queue")
+def queue_false_negative_email():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        data = request.get_json() or {}
+        source_id = data.get("sourceId")
+        platform = data.get("platform")
+        if not isinstance(source_id, str) or not source_id.strip():
+            raise ValueError("sourceId is required.")
+        if platform is not None and not isinstance(platform, str):
+            raise ValueError("platform must be a string.")
+        result = promote_false_negative_email(
+            user_id,
+            source_id=source_id,
+            platform=platform,
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except LookupError as error:
+        return jsonify({"error": str(error)}), 404
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(result)
 
 
 @api.get("/dashboard")
@@ -713,6 +769,7 @@ def dashboard_bootstrap():
         if user is None:
             raise LookupError("User not found")
         items = list_prioritized_tasks(user_id)
+        false_negative_items = list_false_negative_items(user_id)
         profile = get_profile_snapshot(user_id)
     except LookupError as error:
         return jsonify({"error": str(error)}), 404
@@ -723,6 +780,7 @@ def dashboard_bootstrap():
         {
             "user": serialize_user(user),
             "items": items,
+            "falseNegativeItems": false_negative_items,
             "profile": profile,
             "availableTags": get_available_tags(user_id),
         }

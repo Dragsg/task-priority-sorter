@@ -14,12 +14,6 @@ import {
   revokeOnboardingAccess,
 } from "../onboardingOptions";
 
-const HIGHLIGHTS = [
-  "Create an account and get into your workspace quickly.",
-  "Answer a few onboarding questions so the app can adapt earlier.",
-  "Return to your dashboard without repeating setup steps.",
-];
-
 export default function Login() {
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
@@ -95,22 +89,13 @@ export default function Login() {
     <main className="auth-shell">
       <section className="auth-layout">
         <div className="brand-panel">
-          <p className="auth-eyebrow">Task Priority Sorter</p>
-          <h1>{isSignUp ? "A calmer place to sort what matters" : "Welcome back"}</h1>
+          <p className="auth-eyebrow">Sortify</p>
+          <h1>{isSignUp ? "Create your Sortify workspace" : "Welcome back"}</h1>
           <p className="auth-subtitle">
             {isSignUp
-              ? "Set up your account, answer a few quick questions, and step into a workspace that feels quieter and more intentional."
-              : "Pick up where you left off, review your setup, and move back into your workspace without friction."}
+              ? "Set up your account once and move straight into a focused workspace for triaging tasks, deadlines, and follow-ups."
+              : "Sign in to access your task queue, Kanban board, and workspace settings."}
           </p>
-
-          <div className="copy-panel">
-            <p className="panel-title">What happens next</p>
-            <ul className="feature-list">
-              {HIGHLIGHTS.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
         </div>
 
         <section className="auth-card">
@@ -118,8 +103,8 @@ export default function Login() {
             <p className="auth-section-label">{isSignUp ? "Create account" : "Sign in"}</p>
             <p className="auth-card-copy">
               {isSignUp
-                ? "Pick a username and password and you are in."
-                : "Use the username and password you signed up with."}
+                ? "Choose a username and password to start using Sortify."
+                : "Use your Sortify username and password to continue."}
             </p>
           </div>
 
@@ -162,7 +147,7 @@ export default function Login() {
             {error ? <p className="error-text auth-error">{error}</p> : null}
 
             <button className="auth-button" disabled={busy || !canSubmit} type="submit">
-              {busy ? "Please wait..." : isSignUp ? "Create account" : "Continue"}
+              {busy ? "Please wait..." : isSignUp ? "Create account" : "Sign in"}
             </button>
           </form>
 
@@ -177,7 +162,7 @@ export default function Login() {
               }}
               type="button"
             >
-              {isSignUp ? "Log in" : "Create one"}
+              {isSignUp ? "Sign in" : "Create account"}
             </button>
           </p>
         </section>

@@ -219,6 +219,50 @@ class AccountRoutesTestCase(unittest.TestCase):
         self.assertEqual(response.get_json(), {"success": True})
         start_user_account_deletion.assert_called_once_with(5)
 
+    @patch("app.routes.build_google_flow")
+    def test_gmail_link_forces_google_account_selection(self, build_google_flow):
+        token = build_token(7)
+        flow = build_google_flow.return_value
+        flow.code_verifier = "code-verifier"
+        flow.authorization_url.return_value = (
+            "https://accounts.google.com/o/oauth2/auth?prompt=select_account",
+            "state-123",
+        )
+
+        response = self.client.get(
+            "/api/gmail/link",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response.location,
+            "https://accounts.google.com/o/oauth2/auth?prompt=select_account",
+        )
+        flow.authorization_url.assert_called_once_with(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="select_account consent",
+        )
+        with self.client.session_transaction() as session_state:
+            self.assertEqual(session_state["gmail_oauth_state"], "state-123")
+            self.assertEqual(session_state["gmail_code_verifier"], "code-verifier")
+            self.assertEqual(session_state["gmail_oauth_user_id"], 7)
+
+    def test_gmail_callback_state_mismatch_redirects_back_to_linking_page(self):
+        with self.client.session_transaction() as session_state:
+            session_state["gmail_oauth_state"] = "expected-state"
+            session_state["gmail_code_verifier"] = "code-verifier"
+            session_state["gmail_oauth_user_id"] = 7
+
+        response = self.client.get("/api/gmail/callback?state=wrong-state")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response.location,
+            "http://localhost:5173/linking?gmail=error&reason=state_mismatch",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

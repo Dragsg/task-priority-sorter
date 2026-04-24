@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
   createManualTask,
@@ -9,6 +9,7 @@ import {
   getStoredUser,
   getStoredUserId,
   LIVE_REFRESH_INTERVAL_MS,
+  promoteFalseNegativeEmail,
   submitTaskFeedback,
   syncPrioritizedTasks,
   updatePrioritizedTask,
@@ -152,6 +153,10 @@ function createFeedbackState(action, direction, currentPriorityTier) {
   };
 }
 
+function feedbackActionUpdatesProfile(action) {
+  return action === "ACCEPT" || action === "REJECT";
+}
+
 function shiftPriorityTier(priorityTier, direction) {
   const currentIndex = PRIORITY_TIERS.indexOf(priorityTier);
   if (currentIndex === -1) {
@@ -229,6 +234,28 @@ function formatSourceTimestamp(value) {
     return value;
   }
   return parsed.toLocaleString();
+}
+
+function formatPlatformLabel(value) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "gmail") {
+    return "Gmail";
+  }
+  if (normalized === "outlook") {
+    return "Outlook";
+  }
+  if (normalized === "manual") {
+    return "Manual";
+  }
+  return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`;
 }
 
 function getNormalizedTaskStatus(task) {
@@ -309,8 +336,20 @@ function buildQueueSummary(task) {
     truncateText(task.task_description, 150) ||
     truncateText(task.source_snippet, 150) ||
     truncateText(task.source_subject, 120) ||
-    "Expand this task to see the original email context."
+    "Check the source email details below for more context."
   );
+}
+
+function buildFalseNegativePreview(item) {
+  return (
+    truncateText(item.preview, 220) ||
+    truncateText(item.subject, 140) ||
+    "No email preview was available for this message."
+  );
+}
+
+function getFalseNegativeKey(item) {
+  return `${String(item?.platform || "email").toLowerCase()}:${item?.sourceId || ""}`;
 }
 
 function getVisibleTaskTags(task) {
@@ -333,36 +372,53 @@ function getVisibleTaskTags(task) {
 }
 
 function TaskTags({ task, isBusy = false, availableTags = [], onChangeTags }) {
-  const tags = getVisibleTaskTags(task);
+  const propTags = useMemo(() => getVisibleTaskTags(task), [task.canonical_task_id, task.tags]);
+  const [displayTags, setDisplayTags] = useState(propTags);
   const [tagInput, setTagInput] = useState("");
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const tagBlockRef = useRef(null);
   const suggestions = useMemo(
-    () => buildTagSuggestions(availableTags, tags, tagInput),
-    [availableTags, tags, tagInput]
+    () => buildTagSuggestions(availableTags, displayTags, tagInput),
+    [availableTags, displayTags, tagInput]
   );
 
   useEffect(() => {
-    setTagInput("");
-  }, [task.canonical_task_id, task.tags]);
+    setDisplayTags(propTags);
+  }, [propTags]);
 
-  function commitTag(rawValue) {
+  function applyTagChange(nextTags, changeMeta = null) {
+    const sanitizedTags = dedupeManualTags(nextTags);
+    setDisplayTags(sanitizedTags);
+    onChangeTags?.(task.canonical_task_id, sanitizedTags, changeMeta);
+  }
+
+  function commitTag(rawValue, { closeComposer = true } = {}) {
     const normalized = normalizeManualTag(rawValue);
     if (!normalized) {
       setTagInput("");
+      if (closeComposer) {
+        setIsComposerOpen(false);
+      }
       return;
     }
+
+    const nextTags = dedupeManualTags([...displayTags, normalized]);
     setTagInput("");
-    setIsComposerOpen(false);
-    onChangeTags?.(task.canonical_task_id, dedupeManualTags([...tags, normalized]), {
+    if (closeComposer) {
+      setIsComposerOpen(false);
+    }
+    if (nextTags.length === displayTags.length) {
+      return;
+    }
+    applyTagChange(nextTags, {
       type: "add",
       tag: normalized,
     });
   }
 
   function removeTag(tagToRemove) {
-    onChangeTags?.(
-      task.canonical_task_id,
-      tags.filter((tag) => tag !== tagToRemove),
+    applyTagChange(
+      displayTags.filter((tag) => tag !== tagToRemove),
       { type: "remove", tag: tagToRemove }
     );
   }
@@ -372,11 +428,11 @@ function TaskTags({ task, isBusy = false, availableTags = [], onChangeTags }) {
     const segments = nextValue.split(",");
     if (segments.length > 1) {
       const completedTags = dedupeManualTags(segments.slice(0, -1));
-      const nextTags = dedupeManualTags([...tags, ...completedTags]);
+      const nextTags = dedupeManualTags([...displayTags, ...completedTags]);
       const lastAdded = completedTags[completedTags.length - 1];
       setTagInput(segments[segments.length - 1]);
-      if (nextTags.length !== tags.length) {
-        onChangeTags?.(task.canonical_task_id, nextTags, {
+      if (nextTags.length !== displayTags.length) {
+        applyTagChange(nextTags, {
           type: "add",
           tag: lastAdded ?? null,
         });
@@ -393,25 +449,48 @@ function TaskTags({ task, isBusy = false, availableTags = [], onChangeTags }) {
       return;
     }
 
-    if (event.key === "Backspace" && !tagInput && tags.length) {
+    if (event.key === "Escape") {
       event.preventDefault();
-      removeTag(tags[tags.length - 1]);
+      setTagInput("");
+      setIsComposerOpen(false);
+      return;
+    }
+
+    if (event.key === "Backspace" && !tagInput && displayTags.length) {
+      event.preventDefault();
+      removeTag(displayTags[displayTags.length - 1]);
     }
   }
 
-  if (!tags.length && !onChangeTags) {
+  function handleInputBlur(event) {
+    const nextFocusedElement = event.relatedTarget;
+    if (nextFocusedElement && tagBlockRef.current?.contains(nextFocusedElement)) {
+      return;
+    }
+    commitTag(tagInput);
+  }
+
+  function handleComposerToggle() {
+    if (isComposerOpen) {
+      commitTag(tagInput);
+      return;
+    }
+    setIsComposerOpen(true);
+  }
+
+  if (!displayTags.length && !onChangeTags) {
     return null;
   }
 
   return (
-    <div className="task-tag-block">
+    <div className="task-tag-block" ref={tagBlockRef}>
       <div className="task-tag-header">
         <span className="task-tag-label">Tags</span>
       </div>
       <div className="task-tag-row">
-        {tags.length ? (
+        {displayTags.length ? (
           <div className="task-tag-list">
-            {tags.map((tag) => (
+            {displayTags.map((tag) => (
               <span className="task-tag-chip task-tag-chip-editable" key={tag}>
                 <span className="task-tag-chip-text">{tag.replace(/_/g, " ")}</span>
                 {onChangeTags ? (
@@ -435,7 +514,7 @@ function TaskTags({ task, isBusy = false, availableTags = [], onChangeTags }) {
           <button
             className="task-tag-inline-action task-tag-inline-action-near"
             disabled={isBusy}
-            onClick={() => setIsComposerOpen((current) => !current)}
+            onClick={handleComposerToggle}
             type="button"
           >
             {isComposerOpen ? "Close" : "Add tag"}
@@ -449,10 +528,7 @@ function TaskTags({ task, isBusy = false, availableTags = [], onChangeTags }) {
               autoFocus
               className="manual-tag-input"
               disabled={isBusy}
-              onBlur={() => {
-                commitTag(tagInput);
-                setIsComposerOpen(false);
-              }}
+              onBlur={handleInputBlur}
               onChange={handleInputChange}
               onKeyDown={handleInputKeyDown}
               placeholder="Type a tag and press Enter"
@@ -522,7 +598,7 @@ function TaskSource({ task, compact = false }) {
   );
 }
 
-function TaskEditForm({
+function TaskEditDialog({
   task,
   availableTags,
   editState,
@@ -540,6 +616,23 @@ function TaskEditForm({
     setDraft(createTaskEditDraft(task));
     setTagInput("");
   }, [task]);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === "Escape" && !editState?.isSaving) {
+        onCancel();
+      }
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [editState?.isSaving, onCancel]);
 
   function updateDraft(field, value) {
     setDraft((current) => ({
@@ -608,133 +701,167 @@ function TaskEditForm({
   }
 
   return (
-    <form className="task-edit-form" onSubmit={handleSubmit}>
-      <div className="task-edit-grid">
-        <label className="field-group">
-          <span>Title</span>
-          <input
-            className="auth-input"
-            disabled={editState?.isSaving}
-            onChange={(event) => updateDraft("title", event.target.value)}
-            type="text"
-            value={draft.title}
-          />
-        </label>
-        <label className="field-group">
-          <span>Priority tier</span>
-          <select
-            className="auth-input"
-            disabled={editState?.isSaving}
-            onChange={(event) => updateDraft("priorityTier", event.target.value)}
-            value={draft.priorityTier}
-          >
-            {PRIORITY_TIERS.map((priorityTier) => (
-              <option key={priorityTier} value={priorityTier}>
-                {formatPriorityTierLabel(priorityTier)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field-group">
-          <span>Deadline</span>
-          <input
-            className="auth-input"
-            disabled={editState?.isSaving}
-            onChange={(event) => updateDraft("deadlineAt", event.target.value)}
-            type="datetime-local"
-            value={draft.deadlineAt}
-          />
-        </label>
-        <label className="field-group">
-          <span>Status</span>
-          <select
-            className="auth-input"
-            disabled={editState?.isSaving}
-            onChange={(event) => updateDraft("status", event.target.value)}
-            value={draft.status}
-          >
-            {TASK_STATUS_OPTIONS.map((status) => (
-              <option key={status} value={status}>
-                {status === "COMPLETED" ? "Completed" : "Open"}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <label className="field-group">
-        <span>Description</span>
-        <textarea
-          className="auth-input auth-textarea task-edit-textarea"
-          disabled={editState?.isSaving}
-          onChange={(event) => updateDraft("description", event.target.value)}
-          rows={4}
-          value={draft.description}
-        />
-      </label>
-      <label className="field-group">
-        <span>Tags</span>
-        <div className="manual-tag-field">
-          <div className="manual-tag-input-shell">
-            {draft.tags.map((tag) => (
-              <span className="manual-tag-chip" key={tag}>
-                {tag.replace(/_/g, " ")}
-                <button
-                  aria-label={`Remove ${tag}`}
-                  className="manual-tag-remove"
-                  disabled={editState?.isSaving}
-                  onClick={() => removeTag(tag)}
-                  type="button"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            <input
-              className="manual-tag-input"
-              disabled={editState?.isSaving}
-              onBlur={() => commitTag(tagInput)}
-              onChange={handleTagInputChange}
-              onKeyDown={handleTagInputKeyDown}
-              placeholder={draft.tags.length ? "Add another tag" : "Type a tag and press Enter"}
-              type="text"
-              value={tagInput}
-            />
+    <div
+      aria-modal="true"
+      className="kanban-modal-backdrop"
+      onClick={() => {
+        if (!editState?.isSaving) {
+          onCancel();
+        }
+      }}
+      role="dialog"
+    >
+      <div className="kanban-modal-card" onClick={(event) => event.stopPropagation()}>
+        <div className="kanban-modal-header">
+          <div>
+            <p className="auth-eyebrow">Edit task</p>
+            <h2 className="kanban-modal-title">
+              {cleanPreviewText(task.task_title) || "Untitled task"}
+            </h2>
+            <p className="kanban-modal-copy">
+              Update the details here without losing your place in the dashboard.
+            </p>
           </div>
-          {suggestions.length ? (
-            <div className="manual-tag-autocomplete task-edit-tag-autocomplete">
-              <div className="manual-tag-suggestions">
-                {suggestions.map((tag) => (
-                  <button
-                    className="manual-tag-suggestion"
-                    disabled={editState?.isSaving}
-                    key={tag}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => commitTag(tag)}
-                    type="button"
-                  >
-                    {tag.replace(/_/g, " ")}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          <button
+            aria-label="Close edit dialog"
+            className="kanban-modal-close"
+            disabled={editState?.isSaving}
+            onClick={onCancel}
+            type="button"
+          >
+            ×
+          </button>
         </div>
-      </label>
-      {editState?.error ? <p className="error-text task-edit-message">{editState.error}</p> : null}
-      <div className="task-edit-actions">
-        <button className="auth-button" disabled={editState?.isSaving} type="submit">
-          {editState?.isSaving ? "Saving..." : "Save changes"}
-        </button>
-        <button
-          className="secondary-button"
-          disabled={editState?.isSaving}
-          onClick={onCancel}
-          type="button"
-        >
-          Cancel
-        </button>
+
+        <form className="kanban-edit-panel" onSubmit={handleSubmit}>
+          <div className="kanban-edit-grid">
+            <label className="field-group">
+              <span>Title</span>
+              <input
+                className="auth-input"
+                disabled={editState?.isSaving}
+                onChange={(event) => updateDraft("title", event.target.value)}
+                type="text"
+                value={draft.title}
+              />
+            </label>
+            <label className="field-group">
+              <span>Priority tier</span>
+              <select
+                className="auth-input"
+                disabled={editState?.isSaving}
+                onChange={(event) => updateDraft("priorityTier", event.target.value)}
+                value={draft.priorityTier}
+              >
+                {PRIORITY_TIERS.map((priorityTier) => (
+                  <option key={priorityTier} value={priorityTier}>
+                    {formatPriorityTierLabel(priorityTier)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-group">
+              <span>Deadline</span>
+              <input
+                className="auth-input"
+                disabled={editState?.isSaving}
+                onChange={(event) => updateDraft("deadlineAt", event.target.value)}
+                type="datetime-local"
+                value={draft.deadlineAt}
+              />
+            </label>
+            <label className="field-group">
+              <span>Status</span>
+              <select
+                className="auth-input"
+                disabled={editState?.isSaving}
+                onChange={(event) => updateDraft("status", event.target.value)}
+                value={draft.status}
+              >
+                {TASK_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status === "COMPLETED" ? "Completed" : "Open"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="field-group">
+            <span>Description</span>
+            <textarea
+              className="auth-input auth-textarea kanban-edit-textarea"
+              disabled={editState?.isSaving}
+              onChange={(event) => updateDraft("description", event.target.value)}
+              rows={4}
+              value={draft.description}
+            />
+          </label>
+          <label className="field-group">
+            <span>Tags</span>
+            <div className="manual-tag-field">
+              <div className="manual-tag-input-shell">
+                {draft.tags.map((tag) => (
+                  <span className="manual-tag-chip" key={tag}>
+                    {tag.replace(/_/g, " ")}
+                    <button
+                      aria-label={`Remove ${tag}`}
+                      className="manual-tag-remove"
+                      disabled={editState?.isSaving}
+                      onClick={() => removeTag(tag)}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <input
+                  className="manual-tag-input"
+                  disabled={editState?.isSaving}
+                  onBlur={() => commitTag(tagInput)}
+                  onChange={handleTagInputChange}
+                  onKeyDown={handleTagInputKeyDown}
+                  placeholder={draft.tags.length ? "Add another tag" : "Type a tag and press Enter"}
+                  type="text"
+                  value={tagInput}
+                />
+              </div>
+              {suggestions.length ? (
+                <div className="manual-tag-autocomplete kanban-tag-autocomplete">
+                  <div className="manual-tag-suggestions">
+                    {suggestions.map((tag) => (
+                      <button
+                        className="manual-tag-suggestion"
+                        disabled={editState?.isSaving}
+                        key={tag}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => commitTag(tag)}
+                        type="button"
+                      >
+                        {tag.replace(/_/g, " ")}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </label>
+          {editState?.error ? <p className="error-text task-edit-message">{editState.error}</p> : null}
+          <div className="kanban-edit-actions">
+            <button className="auth-button" disabled={editState?.isSaving} type="submit">
+              {editState?.isSaving ? "Saving..." : "Save changes"}
+            </button>
+            <button
+              className="secondary-button"
+              disabled={editState?.isSaving}
+              onClick={onCancel}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       </div>
-    </form>
+    </div>
   );
 }
 
@@ -833,9 +960,7 @@ function TaskCard({
   onChangeTags,
   onOpenEdit,
   onCloseEdit,
-  onSaveEdit,
   isEditing,
-  editState,
   availableTags,
   index = 0,
 }) {
@@ -880,22 +1005,9 @@ function TaskCard({
         onChangeTags={onChangeTags}
         task={task}
       />
-      <div className="task-meta task-meta-compact">
-        <span>Confidence {Math.round((task.confidence ?? 0) * 100)}%</span>
-        <span>{task.platforms_seen?.join(", ") || "email"}</span>
-      </div>
       <div className="task-card-details">
         <p className="task-summary-label">Source email</p>
         <TaskSource compact task={task} />
-        {isEditing ? (
-          <TaskEditForm
-            availableTags={availableTags}
-            editState={editState}
-            onCancel={() => onCloseEdit(task.canonical_task_id)}
-            onSave={onSaveEdit}
-            task={task}
-          />
-        ) : null}
         <p className="task-rationale task-rationale-queue">
           <span>Why now:</span> {cleanPreviewText(task.rationale)}
         </p>
@@ -918,9 +1030,7 @@ function QueueCard({
   onChangeTags,
   onOpenEdit,
   onCloseEdit,
-  onSaveEdit,
   isEditing,
-  editState,
   availableTags,
   index,
 }) {
@@ -933,12 +1043,45 @@ function QueueCard({
       onChangeTags={onChangeTags}
       onOpenEdit={onOpenEdit}
       onCloseEdit={onCloseEdit}
-      onSaveEdit={onSaveEdit}
       isEditing={isEditing}
-      editState={editState}
       availableTags={availableTags}
       task={task}
     />
+  );
+}
+
+function FalseNegativeCard({ item, index, isAdding = false, onAddToQueue }) {
+  const subject = cleanPreviewText(item.subject) || "(No subject)";
+  const sender = cleanPreviewText(item.sender || item.senderEmail);
+  const preview = buildFalseNegativePreview(item);
+  const received = formatSourceTimestamp(item.receivedAt);
+  const platformLabel = formatPlatformLabel(item.platform);
+
+  return (
+    <article className="false-negative-card">
+      <div className="false-negative-top">
+        <div className="false-negative-heading">
+          <span className="task-queue-index">{String(index + 1).padStart(2, "0")}</span>
+          <div className="false-negative-copy">
+            {platformLabel ? <span className="false-negative-platform">{platformLabel}</span> : null}
+            <h3 className="task-title">{subject}</h3>
+          </div>
+        </div>
+        <div className="false-negative-actions">
+          {received ? <span className="false-negative-time">{received}</span> : null}
+          <button
+            className="secondary-button false-negative-button"
+            disabled={isAdding}
+            onClick={() => onAddToQueue?.(item)}
+            type="button"
+          >
+            {isAdding ? "Adding..." : "Add to queue"}
+          </button>
+        </div>
+      </div>
+      {sender ? <p className="false-negative-meta">From {sender}</p> : null}
+      <p className="false-negative-preview">{preview}</p>
+    </article>
   );
 }
 
@@ -953,6 +1096,7 @@ export default function Home() {
   const [allTaskItems, setAllTaskItems] = useState(() =>
     Array.isArray(cachedDashboard?.allTasks) ? cachedDashboard.allTasks : null
   );
+  const [falseNegativeItems, setFalseNegativeItems] = useState(() => cachedDashboard?.falseNegativeItems ?? []);
   const [pipelineProfile, setPipelineProfile] = useState(() => cachedDashboard?.profile ?? null);
   const [availableTags, setAvailableTags] = useState(() => cachedDashboard?.availableTags ?? []);
   const [taskFeedbackStates, setTaskFeedbackStates] = useState({});
@@ -964,6 +1108,8 @@ export default function Home() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [feedbackQueue, setFeedbackQueue] = useState([]);
   const [isProcessingFeedbackQueue, setIsProcessingFeedbackQueue] = useState(false);
+  const [isFalseNegativePanelOpen, setIsFalseNegativePanelOpen] = useState(false);
+  const [falseNegativePromotionStates, setFalseNegativePromotionStates] = useState({});
   const [isManualFormOpen, setIsManualFormOpen] = useState(false);
   const [isCreatingManualTask, setIsCreatingManualTask] = useState(false);
   const [isManualTagInputFocused, setIsManualTagInputFocused] = useState(false);
@@ -990,6 +1136,7 @@ export default function Home() {
     setAllTaskItems(dashboard.items ?? []);
     setUser(dashboard.user);
     setVisibleTasks(dashboard.items ?? []);
+    setFalseNegativeItems(dashboard.falseNegativeItems ?? []);
     setPipelineProfile(dashboard.profile ?? null);
     setAvailableTags(dashboard.availableTags ?? []);
   }
@@ -1007,6 +1154,7 @@ export default function Home() {
         }
         setAllTaskItems(cached.allTasks ?? null);
         setVisibleTasks(cachedItems);
+        setFalseNegativeItems(cached.falseNegativeItems ?? []);
         setPipelineProfile(cached.profile ?? null);
         setAvailableTags(cached.availableTags ?? []);
       }
@@ -1040,20 +1188,30 @@ export default function Home() {
 
   const priorityCounts = useMemo(() => {
     const counts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
-    tasks
-      .filter((task) => getTaskWorkflowStatus(task) === "OPEN")
-      .forEach((task) => {
-      counts[task.priority_tier] = (counts[task.priority_tier] || 0) + 1;
-      });
+    tasks.forEach((task) => {
+      const tier = String(task.priority_tier || "LOW").toUpperCase();
+      counts[tier] = (counts[tier] || 0) + 1;
+    });
     return counts;
   }, [tasks]);
-
+  const dueSoonCount = useMemo(
+    () =>
+      tasks.filter(
+        (task) =>
+          typeof task.deadline_hours === "number" &&
+          task.deadline_hours >= 0 &&
+          task.deadline_hours <= 24
+      ).length,
+    [tasks]
+  );
   const hasPendingTaskTagUpdates = Object.keys(taskTagUpdateStates).length > 0;
   const hasTaskEditInFlight = Object.values(taskEditStates).some((state) => state?.isSaving);
+  const isFalseNegativePromotionInFlight = Object.values(falseNegativePromotionStates).some(Boolean);
   const isLiveRefreshPaused =
     isSyncing ||
     isProcessingFeedbackQueue ||
     feedbackQueue.length > 0 ||
+    isFalseNegativePromotionInFlight ||
     isCreatingManualTask ||
     editingTaskId !== null ||
     hasPendingTaskTagUpdates ||
@@ -1067,10 +1225,11 @@ export default function Home() {
       user,
       tasks,
       allTasks: allTaskItems ?? undefined,
+      falseNegativeItems,
       profile: pipelineProfile,
       availableTags,
     });
-  }, [allTaskItems, availableTags, pipelineProfile, tasks, user]);
+  }, [allTaskItems, availableTags, falseNegativeItems, pipelineProfile, tasks, user]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1105,6 +1264,23 @@ export default function Home() {
   }, [isLiveRefreshPaused]);
 
   useEffect(() => {
+    if (!isFalseNegativePanelOpen) {
+      return undefined;
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        setIsFalseNegativePanelOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isFalseNegativePanelOpen]);
+
+  useEffect(() => {
     if (isProcessingFeedbackQueue || feedbackQueue.length === 0) {
       return;
     }
@@ -1115,6 +1291,7 @@ export default function Home() {
     async function flushFeedback() {
       setIsProcessingFeedbackQueue(true);
       try {
+        const shouldRefreshProfile = feedbackActionUpdatesProfile(next.action);
         const result = await submitTaskFeedback(next.canonicalTaskId, {
           action: next.action,
           direction: next.direction,
@@ -1124,7 +1301,7 @@ export default function Home() {
         }
         if (result.profile) {
           setPipelineProfile(result.profile);
-        } else {
+        } else if (shouldRefreshProfile) {
           const latestProfile = await fetchPipelineProfile();
           if (cancelled) {
             return;
@@ -1136,12 +1313,12 @@ export default function Home() {
         }
         setTaskStatus(
           next.action === "WRONG_PRIORITY"
-            ? "Priority updated. Your profile was updated."
+            ? "Priority updated."
             : next.action === "ACCEPT"
-              ? "Task accepted and moved to Kanban."
+              ? "Task accepted and moved to Kanban. Your profile was updated."
               : next.action === "REJECT"
-                ? "Task rejected and removed from review."
-                : "Feedback saved. Your profile was updated."
+                ? "Task rejected and removed from review. Your profile was updated."
+                : "Feedback saved."
         );
       } catch (error) {
         if (cancelled) {
@@ -1149,15 +1326,18 @@ export default function Home() {
         }
         setTaskError(error.message);
         try {
-          const [taskPayload, profilePayload] = await Promise.all([
-            fetchPrioritizedTasks(),
-            fetchPipelineProfile(),
-          ]);
+          const taskPayload = await fetchPrioritizedTasks();
           if (cancelled) {
             return;
           }
           updateTaskListFromResponse(taskPayload);
-          setPipelineProfile(profilePayload);
+          if (feedbackActionUpdatesProfile(next.action)) {
+            const profilePayload = await fetchPipelineProfile();
+            if (cancelled) {
+              return;
+            }
+            setPipelineProfile(profilePayload);
+          }
         } catch {
           // Keep the optimistic state if recovery fetch also fails.
         }
@@ -1192,11 +1372,63 @@ export default function Home() {
       setAllTaskItems(result.items);
       setVisibleTasks(result.items);
     }
+    if (Array.isArray(result?.falseNegativeItems)) {
+      setFalseNegativeItems(result.falseNegativeItems);
+    }
     if (result?.profile) {
       setPipelineProfile(result.profile);
     }
     if (result?.availableTags) {
       setAvailableTags(result.availableTags);
+    }
+  }
+
+  async function handlePromoteFalseNegative(item) {
+    const itemKey = getFalseNegativeKey(item);
+    if (!item?.sourceId) {
+      return;
+    }
+
+    let removedIndex = -1;
+    bumpTaskMutationVersion();
+    setTaskError("");
+    setTaskStatus("");
+    setFalseNegativePromotionStates((current) => ({
+      ...current,
+      [itemKey]: true,
+    }));
+    setFalseNegativeItems((current) => {
+      removedIndex = current.findIndex((candidate) => getFalseNegativeKey(candidate) === itemKey);
+      if (removedIndex === -1) {
+        return current;
+      }
+      return current.filter((candidate) => getFalseNegativeKey(candidate) !== itemKey);
+    });
+
+    try {
+      const result = await promoteFalseNegativeEmail({
+        sourceId: item.sourceId,
+        platform: item.platform,
+      });
+      updateTaskListFromResponse(result);
+      setTaskStatus("Email added to the main queue.");
+    } catch (error) {
+      setFalseNegativeItems((current) => {
+        if (current.some((candidate) => getFalseNegativeKey(candidate) === itemKey)) {
+          return current;
+        }
+        const next = [...current];
+        const insertIndex = removedIndex >= 0 ? Math.min(removedIndex, next.length) : next.length;
+        next.splice(insertIndex, 0, item);
+        return next;
+      });
+      setTaskError(error.message);
+    } finally {
+      setFalseNegativePromotionStates((current) => {
+        const updated = { ...current };
+        delete updated[itemKey];
+        return updated;
+      });
     }
   }
 
@@ -1301,12 +1533,12 @@ export default function Home() {
     applyLocalFeedback(canonicalTaskId, action, direction);
     setTaskStatus(
       action === "WRONG_PRIORITY"
-        ? "Updating priority and profile in the background."
+        ? "Updating task priority in the background."
         : action === "ACCEPT"
-          ? "Accepting task and moving it to Kanban in the background."
+          ? "Accepting task and updating your profile in the background."
           : action === "REJECT"
             ? "Rejecting task and updating your profile in the background."
-            : "Feedback saved. Updating your profile in the background."
+            : "Saving feedback in the background."
     );
     setFeedbackQueue((current) => [
       ...current,
@@ -1495,6 +1727,26 @@ export default function Home() {
     () => buildTagSuggestions(availableTags, manualTask.tags, manualTask.tagInput, manualTask.tagInput ? 8 : 12),
     [availableTags, manualTask.tagInput, manualTask.tags]
   );
+  const activeEditingTask = useMemo(
+    () => tasks.find((task) => task.canonical_task_id === editingTaskId) ?? null,
+    [editingTaskId, tasks]
+  );
+
+  useEffect(() => {
+    if (!editingTaskId || activeEditingTask) {
+      return;
+    }
+
+    setEditingTaskId(null);
+    setTaskEditStates((current) => {
+      if (!current[editingTaskId]) {
+        return current;
+      }
+      const updated = { ...current };
+      delete updated[editingTaskId];
+      return updated;
+    });
+  }, [activeEditingTask, editingTaskId]);
 
   if (!user) {
     return <main className="simple-shell">Loading your dashboard...</main>;
@@ -1503,230 +1755,296 @@ export default function Home() {
   return (
     <main className="simple-shell">
       <PageNav />
-      <section className="simple-hero">
-        <p className="auth-eyebrow">Priority Queue</p>
-        <h1 className="simple-title">Focus</h1>
-        <p className="simple-copy">
-          This page is meant to answer one question: what should you do first?
-        </p>
-      </section>
-
-      <section className="simple-card">
-        <div className="summary-grid summary-grid-wide">
-          <article className="summary-card">
-            <p className="summary-label">Signed in as</p>
-            <p className="summary-value">{user?.username ?? "Refreshing your account..."}</p>
+      <section className="structured-page" aria-label="Dashboard">
+        <section className="structured-overview workspace-overview" aria-label="Dashboard overview">
+          <article className="structured-overview-item">
+            <p className="overview-label">Logged in as</p>
+            <p className="overview-value">{user.username}</p>
           </article>
-          <article className="summary-card">
-            <p className="summary-label">Profile confidence</p>
-            <p className="summary-value">
-              {pipelineProfile ? `${Math.round((pipelineProfile.confidence ?? 0) * 100)}%` : "0%"}
-            </p>
+          <article className="structured-overview-item">
+            <p className="overview-label">Needs review</p>
+            <p className="overview-value">{tasks.length}</p>
           </article>
-          <article className="summary-card">
-            <p className="summary-label">Queue snapshot</p>
-            <p className="summary-value summary-value-stack">
-              <span>{priorityCounts.CRITICAL} critical</span>
-              <span>{priorityCounts.HIGH} high</span>
-              <span>{tasks.filter((task) => getTaskWorkflowStatus(task) === "OPEN").length} active</span>
-            </p>
+          <article className="structured-overview-item">
+            <p className="overview-label">Critical in queue</p>
+            <p className="overview-value">{priorityCounts.CRITICAL}</p>
           </article>
-        </div>
+          <article className="structured-overview-item">
+            <p className="overview-label">Due within 24h</p>
+            <p className="overview-value">{dueSoonCount}</p>
+          </article>
+        </section>
 
-        <div className="home-actions">
-          <Link className="auth-button home-link" to="/statistics">
-            Open statistics
-          </Link>
-          <button
-            className="auth-button home-link"
-            disabled={isSyncing}
-            onClick={handleSyncTasks}
-            type="button"
-          >
-            {isSyncing ? "Refreshing priorities..." : "Refresh task priorities"}
-          </button>
-          <button
-            className="secondary-button home-link"
-            onClick={() => setIsManualFormOpen((current) => !current)}
-            type="button"
-          >
-            {isManualFormOpen ? "Close manual task" : "Add manual task"}
-          </button>
-          <Link className="secondary-button home-link" to="/linking">
-            Manage linked accounts
-          </Link>
-          <Link className="secondary-button home-link" to="/preferences">
-            Open account
-          </Link>
-          <button
-            className="inline-button danger-button"
-            disabled={!user}
-            onClick={handleLogout}
-            type="button"
-          >
-            Log out
-          </button>
-        </div>
-
-        {isManualFormOpen ? (
-          <form className="manual-task-form" onSubmit={handleCreateManualTask}>
-            <div className="manual-task-grid">
-              <label className="field-group">
-                <span>Task title</span>
-                <input
-                  className="auth-input"
-                  onChange={(event) => updateManualTask("title", event.target.value)}
-                  placeholder="e.g. Submit CS2103T reflection"
-                  required
-                  type="text"
-                  value={manualTask.title}
-                />
-              </label>
-              <label className="field-group">
-                <span>Task type</span>
-                <select
-                  className="auth-input"
-                  onChange={(event) => updateManualTask("taskType", event.target.value)}
-                  value={manualTask.taskType}
-                >
-                  {TASK_TYPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-group">
-                <span>Deadline</span>
-                <input
-                  className="auth-input"
-                  onChange={(event) => updateManualTask("deadlineAt", event.target.value)}
-                  type="datetime-local"
-                  value={manualTask.deadlineAt}
-                />
-              </label>
-              <label className="field-group">
-                <span>Related topic</span>
-                <input
-                  className="auth-input"
-                  onChange={(event) => updateManualTask("entityName", event.target.value)}
-                  placeholder="Optional course, club, or topic"
-                  type="text"
-                  value={manualTask.entityName}
-                />
-              </label>
+        <section className="structured-section">
+          <div className="structured-section-header">
+            <div className="structured-section-copy">
+              <h2 className="structured-section-title">Queue</h2>
+              <p className="panel-copy">
+                Accept a task to move it to Kanban, reject it to clear it, or adjust the order when the ranking feels off.
+              </p>
             </div>
-            <label className="field-group">
-              <span>Tags</span>
-              <div className="manual-tag-field">
-                <div className="manual-tag-input-shell">
-                  {manualTask.tags.map((tag) => (
-                    <span className="manual-tag-chip" key={tag}>
-                      {tag.replace(/_/g, " ")}
-                      <button
-                        aria-label={`Remove ${tag}`}
-                        className="manual-tag-remove"
-                        onClick={() => removeManualTag(tag)}
-                        type="button"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                  <input
-                    className="manual-tag-input"
-                    onBlur={() => {
-                      commitManualTag(manualTask.tagInput);
-                      setIsManualTagInputFocused(false);
-                    }}
-                    onChange={handleManualTagInputChange}
-                    onFocus={() => setIsManualTagInputFocused(true)}
-                    onKeyDown={handleManualTagKeyDown}
-                    placeholder={manualTask.tags.length ? "Add another tag" : "Type a tag and press Enter"}
-                    type="text"
-                    value={manualTask.tagInput}
-                  />
-                </div>
-                {isManualTagInputFocused && filteredAvailableTags.length ? (
-                  <div className="manual-tag-autocomplete">
-                    <p className="manual-tag-autocomplete-label">Suggested tags</p>
-                    <div className="manual-tag-suggestions">
-                      {filteredAvailableTags.map((tag) => (
-                        <button
-                          className="manual-tag-suggestion"
-                          key={tag}
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => commitManualTag(tag)}
-                          type="button"
-                        >
-                          {tag.replace(/_/g, " ")}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </label>
-            <label className="field-group">
-              <span>Details</span>
-              <textarea
-                className="auth-input auth-textarea"
-                onChange={(event) => updateManualTask("description", event.target.value)}
-                placeholder="Add any context you want the system to remember."
-                rows={4}
-                value={manualTask.description}
-              />
-            </label>
-            <div className="manual-task-actions">
-              <button className="auth-button" disabled={isCreatingManualTask} type="submit">
-                {isCreatingManualTask ? "Adding task..." : "Save manual task"}
+            <div className="structured-section-side home-actions home-actions-compact">
+              <span className="count-pill">{tasks.length}</span>
+              <button
+                className="auth-button home-link"
+                disabled={isSyncing}
+                onClick={handleSyncTasks}
+                type="button"
+              >
+                {isSyncing ? "Refreshing priorities..." : "Refresh task priorities"}
               </button>
-              <p className="panel-copy">
-                Manual tasks go straight to Kanban and still update your learned profile.
-              </p>
+              <button
+                className="secondary-button home-link"
+                onClick={() => setIsManualFormOpen((current) => !current)}
+                type="button"
+              >
+                {isManualFormOpen ? "Close manual task" : "Add manual task"}
+              </button>
+              <button
+                className="secondary-button home-link"
+                onClick={() => setIsFalseNegativePanelOpen(true)}
+                type="button"
+              >
+                {`View false negatives (${falseNegativeItems.length})`}
+              </button>
+              <button
+                className="inline-button danger-button"
+                disabled={!user}
+                onClick={handleLogout}
+                type="button"
+              >
+                Log out
+              </button>
             </div>
-            {availableTags.length ? (
-              <p className="panel-copy">
-                Press `Enter` or type a comma to turn a tag into a chip. Fixed and custom tags appear as suggestions while you type.
-              </p>
+          </div>
+
+          <div className="structured-section-body">
+            {isManualFormOpen ? (
+              <form className="manual-task-form" onSubmit={handleCreateManualTask}>
+                <div className="manual-task-grid">
+                  <label className="field-group">
+                    <span>Task title</span>
+                    <input
+                      className="auth-input"
+                      onChange={(event) => updateManualTask("title", event.target.value)}
+                      placeholder="e.g. Submit CS2103T reflection"
+                      required
+                      type="text"
+                      value={manualTask.title}
+                    />
+                  </label>
+                  <label className="field-group">
+                    <span>Task type</span>
+                    <select
+                      className="auth-input"
+                      onChange={(event) => updateManualTask("taskType", event.target.value)}
+                      value={manualTask.taskType}
+                    >
+                      {TASK_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field-group">
+                    <span>Deadline</span>
+                    <input
+                      className="auth-input"
+                      onChange={(event) => updateManualTask("deadlineAt", event.target.value)}
+                      type="datetime-local"
+                      value={manualTask.deadlineAt}
+                    />
+                  </label>
+                  <label className="field-group">
+                    <span>Related topic</span>
+                    <input
+                      className="auth-input"
+                      onChange={(event) => updateManualTask("entityName", event.target.value)}
+                      placeholder="Optional course, club, or topic"
+                      type="text"
+                      value={manualTask.entityName}
+                    />
+                  </label>
+                </div>
+                <label className="field-group">
+                  <span>Tags</span>
+                  <div className="manual-tag-field">
+                    <div className="manual-tag-input-shell">
+                      {manualTask.tags.map((tag) => (
+                        <span className="manual-tag-chip" key={tag}>
+                          {tag.replace(/_/g, " ")}
+                          <button
+                            aria-label={`Remove ${tag}`}
+                            className="manual-tag-remove"
+                            onClick={() => removeManualTag(tag)}
+                            type="button"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                      <input
+                        className="manual-tag-input"
+                        onBlur={() => {
+                          commitManualTag(manualTask.tagInput);
+                          setIsManualTagInputFocused(false);
+                        }}
+                        onChange={handleManualTagInputChange}
+                        onFocus={() => setIsManualTagInputFocused(true)}
+                        onKeyDown={handleManualTagKeyDown}
+                        placeholder={manualTask.tags.length ? "Add another tag" : "Type a tag and press Enter"}
+                        type="text"
+                        value={manualTask.tagInput}
+                      />
+                    </div>
+                    {isManualTagInputFocused && filteredAvailableTags.length ? (
+                      <div className="manual-tag-autocomplete">
+                        <p className="manual-tag-autocomplete-label">Suggested tags</p>
+                        <div className="manual-tag-suggestions">
+                          {filteredAvailableTags.map((tag) => (
+                            <button
+                              className="manual-tag-suggestion"
+                              key={tag}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => commitManualTag(tag)}
+                              type="button"
+                            >
+                              {tag.replace(/_/g, " ")}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </label>
+                <label className="field-group">
+                  <span>Details</span>
+                  <textarea
+                    className="auth-input auth-textarea"
+                    onChange={(event) => updateManualTask("description", event.target.value)}
+                    placeholder="Add any context you want the system to remember."
+                    rows={4}
+                    value={manualTask.description}
+                  />
+                </label>
+                <div className="manual-task-actions">
+                  <button className="auth-button" disabled={isCreatingManualTask} type="submit">
+                    {isCreatingManualTask ? "Adding task..." : "Save manual task"}
+                  </button>
+                  <p className="panel-copy">
+                    Manual tasks go straight to your Kanban board and still update your learned profile.
+                  </p>
+                </div>
+                {availableTags.length ? (
+                  <p className="panel-copy">
+                    Press `Enter` or type a comma to turn a tag into a chip. Fixed and custom tags appear as suggestions while you type.
+                  </p>
+                ) : null}
+              </form>
             ) : null}
-          </form>
-        ) : null}
 
-        {taskStatus ? <p className="success-text">{taskStatus}</p> : null}
-        {taskError ? <p className="error-text">{taskError}</p> : null}
+            {taskStatus ? <p className="success-text">{taskStatus}</p> : null}
+            {taskError ? <p className="error-text">{taskError}</p> : null}
 
-        <section className="tasks-section">
-          {tasks.length ? (
-            <div className="task-card-list">
-              {tasks.map((task, index) => (
-                <QueueCard
-                  availableTags={availableTags}
-                  editState={taskEditStates[task.canonical_task_id]}
-                  feedbackState={taskFeedbackStates[task.canonical_task_id]}
-                  index={index}
-                  isBusy={Boolean(taskTagUpdateStates[task.canonical_task_id] || taskEditStates[task.canonical_task_id]?.isSaving)}
-                  isEditing={editingTaskId === task.canonical_task_id}
-                  key={task.canonical_task_id}
-                  onCloseEdit={closeTaskEditor}
-                  onFeedback={handleFeedback}
-                  onChangeTags={handleTaskTagChange}
-                  onOpenEdit={openTaskEditor}
-                  onSaveEdit={handleTaskEditSave}
-                  task={task}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="task-card task-card-empty">
-              <p className="summary-value">No prioritized tasks yet.</p>
-              <p className="panel-copy">
-                Run the pipeline after syncing email, or add a manual task to send work straight to Kanban.
-              </p>
-            </div>
-          )}
+            {tasks.length ? (
+              <div className="task-card-list">
+                {tasks.map((task, index) => (
+                  <QueueCard
+                    availableTags={availableTags}
+                    feedbackState={taskFeedbackStates[task.canonical_task_id]}
+                    index={index}
+                    isBusy={Boolean(taskTagUpdateStates[task.canonical_task_id] || taskEditStates[task.canonical_task_id]?.isSaving)}
+                    isEditing={editingTaskId === task.canonical_task_id}
+                    key={task.canonical_task_id}
+                    onCloseEdit={closeTaskEditor}
+                    onFeedback={handleFeedback}
+                    onChangeTags={handleTaskTagChange}
+                    onOpenEdit={openTaskEditor}
+                    task={task}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="task-card task-card-empty">
+                <p className="summary-value">There is nothing waiting for review right now.</p>
+                <p className="panel-copy">
+                  Refresh the queue after new emails arrive, or use Connections if you still need to
+                  bring an inbox into the app.
+                </p>
+              </div>
+            )}
+          </div>
         </section>
       </section>
+
+      {activeEditingTask ? (
+        <TaskEditDialog
+          availableTags={availableTags}
+          editState={taskEditStates[activeEditingTask.canonical_task_id]}
+          onCancel={() => closeTaskEditor(activeEditingTask.canonical_task_id)}
+          onSave={handleTaskEditSave}
+          task={activeEditingTask}
+        />
+      ) : null}
+
+      {isFalseNegativePanelOpen ? (
+        <div
+          aria-label="False negatives"
+          aria-modal="true"
+          className="modal-backdrop"
+          onClick={() => setIsFalseNegativePanelOpen(false)}
+          role="dialog"
+        >
+          <div
+            className="false-negative-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="false-negative-dialog-header">
+              <div className="false-negative-dialog-copy">
+                <p className="task-summary-label">False negatives</p>
+                <p className="panel-copy">
+                  Emails that passed the hard filter but did not become task cards. Add any real miss back into the main queue.
+                </p>
+              </div>
+              <div className="false-negative-dialog-controls">
+                <span className="count-pill">{falseNegativeItems.length}</span>
+                <button
+                  aria-label="Close false negatives dialog"
+                  className="false-negative-dialog-close"
+                  onClick={() => setIsFalseNegativePanelOpen(false)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="false-negative-dialog-body">
+              {falseNegativeItems.length ? (
+                <div className="false-negative-list">
+                  {falseNegativeItems.map((item, index) => (
+                    <FalseNegativeCard
+                      index={index}
+                      isAdding={Boolean(falseNegativePromotionStates[getFalseNegativeKey(item)])}
+                      item={item}
+                      key={item.sourceId || `${item.platform}-${index}`}
+                      onAddToQueue={handlePromoteFalseNegative}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="task-card task-card-empty false-negative-empty">
+                  <p className="summary-value">No possible misses are sitting here right now.</p>
+                  <p className="panel-copy">
+                    Only emails that survive the hard filter and still do not become task cards will appear here.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

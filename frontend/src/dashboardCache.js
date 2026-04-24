@@ -1,4 +1,4 @@
-const DASHBOARD_CACHE_VERSION = 5;
+const DASHBOARD_CACHE_VERSION = 6;
 
 function getDashboardCacheKey(userId) {
   return `task-priority-dashboard:v${DASHBOARD_CACHE_VERSION}:${userId}`;
@@ -19,6 +19,7 @@ export function readDashboardCache(userId) {
       user: parsed.user ?? null,
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
       allTasks: Array.isArray(parsed.allTasks) ? parsed.allTasks : null,
+      falseNegativeItems: Array.isArray(parsed.falseNegativeItems) ? parsed.falseNegativeItems : [],
       profile: parsed.profile ?? null,
       availableTags: Array.isArray(parsed.availableTags) ? parsed.availableTags : [],
     };
@@ -38,6 +39,9 @@ export function writeDashboardCache(userId, payload = {}) {
       cachedAt: new Date().toISOString(),
       user: payload.user ?? existing.user ?? null,
       tasks: Array.isArray(payload.tasks) ? payload.tasks : (existing.tasks ?? []),
+      falseNegativeItems: Array.isArray(payload.falseNegativeItems)
+        ? payload.falseNegativeItems
+        : (existing.falseNegativeItems ?? []),
       profile: payload.profile ?? existing.profile ?? null,
       availableTags: Array.isArray(payload.availableTags)
         ? payload.availableTags

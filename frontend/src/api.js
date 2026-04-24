@@ -1,5 +1,8 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "/api" : "http://127.0.0.1:5000/api");
+const GMAIL_AUTH_BASE_URL =
+  import.meta.env.VITE_GMAIL_AUTH_BASE_URL ??
+  (import.meta.env.DEV ? "http://127.0.0.1:5000/api" : API_BASE_URL);
 const OUTLOOK_AUTH_BASE_URL =
   import.meta.env.VITE_OUTLOOK_AUTH_BASE_URL ?? (import.meta.env.DEV ? "/api" : "http://localhost:5000/api");
 const STORED_USER_KEY = "task-priority-user";
@@ -232,7 +235,7 @@ export async function sendTelegramTestMessage() {
 }
 
 export function getGmailLinkUrl(userId) {
-  return `${API_BASE_URL}/gmail/link?user_id=${userId}`;
+  return `${GMAIL_AUTH_BASE_URL}/gmail/link?user_id=${userId}`;
 }
 
 export function getOutlookLinkUrl(userId) {
@@ -309,6 +312,14 @@ export async function fetchPrioritizedTasks() {
     headers: getAuthHeaders(),
   });
   return readJson(response);
+}
+
+export async function promoteFalseNegativeEmail({ sourceId, platform }) {
+  return sendJson("/false-negatives/queue", {
+    method: "POST",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ sourceId, platform }),
+  });
 }
 
 export async function fetchPipelineProfile() {

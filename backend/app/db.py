@@ -293,13 +293,13 @@ def get_gmail_link(user_id: int) -> DbRow | None:
             link = cast(DbRow | None, cursor.fetchone())
 
     if link:
-        logger.info(
+        logger.debug(
             "Found saved Gmail link for user_id=%s email_address=%s",
             user_id,
             link["email_address"],
         )
     else:
-        logger.info("No Gmail link exists for user_id=%s", user_id)
+        logger.debug("No Gmail link exists for user_id=%s", user_id)
 
     return link
 
@@ -438,13 +438,13 @@ def get_outlook_link(user_id: int) -> DbRow | None:
             link = cast(DbRow | None, cursor.fetchone())
 
     if link:
-        logger.info(
+        logger.debug(
             "Found saved Outlook link for user_id=%s email_address=%s",
             user_id,
             link["email_address"],
         )
     else:
-        logger.info("No Outlook link exists for user_id=%s", user_id)
+        logger.debug("No Outlook link exists for user_id=%s", user_id)
 
     return link
 

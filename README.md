@@ -1,11 +1,11 @@
-# task-priority-sorter
+# Sortify
 
 React + Flask setup for the hackathon project.
 
 ## Project structure
 
 ```text
-task-priority-sorter/
+sortify/
 |-- backend/
 |   |-- app/
 |   |   `-- __init__.py

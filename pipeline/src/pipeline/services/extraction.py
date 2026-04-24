@@ -194,6 +194,10 @@ class SignalExtractor:
         self.timezone_fallback = timezone_fallback
         self._nlp = self._load_nlp()
 
+    def is_hard_discarded(self, message: RawMessage) -> bool:
+        label_ids = {str(label).upper() for label in (message.label_ids or [])}
+        return "SPAM" in label_ids or "TRASH" in label_ids or bool(label_ids & GMAIL_HARD_DISCARD_LABELS)
+
     def _load_nlp(self):  # pragma: no cover - exercised indirectly
         if spacy is None:
             return None

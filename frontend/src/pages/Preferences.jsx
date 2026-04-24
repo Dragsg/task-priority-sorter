@@ -300,67 +300,92 @@ export default function Preferences() {
   const telegramSettings = telegram?.settings ?? DEFAULT_TELEGRAM_SETTINGS;
   const pendingLink = telegram?.pendingLink;
   const linkedChat = telegram?.linkedChat;
+  const telegramConnectionLabel = telegram
+    ? telegram.linked
+      ? "Linked"
+      : telegram.configured
+        ? "Ready to link"
+        : "Bot unavailable"
+    : "Loading...";
+  const dailyDigestLabel =
+    telegramSettings.telegramEnabled && telegramSettings.dailyDigestEnabled
+      ? `On at ${telegramSettings.dailyDigestTime}`
+      : "Off";
 
   return (
     <main className="simple-shell">
       <PageNav />
-      <section className="simple-hero">
-        <p className="auth-eyebrow">Account</p>
-        <h1 className="simple-title">Manage your account settings</h1>
-        <p className="simple-copy">
-          You&apos;re signed in as <strong>{user.username}</strong>. This page lets you update
-          your username, calendar timing context, and Telegram notifications.
-        </p>
-      </section>
+      <section className="structured-page settings-page">
+        <section className="structured-overview settings-overview" aria-label="Settings overview">
+          <article className="structured-overview-item settings-overview-item">
+            <p className="summary-label">Username</p>
+            <p className="structured-overview-value settings-overview-value">{user.username}</p>
+          </article>
+          <article className="structured-overview-item settings-overview-item">
+            <p className="summary-label">Telegram</p>
+            <p className="structured-overview-value settings-overview-value">{telegramConnectionLabel}</p>
+          </article>
+          <article className="structured-overview-item settings-overview-item">
+            <p className="summary-label">Calendar context</p>
+            <p className="structured-overview-value settings-overview-value">
+              {calendarSource ? "Linked" : "Not linked"}
+            </p>
+          </article>
+          <article className="structured-overview-item settings-overview-item">
+            <p className="summary-label">Daily digest</p>
+            <p className="structured-overview-value settings-overview-value">{dailyDigestLabel}</p>
+          </article>
+        </section>
 
-      <section className="simple-card">
-        <section className="calendar-panel">
-          <div className="calendar-panel-header">
-            <div>
-              <p className="summary-label">Account</p>
+        <section className="structured-section settings-section">
+          <div className="structured-section-header settings-section-header">
+            <div className="structured-section-copy settings-section-copy">
+              <h2 className="structured-section-title settings-section-title">Profile</h2>
               <p className="panel-copy">
                 Update the username you use to sign in. This change is saved directly to your
                 account record.
               </p>
             </div>
-            <div className="summary-value summary-value-stack">
+            <div className="structured-meta settings-meta">
               <span>Current username: {user.username}</span>
             </div>
           </div>
 
-          <form className="calendar-upload-form" onSubmit={handleUsernameUpdate}>
-            <label className="field-group">
-              <span>Username</span>
-              <input
-                className="auth-input"
-                disabled={usernameBusy}
-                onChange={(event) => setUsername(event.target.value)}
-                type="text"
-                value={username}
-              />
-            </label>
-            <div className="manual-task-actions">
-              <button
-                className="auth-button"
-                disabled={usernameBusy || !username.trim() || username.trim() === user.username}
-                type="submit"
-              >
-                {usernameBusy ? "Saving..." : "Save username"}
-              </button>
-            </div>
-          </form>
+          <div className="structured-section-body">
+            <form className="calendar-upload-form" onSubmit={handleUsernameUpdate}>
+              <label className="field-group">
+                <span>Username</span>
+                <input
+                  className="auth-input"
+                  disabled={usernameBusy}
+                  onChange={(event) => setUsername(event.target.value)}
+                  type="text"
+                  value={username}
+                />
+              </label>
+              <div className="manual-task-actions">
+                <button
+                  className="auth-button"
+                  disabled={usernameBusy || !username.trim() || username.trim() === user.username}
+                  type="submit"
+                >
+                  {usernameBusy ? "Saving..." : "Save username"}
+                </button>
+              </div>
+            </form>
+          </div>
         </section>
 
-        <section className="calendar-panel">
-          <div className="calendar-panel-header">
-            <div>
-              <p className="summary-label">Telegram Notifications</p>
+        <section className="structured-section settings-section">
+          <div className="structured-section-header settings-section-header">
+            <div className="structured-section-copy settings-section-copy">
+              <h2 className="structured-section-title settings-section-title">Notifications</h2>
               <p className="panel-copy">
                 Connect your Telegram chat for instant priority alerts and a daily plan for what
                 to focus on today.
               </p>
             </div>
-            <div className="summary-value summary-value-stack">
+            <div className="structured-meta settings-meta">
               <span>
                 {telegram
                   ? telegram.linked
@@ -378,229 +403,251 @@ export default function Preferences() {
             </div>
           </div>
 
-          {telegram?.configurationError ? (
-            <p className="error-text auth-error">{telegram.configurationError}</p>
-          ) : null}
-
-          {!telegram ? (
-            <p className="panel-copy">Loading your Telegram settings...</p>
-          ) : null}
-
-          <div className="telegram-status-card">
-            <div className="telegram-status-block">
-              <p className="summary-label">Connection</p>
-              {linkedChat ? (
-                <div className="telegram-link-box">
-                  <strong>{linkedChat.displayName || linkedChat.username || linkedChat.chatId}</strong>
-                  <span>
-                    {linkedChat.username ? `@${linkedChat.username}` : "Direct chat"}
-                  </span>
-                  <span>
-                    Linked {linkedChat.linkedAt ? new Date(linkedChat.linkedAt).toLocaleString() : "recently"}
-                  </span>
-                </div>
-              ) : (
-                <div className="telegram-link-box">
-                  <strong>No linked chat yet</strong>
-                  <span>Generate a code, open the bot, and send it there.</span>
-                </div>
-              )}
-            </div>
-
-            <div className="telegram-status-block">
-              <p className="summary-label">Linking</p>
-              {pendingLink ? (
-                <div className="telegram-link-box">
-                  <strong className="telegram-code-pill">{pendingLink.code}</strong>
-                  <span>
-                    Expires{" "}
-                    {pendingLink.expiresAt ? new Date(pendingLink.expiresAt).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    }) : "soon"}
-                  </span>
-                  <span>Send this code to the Telegram bot from the chat you want to use.</span>
-                </div>
-              ) : (
-                <div className="telegram-link-box">
-                  <strong>No active code</strong>
-                  <span>Generate one whenever you want to connect a new chat.</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="telegram-instructions">
-            <p className="summary-label">Instructions</p>
-            <ol className="telegram-steps">
-              <li>Generate a temporary linking code here.</li>
-              <li>Open the Telegram bot and send that code from the chat you want to link.</li>
-              <li>Come back here and refresh the status once the bot confirms the connection.</li>
-            </ol>
-            {pendingLink?.botDeepLink ? (
-              <a
-                className="secondary-button telegram-link-button"
-                href={pendingLink.botDeepLink}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Open Telegram bot
-              </a>
+          <div className="structured-section-body">
+            {telegram?.configurationError ? (
+              <p className="error-text auth-error">{telegram.configurationError}</p>
             ) : null}
-          </div>
 
-          <div className="manual-task-actions">
-            <button
-              className="auth-button"
-              disabled={telegramLinkBusy || !telegram?.configured}
-              onClick={handleTelegramLinkCode}
-              type="button"
-            >
-              {telegramLinkBusy ? "Preparing..." : pendingLink ? "Generate new code" : "Generate linking code"}
-            </button>
-            <button
-              className="secondary-button"
-              disabled={telegramLinkBusy}
-              onClick={() => refreshTelegram("Telegram status refreshed.")}
-              type="button"
-            >
-              Refresh status
-            </button>
-            {telegram?.linked ? (
-              <button
-                className="secondary-button"
-                disabled={telegramLinkBusy}
-                onClick={handleTelegramDisconnect}
-                type="button"
-              >
-                Disconnect Telegram
-              </button>
+            {!telegram ? (
+              <p className="panel-copy">Loading your Telegram settings...</p>
             ) : null}
-            <button
-              className="secondary-button"
-              disabled={telegramTestBusy || !telegram?.linked || !telegram?.configured}
-              onClick={handleTelegramTest}
-              type="button"
-            >
-              {telegramTestBusy ? "Sending test..." : "Send test message"}
-            </button>
+
+            <div className="structured-subgrid settings-notification-grid">
+              <section className="structured-subsection">
+                <div className="structured-subsection-header">
+                  <h3 className="structured-subsection-title">Connection and linking</h3>
+                  <p className="panel-copy">
+                    Link the Telegram chat you want to use, then refresh or test delivery here.
+                  </p>
+                </div>
+
+                <div className="telegram-status-card">
+                  <div className="telegram-status-block">
+                    <p className="summary-label">Connection</p>
+                    {linkedChat ? (
+                      <div className="telegram-link-box">
+                        <strong>{linkedChat.displayName || linkedChat.username || linkedChat.chatId}</strong>
+                        <span>
+                          {linkedChat.username ? `@${linkedChat.username}` : "Direct chat"}
+                        </span>
+                        <span>
+                          Linked {linkedChat.linkedAt ? new Date(linkedChat.linkedAt).toLocaleString() : "recently"}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="telegram-link-box">
+                        <strong>No linked chat yet</strong>
+                        <span>Generate a code, open the bot, and send it there.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="telegram-status-block">
+                    <p className="summary-label">Link code</p>
+                    {pendingLink ? (
+                      <div className="telegram-link-box">
+                        <strong className="telegram-code-pill">{pendingLink.code}</strong>
+                        <span>
+                          Expires{" "}
+                          {pendingLink.expiresAt ? new Date(pendingLink.expiresAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }) : "soon"}
+                        </span>
+                        <span>Send this code to the Telegram bot from the chat you want to use.</span>
+                      </div>
+                    ) : (
+                      <div className="telegram-link-box">
+                        <strong>No active code</strong>
+                        <span>Generate one whenever you want to connect a new chat.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="telegram-instructions">
+                  <p className="summary-label">Instructions</p>
+                  <ol className="telegram-steps">
+                    <li>Generate a temporary linking code here.</li>
+                    <li>Open the Telegram bot and send that code from the chat you want to link.</li>
+                    <li>Come back here and refresh the status once the bot confirms the connection.</li>
+                  </ol>
+                  {pendingLink?.botDeepLink ? (
+                    <a
+                      className="secondary-button telegram-link-button"
+                      href={pendingLink.botDeepLink}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      Open Telegram bot
+                    </a>
+                  ) : null}
+                </div>
+
+                <div className="manual-task-actions">
+                  <button
+                    className="auth-button"
+                    disabled={telegramLinkBusy || !telegram?.configured}
+                    onClick={handleTelegramLinkCode}
+                    type="button"
+                  >
+                    {telegramLinkBusy ? "Preparing..." : pendingLink ? "Generate new code" : "Generate linking code"}
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={telegramLinkBusy}
+                    onClick={() => refreshTelegram("Telegram status refreshed.")}
+                    type="button"
+                  >
+                    Refresh status
+                  </button>
+                  {telegram?.linked ? (
+                    <button
+                      className="secondary-button"
+                      disabled={telegramLinkBusy}
+                      onClick={handleTelegramDisconnect}
+                      type="button"
+                    >
+                      Disconnect Telegram
+                    </button>
+                  ) : null}
+                  <button
+                    className="secondary-button"
+                    disabled={telegramTestBusy || !telegram?.linked || !telegram?.configured}
+                    onClick={handleTelegramTest}
+                    type="button"
+                  >
+                    {telegramTestBusy ? "Sending test..." : "Send test message"}
+                  </button>
+                </div>
+              </section>
+
+              <section className="structured-subsection">
+                <div className="structured-subsection-header">
+                  <h3 className="structured-subsection-title">Delivery preferences</h3>
+                  <p className="panel-copy">
+                    Choose which Telegram alerts arrive instantly and when to receive the daily digest.
+                  </p>
+                </div>
+
+                <form className="calendar-upload-form" onSubmit={handleTelegramSettingsSave}>
+                  <div className="telegram-toggle-grid">
+                    <label className="option-row">
+                      <input
+                        checked={telegramSettings.telegramEnabled}
+                        onChange={(event) => updateTelegramSetting("telegramEnabled", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>Enable Telegram notifications</strong>
+                        <small>Turn Telegram delivery on or off without disconnecting the chat.</small>
+                      </span>
+                    </label>
+
+                    <label className="option-row">
+                      <input
+                        checked={telegramSettings.dailyDigestEnabled}
+                        disabled={!telegramSettings.telegramEnabled}
+                        onChange={(event) => updateTelegramSetting("dailyDigestEnabled", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>Enable daily digest</strong>
+                        <small>Receive one daily summary of important work for today.</small>
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="telegram-tier-grid">
+                    <label className="option-row">
+                      <input
+                        checked={telegramSettings.instantCritical}
+                        disabled={!telegramSettings.telegramEnabled}
+                        onChange={(event) => updateTelegramSetting("instantCritical", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>Critical alerts</strong>
+                        <small>Instant Telegram alerts for critical tasks.</small>
+                      </span>
+                    </label>
+
+                    <label className="option-row">
+                      <input
+                        checked={telegramSettings.instantHigh}
+                        disabled={!telegramSettings.telegramEnabled}
+                        onChange={(event) => updateTelegramSetting("instantHigh", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>High alerts</strong>
+                        <small>Instant Telegram alerts for high priority tasks.</small>
+                      </span>
+                    </label>
+
+                    <label className="option-row">
+                      <input
+                        checked={telegramSettings.instantMedium}
+                        disabled={!telegramSettings.telegramEnabled}
+                        onChange={(event) => updateTelegramSetting("instantMedium", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>Medium alerts</strong>
+                        <small>Instant Telegram alerts for medium priority tasks.</small>
+                      </span>
+                    </label>
+
+                    <label className="option-row">
+                      <input
+                        checked={telegramSettings.instantLow}
+                        disabled={!telegramSettings.telegramEnabled}
+                        onChange={(event) => updateTelegramSetting("instantLow", event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>Low alerts</strong>
+                        <small>Instant Telegram alerts for low priority tasks.</small>
+                      </span>
+                    </label>
+                  </div>
+
+                  <label className="field-group telegram-time-field">
+                    <span>Daily digest time</span>
+                    <input
+                      className="auth-input"
+                      disabled={!telegramSettings.telegramEnabled || !telegramSettings.dailyDigestEnabled}
+                      onChange={(event) => updateTelegramSetting("dailyDigestTime", event.target.value)}
+                      type="time"
+                      value={telegramSettings.dailyDigestTime}
+                    />
+                    <p className="field-hint">Times follow the app&apos;s current timezone context.</p>
+                  </label>
+
+                  <div className="manual-task-actions">
+                    <button className="auth-button" disabled={telegramSaveBusy} type="submit">
+                      {telegramSaveBusy ? "Saving..." : "Save Telegram settings"}
+                    </button>
+                  </div>
+                </form>
+              </section>
+            </div>
+
+            {telegramStatus ? <p className="success-text">{telegramStatus}</p> : null}
+            {telegramError ? <p className="error-text auth-error">{telegramError}</p> : null}
           </div>
-
-          <form className="calendar-upload-form" onSubmit={handleTelegramSettingsSave}>
-            <div className="telegram-toggle-grid">
-              <label className="option-row">
-                <input
-                  checked={telegramSettings.telegramEnabled}
-                  onChange={(event) => updateTelegramSetting("telegramEnabled", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>Enable Telegram notifications</strong>
-                  <small>Turn Telegram delivery on or off without disconnecting the chat.</small>
-                </span>
-              </label>
-
-              <label className="option-row">
-                <input
-                  checked={telegramSettings.dailyDigestEnabled}
-                  disabled={!telegramSettings.telegramEnabled}
-                  onChange={(event) => updateTelegramSetting("dailyDigestEnabled", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>Enable daily digest</strong>
-                  <small>Receive one daily summary of important work for today.</small>
-                </span>
-              </label>
-            </div>
-
-            <div className="telegram-tier-grid">
-              <label className="option-row">
-                <input
-                  checked={telegramSettings.instantCritical}
-                  disabled={!telegramSettings.telegramEnabled}
-                  onChange={(event) => updateTelegramSetting("instantCritical", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>Critical alerts</strong>
-                  <small>Instant Telegram alerts for critical tasks.</small>
-                </span>
-              </label>
-
-              <label className="option-row">
-                <input
-                  checked={telegramSettings.instantHigh}
-                  disabled={!telegramSettings.telegramEnabled}
-                  onChange={(event) => updateTelegramSetting("instantHigh", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>High alerts</strong>
-                  <small>Instant Telegram alerts for high priority tasks.</small>
-                </span>
-              </label>
-
-              <label className="option-row">
-                <input
-                  checked={telegramSettings.instantMedium}
-                  disabled={!telegramSettings.telegramEnabled}
-                  onChange={(event) => updateTelegramSetting("instantMedium", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>Medium alerts</strong>
-                  <small>Instant Telegram alerts for medium priority tasks.</small>
-                </span>
-              </label>
-
-              <label className="option-row">
-                <input
-                  checked={telegramSettings.instantLow}
-                  disabled={!telegramSettings.telegramEnabled}
-                  onChange={(event) => updateTelegramSetting("instantLow", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  <strong>Low alerts</strong>
-                  <small>Instant Telegram alerts for low priority tasks.</small>
-                </span>
-              </label>
-            </div>
-
-            <label className="field-group telegram-time-field">
-              <span>Daily digest time</span>
-              <input
-                className="auth-input"
-                disabled={!telegramSettings.telegramEnabled || !telegramSettings.dailyDigestEnabled}
-                onChange={(event) => updateTelegramSetting("dailyDigestTime", event.target.value)}
-                type="time"
-                value={telegramSettings.dailyDigestTime}
-              />
-              <p className="field-hint">Times follow the app&apos;s current timezone context.</p>
-            </label>
-
-            <div className="manual-task-actions">
-              <button className="auth-button" disabled={telegramSaveBusy} type="submit">
-                {telegramSaveBusy ? "Saving..." : "Save Telegram settings"}
-              </button>
-            </div>
-          </form>
-
-          {telegramStatus ? <p className="success-text">{telegramStatus}</p> : null}
-          {telegramError ? <p className="error-text auth-error">{telegramError}</p> : null}
         </section>
 
-        <section className="calendar-panel">
-          <div className="calendar-panel-header">
-            <div>
-              <p className="summary-label">Calendar Context (.ics)</p>
+        <section className="structured-section settings-section">
+          <div className="structured-section-header settings-section-header">
+            <div className="structured-section-copy settings-section-copy">
+              <h2 className="structured-section-title settings-section-title">Calendar context</h2>
               <p className="panel-copy">
                 Upload one active `.ics` file to give the pipeline timetable context for the next
                 21 days.
               </p>
             </div>
-            <div className="summary-value summary-value-stack">
+            <div className="structured-meta settings-meta">
               <span>
                 {onboarding
                   ? calendarSource
@@ -620,67 +667,85 @@ export default function Preferences() {
             </div>
           </div>
 
-          <CalendarContextSummary onboarding={onboarding} />
+          <div className="structured-section-body">
+            <section className="structured-subsection">
+              <div className="structured-subsection-header">
+                <h3 className="structured-subsection-title">Saved calendar context</h3>
+                <p className="panel-copy">
+                  Review the timetable information currently affecting prioritization, then replace or remove it here.
+                </p>
+              </div>
 
-          {!onboarding ? (
-            <p className="panel-copy">Loading your saved calendar context...</p>
-          ) : null}
+              <CalendarContextSummary onboarding={onboarding} />
 
-          <div className="calendar-upload-form">
-            <input
-              accept=".ics"
-              className="onboarding-calendar-input"
-              onChange={handleCalendarSelection}
-              ref={calendarInputRef}
-              type="file"
-            />
-            <div className="manual-task-actions">
-              <button
-                className="auth-button"
-                disabled={calendarBusy}
-                onClick={handleCalendarPickerOpen}
-                type="button"
-              >
-                {calendarBusy ? "Uploading..." : calendarSource ? "Replace calendar" : "Upload calendar"}
-              </button>
-              {calendarSource ? (
-                <button
-                  className="secondary-button"
-                  disabled={calendarBusy || !onboarding}
-                  onClick={handleCalendarRemove}
-                  type="button"
-                >
-                  Remove calendar
-                </button>
+              {!onboarding ? (
+                <p className="panel-copy">Loading your saved calendar context...</p>
               ) : null}
-            </div>
+
+              <div className="calendar-upload-form">
+                <input
+                  accept=".ics"
+                  className="onboarding-calendar-input"
+                  onChange={handleCalendarSelection}
+                  ref={calendarInputRef}
+                  type="file"
+                />
+                <div className="manual-task-actions">
+                  <button
+                    className="auth-button"
+                    disabled={calendarBusy}
+                    onClick={handleCalendarPickerOpen}
+                    type="button"
+                  >
+                    {calendarBusy ? "Uploading..." : calendarSource ? "Replace calendar" : "Upload calendar"}
+                  </button>
+                  {calendarSource ? (
+                    <button
+                      className="secondary-button"
+                      disabled={calendarBusy || !onboarding}
+                      onClick={handleCalendarRemove}
+                      type="button"
+                    >
+                      Remove calendar
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </section>
           </div>
         </section>
 
-        <section className="calendar-panel danger-panel">
-          <div className="calendar-panel-header">
-            <div>
-              <p className="summary-label">Delete Account</p>
+        <section className="structured-section structured-section-danger settings-section settings-section-danger">
+          <div className="structured-section-header settings-section-header">
+            <div className="structured-section-copy settings-section-copy">
+              <h2 className="structured-section-title settings-section-title">Delete account</h2>
+              <p className="panel-copy">
+                Permanently remove this account and all related data. This action cannot be undone.
+              </p>
             </div>
-            <div className="summary-value summary-value-stack">
+            <div className="structured-meta settings-meta">
               <span>Permanent action</span>
               <span>Cannot be undone</span>
             </div>
           </div>
 
-          <div className="manual-task-actions">
-            <button
-              className="auth-button danger-button"
-              onClick={openDeleteDialog}
-              type="button"
-            >
-              Delete account
-            </button>
+          <div className="structured-section-body">
+            <div className="manual-task-actions">
+              <button
+                className="auth-button danger-button"
+                onClick={openDeleteDialog}
+                type="button"
+              >
+                Delete account
+              </button>
+            </div>
           </div>
         </section>
 
-        {status ? <p className="success-text">{status}</p> : null}
-        {error ? <p className="error-text auth-error">{error}</p> : null}
+        <div className="structured-feedback settings-feedback">
+          {status ? <p className="success-text">{status}</p> : null}
+          {error ? <p className="error-text auth-error">{error}</p> : null}
+        </div>
       </section>
 
       {isDeleteDialogOpen ? (

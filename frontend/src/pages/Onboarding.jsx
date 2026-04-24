@@ -300,7 +300,7 @@ export default function Onboarding() {
         <p className="simple-copy">
           You&apos;re signed in as <strong>{user.username}</strong>.{" "}
           {isCalendarStep
-            ? "You can upload a calendar file now, or skip this step and add it later under Account."
+            ? "You can upload a calendar file now, or skip this step and add it later under Settings."
             : "We'll ask one question at a time, and the rest of the app will unlock after these answers are saved."}
         </p>
         <p className="simple-note">
@@ -354,7 +354,7 @@ export default function Onboarding() {
                   <p className="summary-label">Optional calendar upload (.ics)</p>
                   <p className="panel-copy">
                     Upload one active `.ics` file to give the pipeline timetable context for the
-                    next 21 days. You can also skip this now and add it later in Account.
+                    next 21 days. You can also skip this now and add it later in Settings.
                   </p>
                 </div>
                 <div className="summary-value summary-value-stack">
