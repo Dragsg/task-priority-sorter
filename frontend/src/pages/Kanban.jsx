@@ -1277,9 +1277,15 @@ export default function Kanban() {
     saveLocalTaskOverride(canonicalTaskId, { priorityTier });
   }
 
-  function handleTaskEditSave(canonicalTaskId, payload) {
+  async function handleTaskEditSave(canonicalTaskId, payload) {
+    await waitForPriorityMoveToSettle(canonicalTaskId);
+    const previousTasks = tasksRef.current;
     const normalizedPayload = createNormalizedLocalTaskPatch(payload);
     setError("");
+    setEditStates((current) => ({
+      ...current,
+      [canonicalTaskId]: { isSaving: true, error: "" },
+    }));
     setTasks((current) =>
       sortBoardTasks(
         current.map((task) =>
@@ -1291,7 +1297,21 @@ export default function Kanban() {
     if (normalizedPayload.tags) {
       setAvailableTags((current) => dedupeTags([...current, ...normalizedPayload.tags]));
     }
-    closeTaskEditor(canonicalTaskId);
+
+    try {
+      const result = await updatePrioritizedTask(canonicalTaskId, normalizedPayload);
+      clearLocalTaskOverride(canonicalTaskId);
+      updateBoardFromResult(result);
+      closeTaskEditor(canonicalTaskId);
+    } catch (saveError) {
+      setTasks(previousTasks);
+      setError(saveError.message);
+      setEditStates((current) => ({
+        ...current,
+        [canonicalTaskId]: { isSaving: false, error: saveError.message },
+      }));
+      return;
+    }
   }
 
   async function handleDelete(task) {

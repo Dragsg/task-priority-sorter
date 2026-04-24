@@ -313,6 +313,61 @@ class TelegramServiceTestCase(unittest.TestCase):
         self.assertNotIn("Why now:", message)
         self.assertIn('<a href="https://thankful-stone-0c17fc20f.7.azurestaticapps.net/kanban">Open app</a>', message)
 
+    @patch("app.telegram_service.mark_telegram_digest_sent")
+    @patch("app.telegram_service._send_message")
+    @patch("app.telegram_service.claim_telegram_digest", return_value=True)
+    @patch("app.telegram_service.get_telegram_link")
+    @patch("app.telegram_service.get_telegram_notification_settings")
+    @patch("app.pipeline_bridge.list_prioritized_tasks")
+    def test_daily_digest_only_includes_accepted_kanban_tasks(
+        self,
+        list_prioritized_tasks,
+        get_telegram_notification_settings,
+        get_telegram_link,
+        claim_telegram_digest,
+        send_message,
+        mark_telegram_digest_sent,
+    ):
+        get_telegram_notification_settings.return_value = {
+            "telegram_enabled": True,
+            "alert_critical": True,
+            "alert_high": True,
+            "alert_medium": False,
+            "alert_low": False,
+            "daily_digest_enabled": True,
+            "daily_digest_time": "08:00",
+        }
+        get_telegram_link.return_value = {"telegram_chat_id": "123"}
+        list_prioritized_tasks.return_value = [
+            {
+                "canonical_task_id": "canon-1",
+                "task_title": "Submit reflection",
+                "priority_tier": "HIGH",
+                "status": "accepted",
+                "deadline_at_iso": "2026-04-24T17:00:00+08:00",
+                "deadline_hours": 2,
+            },
+            {
+                "canonical_task_id": "canon-2",
+                "task_title": "Sign-in code 123456",
+                "priority_tier": "HIGH",
+                "status": "pending_review",
+                "deadline_at_iso": None,
+                "deadline_hours": None,
+            },
+        ]
+        send_message.return_value = {"message_id": 555}
+        now = datetime(2026, 4, 24, 8, 30, tzinfo=SGT)
+
+        with patch("app.telegram_service.Config.TELEGRAM_BOT_TOKEN", "token"):
+            sent = send_daily_telegram_digest(9, now=now)
+
+        self.assertTrue(sent)
+        sent_message = send_message.call_args.args[1]
+        self.assertIn("Submit reflection", sent_message)
+        self.assertNotIn("Sign-in code 123456", sent_message)
+        mark_telegram_digest_sent.assert_called_once()
+
     @patch("app.telegram_service._send_message")
     @patch("app.pipeline_bridge.list_prioritized_tasks")
     @patch("app.telegram_service.get_telegram_link")

@@ -374,6 +374,10 @@ def _priority_pref_enabled(settings: dict, priority_tier: str | None) -> bool:
     return False
 
 
+def _is_kanban_task(task: dict) -> bool:
+    return str(task.get("status") or "").lower() == "accepted"
+
+
 def send_instant_telegram_alerts(user_id: int, task_payloads: list[dict]) -> dict:
     summary = {"sent": 0, "skipped": 0, "errors": 0}
 
@@ -584,7 +588,7 @@ def send_daily_telegram_digest(user_id: int, *, now: datetime | None = None) -> 
         open_tasks = [
             task
             for task in list_prioritized_tasks(user_id)
-            if str(task.get("status") or "").lower() != "completed"
+            if _is_kanban_task(task)
         ]
         message = _build_digest_message(open_tasks, current_time)
         result = _send_message(str(link["telegram_chat_id"]), message)
@@ -625,7 +629,7 @@ def send_telegram_test_message(user_id: int) -> dict:
     open_tasks = [
         task
         for task in list_prioritized_tasks(user_id)
-        if str(task.get("status") or "").lower() != "completed"
+        if _is_kanban_task(task)
     ]
     message = _build_digest_message(open_tasks, current_time)
     result = _send_message(
