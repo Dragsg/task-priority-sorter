@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import html
+import json
+import os
 import re
+from typing import Any
 from uuid import uuid4
 
 from pipeline.config import PipelineSettings
 from pipeline.models import CanonicalTask, PrioritizedTaskCard, StructuredLlmOutput, TaskStatus
+from pipeline.utils.env import load_dotenv_value
 from pipeline.utils.tags import synthesize_task_tags
+
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - optional dependency
+    OpenAI = None
 
 SUMMARY_ACTION_HINTS = {
     "submit",
@@ -47,10 +56,23 @@ SUMMARY_NOISE_HINTS = {
     "view in browser",
 }
 
+SUMMARY_SYSTEM_PROMPT = """
+You write concise task summaries for a student task dashboard.
+
+Rules:
+- Write one short, actionable summary sentence.
+- Prefer the concrete action, deadline, place, or requirement.
+- Remove email boilerplate, branding, greetings, and unsubscribe text.
+- Do not repeat the title word-for-word unless needed for clarity.
+- Keep it under 180 characters.
+- Return only valid JSON matching the provided schema.
+"""
+
 
 class PostProcessor:
-    def __init__(self, settings: PipelineSettings) -> None:
+    def __init__(self, settings: PipelineSettings, client: Any | None = None) -> None:
         self.settings = settings
+        self.client = client
 
     def build_task_card(
         self,
@@ -140,6 +162,9 @@ class PostProcessor:
 
     def _build_task_description(self, task: CanonicalTask, *, task_title: str) -> str | None:
         summary = self._build_extractive_summary(task, task_title=task_title)
+        llm_summary = self._build_llm_summary(task, task_title=task_title, fallback_summary=summary)
+        if llm_summary:
+            return llm_summary
         if summary:
             return summary
 
@@ -192,6 +217,88 @@ class PostProcessor:
             if not self._is_duplicate_content(task_title, summary):
                 return self._trim_text(summary, limit=180)
         return self._trim_text(ranked[0], limit=180) if ranked else None
+
+    def _build_llm_summary(
+        self,
+        task: CanonicalTask,
+        *,
+        task_title: str,
+        fallback_summary: str | None,
+    ) -> str | None:
+        source_subject = self._clean_text(task.representative_subject)
+        source_preview = self._select_best_preview(task)
+        if not source_subject and not source_preview and not fallback_summary:
+            return None
+
+        raw_summary = self._call_openai_for_summary(
+            {
+                "task_title": task_title,
+                "task_type": task.task_type.value,
+                "entity_name": self._clean_text(task.topic_entity.entity_name),
+                "deadline_hours": task.deadline_hours,
+                "source_subject": source_subject,
+                "source_preview": source_preview,
+                "source_sender": self._clean_text(task.representative_sender_display),
+                "score_reasons": task.score_reasons,
+                "fallback_summary": fallback_summary,
+            }
+        )
+        cleaned = self._clean_summary_fragment(raw_summary) if raw_summary else None
+        if cleaned:
+            return self._trim_text(cleaned, limit=180)
+        return fallback_summary
+
+    def _call_openai_for_summary(self, summary_input: dict[str, Any]) -> str | None:
+        api_key = os.environ.get("OPENAI_API_KEY") or load_dotenv_value("OPENAI_API_KEY")
+        if self.client is None and OpenAI is not None and api_key:  # pragma: no cover - networkless by default
+            self.client = OpenAI(api_key=api_key)
+
+        if self.client is None:
+            return None
+
+        try:  # pragma: no cover - external API
+            response = self.client.responses.create(
+                model=self.settings.llm_model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": [{"type": "input_text", "text": SUMMARY_SYSTEM_PROMPT.strip()}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": json.dumps(summary_input)}],
+                    },
+                ],
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "task_summary",
+                        "schema": self._summary_response_schema(),
+                        "strict": True,
+                    }
+                },
+            )
+        except Exception:
+            return None
+
+        try:
+            payload = json.loads(response.output_text)
+        except Exception:
+            return None
+        summary = payload.get("summary") if isinstance(payload, dict) else None
+        return summary if isinstance(summary, str) else None
+
+    def _summary_response_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "summary": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                }
+            },
+            "required": ["summary"],
+        }
 
     def _summarize_preview(self, text: str, *, task_title: str) -> str | None:
         fragments = self._extract_summary_fragments(text)
