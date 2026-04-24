@@ -1,5 +1,6 @@
 import logging
 from contextlib import contextmanager
+from datetime import date, datetime
 from typing import Any, TypeAlias, cast
 
 import psycopg
@@ -7,6 +8,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from config import Config
+from .time_utils import now_sgt
 
 logger = logging.getLogger(__name__)
 DATABASE_TIMEZONE = "Asia/Singapore"
@@ -802,3 +804,638 @@ def delete_user_account(user_id: int) -> None:
         user_id,
         ", ".join(deleted_tables) if deleted_tables else "none",
     )
+
+
+def ensure_telegram_link_table():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS telegram_links (
+                    user_id INTEGER PRIMARY KEY,
+                    telegram_chat_id TEXT NOT NULL UNIQUE,
+                    telegram_chat_type TEXT,
+                    telegram_username TEXT,
+                    telegram_display_name TEXT,
+                    linked_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        connection.commit()
+
+
+def ensure_telegram_link_codes_table():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS telegram_link_codes (
+                    code TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    claimed_chat_id TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    claimed_at TIMESTAMPTZ
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_user_id
+                ON telegram_link_codes (user_id)
+                """
+            )
+        connection.commit()
+
+
+def ensure_telegram_notification_settings_table():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS telegram_notification_settings (
+                    user_id INTEGER PRIMARY KEY,
+                    telegram_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    alert_critical BOOLEAN NOT NULL DEFAULT TRUE,
+                    alert_high BOOLEAN NOT NULL DEFAULT TRUE,
+                    alert_medium BOOLEAN NOT NULL DEFAULT FALSE,
+                    alert_low BOOLEAN NOT NULL DEFAULT FALSE,
+                    daily_digest_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    daily_digest_time TEXT NOT NULL DEFAULT '08:00',
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        connection.commit()
+
+
+def ensure_telegram_alert_logs_table():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS telegram_alert_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    canonical_task_id TEXT NOT NULL,
+                    alert_kind TEXT NOT NULL DEFAULT 'instant',
+                    priority_tier TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    telegram_message_id TEXT,
+                    task_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    sent_at TIMESTAMPTZ,
+                    UNIQUE (user_id, canonical_task_id, alert_kind)
+                )
+                """
+            )
+        connection.commit()
+
+
+def ensure_telegram_digest_logs_table():
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS telegram_digest_logs (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    digest_date DATE NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    telegram_message_id TEXT,
+                    summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    sent_at TIMESTAMPTZ,
+                    UNIQUE (user_id, digest_date)
+                )
+                """
+            )
+        connection.commit()
+
+
+def ensure_telegram_tables():
+    ensure_telegram_link_table()
+    ensure_telegram_link_codes_table()
+    ensure_telegram_notification_settings_table()
+    ensure_telegram_alert_logs_table()
+    ensure_telegram_digest_logs_table()
+
+
+def get_telegram_link(user_id: int) -> DbRow | None:
+    ensure_telegram_link_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    user_id,
+                    telegram_chat_id,
+                    telegram_chat_type,
+                    telegram_username,
+                    telegram_display_name,
+                    linked_at,
+                    updated_at
+                FROM telegram_links
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            return cast(DbRow | None, cursor.fetchone())
+
+
+def list_telegram_link_user_ids() -> list[int]:
+    ensure_telegram_link_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT user_id
+                FROM telegram_links
+                ORDER BY user_id
+                """
+            )
+            rows = cast(list[DbRow], cursor.fetchall())
+
+    return [int(row["user_id"]) for row in rows]
+
+
+def save_telegram_link(
+    user_id: int,
+    *,
+    chat_id: str,
+    chat_type: str | None,
+    chat_username: str | None,
+    chat_display_name: str | None,
+) -> DbRow:
+    ensure_telegram_link_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO telegram_links (
+                    user_id,
+                    telegram_chat_id,
+                    telegram_chat_type,
+                    telegram_username,
+                    telegram_display_name
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    telegram_chat_id = EXCLUDED.telegram_chat_id,
+                    telegram_chat_type = EXCLUDED.telegram_chat_type,
+                    telegram_username = EXCLUDED.telegram_username,
+                    telegram_display_name = EXCLUDED.telegram_display_name,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING
+                    user_id,
+                    telegram_chat_id,
+                    telegram_chat_type,
+                    telegram_username,
+                    telegram_display_name,
+                    linked_at,
+                    updated_at
+                """,
+                (user_id, chat_id, chat_type, chat_username, chat_display_name),
+            )
+            row = cast(DbRow | None, cursor.fetchone())
+        connection.commit()
+
+    if row is None:
+        raise LookupError(f"Failed to save Telegram link for user_id={user_id}")
+
+    logger.info("Saved Telegram link for user_id=%s chat_id=%s", user_id, chat_id)
+    return row
+
+
+def delete_telegram_link(user_id: int) -> None:
+    ensure_telegram_tables()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM telegram_links
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            cursor.execute(
+                """
+                DELETE FROM telegram_link_codes
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+        connection.commit()
+
+
+def create_telegram_link_code(user_id: int, code: str, expires_at: datetime) -> DbRow:
+    ensure_telegram_link_codes_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM telegram_link_codes
+                WHERE user_id = %s
+                  AND claimed_at IS NULL
+                """,
+                (user_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO telegram_link_codes (
+                    code,
+                    user_id,
+                    expires_at
+                )
+                VALUES (%s, %s, %s)
+                RETURNING code, user_id, created_at, expires_at, claimed_at
+                """,
+                (code, user_id, expires_at),
+            )
+            row = cast(DbRow | None, cursor.fetchone())
+        connection.commit()
+
+    if row is None:
+        raise LookupError(f"Failed to create Telegram link code for user_id={user_id}")
+
+    logger.info("Created Telegram link code for user_id=%s code=%s", user_id, code)
+    return row
+
+
+def get_active_telegram_link_code(user_id: int, *, now: datetime | None = None) -> DbRow | None:
+    ensure_telegram_link_codes_table()
+    current_time = now or now_sgt()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT code, user_id, created_at, expires_at, claimed_at
+                FROM telegram_link_codes
+                WHERE user_id = %s
+                  AND claimed_at IS NULL
+                  AND expires_at > %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (user_id, current_time),
+            )
+            return cast(DbRow | None, cursor.fetchone())
+
+
+def consume_telegram_link_code(
+    code: str,
+    *,
+    chat_id: str,
+    chat_type: str | None,
+    chat_username: str | None,
+    chat_display_name: str | None,
+    now: datetime | None = None,
+) -> DbRow:
+    ensure_telegram_tables()
+    current_time = now or now_sgt()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT code, user_id, expires_at, claimed_at
+                FROM telegram_link_codes
+                WHERE code = %s
+                FOR UPDATE
+                """,
+                (code,),
+            )
+            code_row = cast(DbRow | None, cursor.fetchone())
+            if code_row is None:
+                raise LookupError("This linking code is invalid.")
+            if code_row.get("claimed_at") is not None:
+                raise ValueError("This linking code has already been used.")
+            if code_row["expires_at"] <= current_time:
+                raise ValueError("This linking code has expired. Generate a new one in the app.")
+
+            cursor.execute(
+                """
+                SELECT user_id
+                FROM telegram_links
+                WHERE telegram_chat_id = %s
+                FOR UPDATE
+                """,
+                (chat_id,),
+            )
+            existing_link = cast(DbRow | None, cursor.fetchone())
+            if existing_link and int(existing_link["user_id"]) != int(code_row["user_id"]):
+                raise ValueError("This Telegram chat is already linked to a different account.")
+
+            cursor.execute(
+                """
+                INSERT INTO telegram_links (
+                    user_id,
+                    telegram_chat_id,
+                    telegram_chat_type,
+                    telegram_username,
+                    telegram_display_name
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    telegram_chat_id = EXCLUDED.telegram_chat_id,
+                    telegram_chat_type = EXCLUDED.telegram_chat_type,
+                    telegram_username = EXCLUDED.telegram_username,
+                    telegram_display_name = EXCLUDED.telegram_display_name,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    int(code_row["user_id"]),
+                    chat_id,
+                    chat_type,
+                    chat_username,
+                    chat_display_name,
+                ),
+            )
+            cursor.execute(
+                """
+                UPDATE telegram_link_codes
+                SET claimed_chat_id = %s,
+                    claimed_at = CURRENT_TIMESTAMP
+                WHERE code = %s
+                RETURNING code, user_id, expires_at, claimed_at
+                """,
+                (chat_id, code),
+            )
+            consumed_row = cast(DbRow | None, cursor.fetchone())
+        connection.commit()
+
+    if consumed_row is None:
+        raise LookupError("Failed to claim Telegram linking code.")
+
+    logger.info(
+        "Consumed Telegram link code for user_id=%s chat_id=%s",
+        consumed_row["user_id"],
+        chat_id,
+    )
+    return consumed_row
+
+
+def get_telegram_notification_settings(user_id: int) -> DbRow:
+    ensure_telegram_notification_settings_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    user_id,
+                    telegram_enabled,
+                    alert_critical,
+                    alert_high,
+                    alert_medium,
+                    alert_low,
+                    daily_digest_enabled,
+                    daily_digest_time,
+                    updated_at
+                FROM telegram_notification_settings
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            row = cast(DbRow | None, cursor.fetchone())
+
+    if row is not None:
+        return row
+
+    return {
+        "user_id": user_id,
+        "telegram_enabled": True,
+        "alert_critical": True,
+        "alert_high": True,
+        "alert_medium": False,
+        "alert_low": False,
+        "daily_digest_enabled": True,
+        "daily_digest_time": "08:00",
+        "updated_at": None,
+    }
+
+
+def save_telegram_notification_settings(
+    user_id: int,
+    *,
+    telegram_enabled: bool,
+    alert_critical: bool,
+    alert_high: bool,
+    alert_medium: bool,
+    alert_low: bool,
+    daily_digest_enabled: bool,
+    daily_digest_time: str,
+) -> DbRow:
+    ensure_telegram_notification_settings_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO telegram_notification_settings (
+                    user_id,
+                    telegram_enabled,
+                    alert_critical,
+                    alert_high,
+                    alert_medium,
+                    alert_low,
+                    daily_digest_enabled,
+                    daily_digest_time
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    telegram_enabled = EXCLUDED.telegram_enabled,
+                    alert_critical = EXCLUDED.alert_critical,
+                    alert_high = EXCLUDED.alert_high,
+                    alert_medium = EXCLUDED.alert_medium,
+                    alert_low = EXCLUDED.alert_low,
+                    daily_digest_enabled = EXCLUDED.daily_digest_enabled,
+                    daily_digest_time = EXCLUDED.daily_digest_time,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING
+                    user_id,
+                    telegram_enabled,
+                    alert_critical,
+                    alert_high,
+                    alert_medium,
+                    alert_low,
+                    daily_digest_enabled,
+                    daily_digest_time,
+                    updated_at
+                """,
+                (
+                    user_id,
+                    telegram_enabled,
+                    alert_critical,
+                    alert_high,
+                    alert_medium,
+                    alert_low,
+                    daily_digest_enabled,
+                    daily_digest_time,
+                ),
+            )
+            row = cast(DbRow | None, cursor.fetchone())
+        connection.commit()
+
+    if row is None:
+        raise LookupError(f"Failed to save Telegram settings for user_id={user_id}")
+
+    logger.info("Saved Telegram notification settings for user_id=%s", user_id)
+    return row
+
+
+def claim_telegram_alert(
+    user_id: int,
+    *,
+    canonical_task_id: str,
+    priority_tier: str | None,
+    task_payload: dict,
+) -> bool:
+    ensure_telegram_alert_logs_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO telegram_alert_logs (
+                    user_id,
+                    canonical_task_id,
+                    priority_tier,
+                    status,
+                    task_snapshot
+                )
+                VALUES (%s, %s, %s, 'pending', %s)
+                ON CONFLICT (user_id, canonical_task_id, alert_kind) DO NOTHING
+                """,
+                (
+                    user_id,
+                    canonical_task_id,
+                    priority_tier,
+                    Jsonb(task_payload),
+                ),
+            )
+            inserted = cursor.rowcount > 0
+        connection.commit()
+
+    return inserted
+
+
+def mark_telegram_alert_sent(
+    user_id: int,
+    *,
+    canonical_task_id: str,
+    message_id: str | None,
+) -> None:
+    ensure_telegram_alert_logs_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE telegram_alert_logs
+                SET status = 'sent',
+                    telegram_message_id = %s,
+                    sent_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+                  AND canonical_task_id = %s
+                  AND alert_kind = 'instant'
+                """,
+                (message_id, user_id, canonical_task_id),
+            )
+        connection.commit()
+
+
+def clear_telegram_alert_claim(user_id: int, *, canonical_task_id: str) -> None:
+    ensure_telegram_alert_logs_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM telegram_alert_logs
+                WHERE user_id = %s
+                  AND canonical_task_id = %s
+                  AND alert_kind = 'instant'
+                  AND status = 'pending'
+                """,
+                (user_id, canonical_task_id),
+            )
+        connection.commit()
+
+
+def claim_telegram_digest(user_id: int, *, digest_date: date) -> bool:
+    ensure_telegram_digest_logs_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO telegram_digest_logs (
+                    user_id,
+                    digest_date,
+                    status
+                )
+                VALUES (%s, %s, 'pending')
+                ON CONFLICT (user_id, digest_date) DO NOTHING
+                """,
+                (user_id, digest_date),
+            )
+            inserted = cursor.rowcount > 0
+        connection.commit()
+
+    return inserted
+
+
+def mark_telegram_digest_sent(
+    user_id: int,
+    *,
+    digest_date: date,
+    message_id: str | None,
+    summary: dict | None = None,
+) -> None:
+    ensure_telegram_digest_logs_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE telegram_digest_logs
+                SET status = 'sent',
+                    telegram_message_id = %s,
+                    summary = %s,
+                    sent_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+                  AND digest_date = %s
+                """,
+                (
+                    message_id,
+                    Jsonb(summary or {}),
+                    user_id,
+                    digest_date,
+                ),
+            )
+        connection.commit()
+
+
+def clear_telegram_digest_claim(user_id: int, *, digest_date: date) -> None:
+    ensure_telegram_digest_logs_table()
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM telegram_digest_logs
+                WHERE user_id = %s
+                  AND digest_date = %s
+                  AND status = 'pending'
+                """,
+                (user_id, digest_date),
+            )
+        connection.commit()
