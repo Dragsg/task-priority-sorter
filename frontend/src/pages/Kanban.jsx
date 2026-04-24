@@ -532,6 +532,7 @@ function KanbanCard({
   isExpanded,
   task,
   isDragging,
+  isMovePending,
   isSaving,
   onDragStart,
   onDragEnd,
@@ -551,8 +552,8 @@ function KanbanCard({
 
   return (
     <article
-      className={`kanban-card task-card task-card-tier-${task.priority_tier.toLowerCase()}${isCompleted ? " kanban-card-completed" : ""}${isDragging ? " kanban-card-dragging" : ""}${isExpanded ? " kanban-card-expanded" : ""}`}
-      draggable={!isSaving}
+      className={`kanban-card task-card task-card-tier-${task.priority_tier.toLowerCase()}${isCompleted ? " kanban-card-completed" : ""}${isDragging ? " kanban-card-dragging" : ""}${isMovePending ? " kanban-card-moving" : ""}${isExpanded ? " kanban-card-expanded" : ""}`}
+      draggable={!isSaving && !isMovePending}
       onDragEnd={onDragEnd}
       onDragStart={(event) => onDragStart(event, task)}
     >
@@ -650,7 +651,6 @@ function KanbanColumn({
   tasks,
   dragState,
   onDragOver,
-  onDragLeave,
   onDrop,
   ...cardProps
 }) {
@@ -660,7 +660,6 @@ function KanbanColumn({
   return (
     <section
       className={`kanban-column${isDropTarget ? " kanban-column-active" : ""}`}
-      onDragLeave={() => onDragLeave(column.value)}
       onDragOver={(event) => onDragOver(event, column.value)}
       onDrop={(event) => onDrop(event, column.value)}
     >
@@ -680,6 +679,7 @@ function KanbanColumn({
             <KanbanCard
               isExpanded={Boolean(cardProps.expandedTaskIds[task.canonical_task_id])}
               isDragging={dragState.taskId === task.canonical_task_id}
+              isMovePending={Boolean(cardProps.movingStates[task.canonical_task_id])}
               isSaving={Boolean(cardProps.savingStates[task.canonical_task_id])}
               key={task.canonical_task_id}
               onDelete={cardProps.onDelete}
@@ -726,6 +726,7 @@ export default function Kanban() {
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editStates, setEditStates] = useState({});
   const [savingStates, setSavingStates] = useState({});
+  const [movingStates, setMovingStates] = useState({});
   const [dragState, setDragState] = useState({
     taskId: null,
     fromTier: null,
@@ -767,11 +768,13 @@ export default function Kanban() {
 
   const hasEditInFlight = Object.values(editStates).some((state) => state?.isSaving);
   const hasTaskSaveInFlight = Object.keys(savingStates).length > 0;
+  const hasTaskMoveInFlight = Object.keys(movingStates).length > 0;
   const isLiveRefreshPaused =
     editingTaskId !== null ||
     dragState.taskId !== null ||
     hasEditInFlight ||
-    hasTaskSaveInFlight;
+    hasTaskSaveInFlight ||
+    hasTaskMoveInFlight;
 
   useEffect(() => {
     let isCancelled = false;
@@ -871,6 +874,21 @@ export default function Kanban() {
     });
   }
 
+  function markTaskMoving(canonicalTaskId, nextState = true) {
+    setMovingStates((current) => ({
+      ...current,
+      [canonicalTaskId]: nextState,
+    }));
+  }
+
+  function clearTaskMoving(canonicalTaskId) {
+    setMovingStates((current) => {
+      const updated = { ...current };
+      delete updated[canonicalTaskId];
+      return updated;
+    });
+  }
+
   function openTaskEditor(canonicalTaskId) {
     setEditingTaskId(canonicalTaskId);
     setEditStates((current) => ({
@@ -954,15 +972,8 @@ export default function Kanban() {
   function handleDragOver(event, priorityTier) {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
-    setDragState((current) => ({
-      ...current,
-      overTier: priorityTier,
-    }));
-  }
-
-  function handleDragLeave(priorityTier) {
     setDragState((current) =>
-      current.overTier === priorityTier ? { ...current, overTier: null } : current
+      current.overTier === priorityTier ? current : { ...current, overTier: priorityTier }
     );
   }
 
@@ -981,7 +992,7 @@ export default function Kanban() {
 
     setError("");
     setStatusMessage(`Moving task to ${formatPriorityTierLabel(priorityTier)}.`);
-    markTaskBusy(canonicalTaskId);
+    markTaskMoving(canonicalTaskId);
     setTasks((current) =>
       current.map((task) =>
         task.canonical_task_id === canonicalTaskId ? { ...task, priority_tier: priorityTier } : task
@@ -997,7 +1008,7 @@ export default function Kanban() {
       setError(saveError.message);
       setStatusMessage("");
     } finally {
-      clearTaskBusy(canonicalTaskId);
+      clearTaskMoving(canonicalTaskId);
     }
   }
 
@@ -1200,10 +1211,10 @@ export default function Kanban() {
                 key={column.value}
                 onDelete={handleDelete}
                 onDragEnd={handleDragEnd}
-                onDragLeave={handleDragLeave}
                 onDragOver={handleDragOver}
                 onDragStart={handleDragStart}
                 onDrop={handlePriorityDrop}
+                movingStates={movingStates}
                 onEditOpen={openTaskEditor}
                 onToggleExpanded={handleToggleExpanded}
                 onToggleCompleted={handleToggleCompleted}
