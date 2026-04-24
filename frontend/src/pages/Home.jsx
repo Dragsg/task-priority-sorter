@@ -92,7 +92,7 @@ function buildSyncStatus(result, previousTasks = []) {
       .map((task) => task?.canonical_task_id)
       .filter(Boolean)
   );
-  const currentItems = Array.isArray(result.items) ? result.items : [];
+  const currentItems = filterVisibleTaskItems(Array.isArray(result.items) ? result.items : []);
   const addedCount = currentItems.filter(
     (task) => task?.canonical_task_id && !previousIds.has(task.canonical_task_id)
   ).length;
@@ -235,6 +235,18 @@ function getNormalizedTaskStatus(task) {
   return String(task?.status || "pending_review").toLowerCase();
 }
 
+function isManualTask(task) {
+  if (String(task?.origin || "").toLowerCase() === "manual") {
+    return true;
+  }
+
+  if (!Array.isArray(task?.platforms_seen)) {
+    return false;
+  }
+
+  return task.platforms_seen.some((platform) => String(platform).toLowerCase() === "manual");
+}
+
 function filterVisibleTaskItems(items) {
   if (!Array.isArray(items)) {
     return [];
@@ -242,7 +254,7 @@ function filterVisibleTaskItems(items) {
 
   return items.filter((task) => {
     const status = getNormalizedTaskStatus(task);
-    return status === "pending_review" || status === "completed";
+    return status === "pending_review" && !isManualTask(task);
   });
 }
 
@@ -1116,7 +1128,7 @@ export default function Home() {
           next.action === "WRONG_PRIORITY"
             ? "Priority updated. Your profile was updated."
             : next.action === "ACCEPT"
-              ? "Task accepted and removed from review."
+              ? "Task accepted and moved to Kanban."
               : next.action === "REJECT"
                 ? "Task rejected and removed from review."
                 : "Feedback saved. Your profile was updated."
@@ -1265,7 +1277,7 @@ export default function Home() {
       action === "WRONG_PRIORITY"
         ? "Updating priority and profile in the background."
         : action === "ACCEPT"
-          ? "Accepting task and updating your profile in the background."
+          ? "Accepting task and moving it to Kanban in the background."
           : action === "REJECT"
             ? "Rejecting task and updating your profile in the background."
             : "Feedback saved. Updating your profile in the background."
@@ -1384,7 +1396,7 @@ export default function Home() {
       });
       setIsManualTagInputFocused(false);
       setIsManualFormOpen(false);
-      setTaskStatus("Manual task added and queued for prioritization.");
+      setTaskStatus("Manual task added to your Kanban board.");
     } catch (error) {
       setTaskError(error.message);
     } finally {
@@ -1644,7 +1656,7 @@ export default function Home() {
                 {isCreatingManualTask ? "Adding task..." : "Save manual task"}
               </button>
               <p className="panel-copy">
-                Manual tasks are written into the same pipeline flow and also update your learned profile.
+                Manual tasks go straight to Kanban and still update your learned profile.
               </p>
             </div>
             {availableTags.length ? (
@@ -1683,7 +1695,7 @@ export default function Home() {
             <div className="task-card task-card-empty">
               <p className="summary-value">No prioritized tasks yet.</p>
               <p className="panel-copy">
-                Run the pipeline after syncing email, or add a manual task to seed your queue.
+                Run the pipeline after syncing email, or add a manual task to send work straight to Kanban.
               </p>
             </div>
           )}

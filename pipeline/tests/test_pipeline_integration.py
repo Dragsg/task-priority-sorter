@@ -200,6 +200,55 @@ def test_accepted_task_stays_hidden_when_rerun_changes_canonical_id():
     assert accepted_cards[0].source_subject == "Action required: CS2103T project due tonight"
 
 
+def test_completed_accepted_task_stays_completed_when_open_status_is_requested():
+    repository = InMemoryPipelineRepository()
+    settings = PipelineSettings(profile_confidence_threshold=0.65)
+    pipeline = PriorityPipeline(repository, settings=settings)
+
+    repository.upsert_raw_messages(
+        [
+            RawMessage(
+                user_id="user-reopen",
+                platform=Platform.GMAIL,
+                source_id="msg-reopen-1",
+                subject="Prepare lab presentation",
+                snippet="Please prepare the lab presentation for next week.",
+                body_text="Please prepare the lab presentation for next week and upload your slides.",
+                sender_display="Teaching Team",
+                sender_email="teaching@school.edu",
+                sender_domain="school.edu",
+            )
+        ]
+    )
+
+    first_bundle = pipeline.run_for_user("user-reopen")
+    card = first_bundle.task_cards[0]
+
+    repository.apply_task_action(
+        "user-reopen",
+        card.canonical_task_id,
+        action=FeedbackAction.ACCEPT,
+    )
+    repository.update_task(
+        "user-reopen",
+        card.canonical_task_id,
+        updates={"status": "COMPLETED"},
+    )
+    repository.update_task(
+        "user-reopen",
+        card.canonical_task_id,
+        updates={"status": "OPEN"},
+    )
+
+    assert repository.get_current_task_cards("user-reopen") == []
+    accepted_cards = repository.get_accepted_task_cards("user-reopen")
+    assert accepted_cards == []
+    completed_cards = repository.get_completed_task_cards("user-reopen")
+    assert len(completed_cards) == 1
+    assert completed_cards[0].canonical_task_id == card.canonical_task_id
+    assert completed_cards[0].status.value == "completed"
+
+
 def test_removed_task_tag_stays_removed_after_rerun():
     repository = InMemoryPipelineRepository()
     settings = PipelineSettings(profile_confidence_threshold=0.65)

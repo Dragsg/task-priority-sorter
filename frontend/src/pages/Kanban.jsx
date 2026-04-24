@@ -138,8 +138,17 @@ function formatDateTimeLocalInput(value) {
   return new Date(parsed.getTime() - offsetMilliseconds).toISOString().slice(0, 16);
 }
 
+function getNormalizedTaskStatus(task) {
+  return String(task?.status || "").toLowerCase();
+}
+
 function getTaskWorkflowStatus(task) {
-  return String(task?.status || "").toLowerCase() === "completed" ? "COMPLETED" : "OPEN";
+  return getNormalizedTaskStatus(task) === "completed" ? "COMPLETED" : "OPEN";
+}
+
+function isTaskVisibleOnKanban(task) {
+  const status = getNormalizedTaskStatus(task);
+  return status === "accepted";
 }
 
 function getVisibleTaskTags(task) {
@@ -584,7 +593,7 @@ function KanbanCard({
             onClick={() => onToggleCompleted(task)}
             type="button"
           >
-            {isCompleted ? "Reopen" : "Complete"}
+            Complete
           </button>
           <button
             className="kanban-action-button kanban-action-danger"
@@ -676,7 +685,6 @@ export default function Kanban() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState([]);
   const [deadlineFilter, setDeadlineFilter] = useState("all");
-  const [showCompleted, setShowCompleted] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editStates, setEditStates] = useState({});
   const [savingStates, setSavingStates] = useState({});
@@ -783,8 +791,7 @@ export default function Kanban() {
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
-      const isCompleted = getTaskWorkflowStatus(task) === "COMPLETED";
-      if (!showCompleted && isCompleted) {
+      if (!isTaskVisibleOnKanban(task)) {
         return false;
       }
       if (!matchesSearch(task, searchQuery)) {
@@ -801,7 +808,7 @@ export default function Kanban() {
       }
       return true;
     });
-  }, [deadlineFilter, searchQuery, selectedTags, showCompleted, tasks]);
+  }, [deadlineFilter, searchQuery, selectedTags, tasks]);
 
   const groupedTasks = useMemo(() => {
     const grouped = {
@@ -1032,24 +1039,26 @@ export default function Kanban() {
   }
 
   async function handleToggleCompleted(task) {
-    const nextStatus = getTaskWorkflowStatus(task) === "COMPLETED" ? "OPEN" : "COMPLETED";
+    if (getTaskWorkflowStatus(task) === "COMPLETED") {
+      return;
+    }
     const previousTasks = tasks;
 
     setError("");
-    setStatusMessage(nextStatus === "COMPLETED" ? "Completing task." : "Reopening task.");
+    setStatusMessage("Completing task.");
     markTaskBusy(task.canonical_task_id);
     setTasks((current) =>
       current.map((item) =>
         item.canonical_task_id === task.canonical_task_id
-          ? { ...item, status: nextStatus === "COMPLETED" ? "completed" : "pending_review" }
+          ? { ...item, status: "completed" }
           : item
       )
     );
 
     try {
-      const result = await updatePrioritizedTask(task.canonical_task_id, { status: nextStatus });
+      const result = await updatePrioritizedTask(task.canonical_task_id, { status: "COMPLETED" });
       updateBoardFromResult(result);
-      setStatusMessage(nextStatus === "COMPLETED" ? "Task completed." : "Task reopened.");
+      setStatusMessage("Task completed.");
     } catch (saveError) {
       setTasks(previousTasks);
       setError(saveError.message);
@@ -1087,8 +1096,8 @@ export default function Kanban() {
             <p className="summary-value">{filteredTasks.length}</p>
           </article>
           <article className="summary-card">
-            <p className="summary-label">Completed shown</p>
-            <p className="summary-value">{showCompleted ? "Yes" : "No"}</p>
+            <p className="summary-label">Board scope</p>
+            <p className="summary-value">Accepted tasks only</p>
           </article>
           <article className="summary-card">
             <p className="summary-label">Quick links</p>
@@ -1127,14 +1136,6 @@ export default function Kanban() {
                 </option>
               ))}
             </select>
-          </label>
-          <label className="kanban-toggle">
-            <input
-              checked={showCompleted}
-              onChange={(event) => setShowCompleted(event.target.checked)}
-              type="checkbox"
-            />
-            <span>Show completed tasks</span>
           </label>
         </section>
 
@@ -1200,7 +1201,7 @@ export default function Kanban() {
           <div className="task-card task-card-empty">
             <p className="summary-value">No tasks match the current board filters.</p>
             <p className="panel-copy">
-              Try clearing search or tag filters, or enable completed tasks to widen the board.
+              Try clearing search or tag filters to widen the board.
             </p>
           </div>
         )}
