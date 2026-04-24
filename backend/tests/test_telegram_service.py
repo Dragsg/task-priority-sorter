@@ -4,7 +4,9 @@ from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 from app.telegram_service import (
+    ensure_telegram_webhook,
     get_telegram_settings_payload,
+    get_telegram_startup_warning,
     process_telegram_webhook,
     send_daily_telegram_digest,
     send_instant_telegram_alerts,
@@ -244,13 +246,42 @@ class TelegramServiceTestCase(unittest.TestCase):
         self.assertEqual(claim_telegram_digest.call_count, 2)
 
     def test_alerts_do_not_break_when_telegram_is_not_configured(self):
-        summary = send_instant_telegram_alerts(
-            6,
-            [{"canonical_task_id": "canon-4", "task_title": "Catch up", "priority_tier": "HIGH"}],
-        )
+        with patch("app.telegram_service.Config.TELEGRAM_BOT_TOKEN", ""):
+            summary = send_instant_telegram_alerts(
+                6,
+                [{"canonical_task_id": "canon-4", "task_title": "Catch up", "priority_tier": "HIGH"}],
+            )
 
         self.assertEqual(summary["sent"], 0)
         self.assertEqual(summary["skipped"], 1)
+
+    def test_startup_warning_when_webhook_url_missing(self):
+        with patch("app.telegram_service.Config.TELEGRAM_BOT_TOKEN", "token"), patch(
+            "app.telegram_service.Config.TELEGRAM_WEBHOOK_URL",
+            "",
+        ):
+            warning = get_telegram_startup_warning()
+
+        self.assertIn("TELEGRAM_WEBHOOK_URL", warning)
+
+    @patch("app.telegram_service._send_telegram_api_request")
+    def test_webhook_registration_uses_configured_secret(self, send_request):
+        send_request.return_value = {"ok": True, "result": True}
+
+        with patch("app.telegram_service.Config.TELEGRAM_BOT_TOKEN", "token"), patch(
+            "app.telegram_service.Config.TELEGRAM_WEBHOOK_URL",
+            "https://example.ngrok-free.app/api/telegram/webhook",
+        ), patch("app.telegram_service.Config.TELEGRAM_WEBHOOK_SECRET", "secret"):
+            response = ensure_telegram_webhook()
+
+        self.assertTrue(response["ok"])
+        send_request.assert_called_once_with(
+            "setWebhook",
+            {
+                "url": "https://example.ngrok-free.app/api/telegram/webhook",
+                "secret_token": "secret",
+            },
+        )
 
 
 if __name__ == "__main__":

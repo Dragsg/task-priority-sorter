@@ -35,6 +35,8 @@ python run.py
 
 The Flask app will run on `http://127.0.0.1:5000`.
 
+If you want Telegram inbound bot messages to work, `localhost` is not enough by itself. Telegram can only call a public HTTPS webhook, so you also need to expose your backend and set `TELEGRAM_WEBHOOK_URL` to your public `https://.../api/telegram/webhook` address.
+
 ## Frontend setup
 
 Open a second terminal:
