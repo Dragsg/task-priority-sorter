@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date, datetime, timedelta
+from html import escape
 from secrets import choice
 from urllib import error, parse, request
 
@@ -265,6 +266,7 @@ def _send_message(chat_id: str, text: str) -> dict:
     payload = {
         "chat_id": chat_id,
         "text": text,
+        "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
     response = _send_telegram_api_request("sendMessage", payload)
@@ -298,6 +300,23 @@ def _app_task_link() -> str | None:
     return frontend_url.rstrip("/") + "/kanban"
 
 
+def _truncate_text(value: str | None, limit: int = 180) -> str | None:
+    if not value:
+        return None
+    cleaned = " ".join(str(value).split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 3].rstrip() + "..."
+
+
+def _escape_text(value: str | None) -> str:
+    return escape(str(value or ""), quote=False)
+
+
+def _escape_url(value: str | None) -> str:
+    return escape(str(value or ""), quote=True)
+
+
 def _format_source_label(task: dict) -> str | None:
     platforms = task.get("platforms_seen")
     if isinstance(platforms, list) and platforms:
@@ -316,26 +335,28 @@ def _format_source_label(task: dict) -> str | None:
 
 
 def _build_instant_alert_message(task: dict) -> str:
-    lines = ["New task alert", ""]
-    title = _truncate_text(task.get("task_title") or task.get("entity_name") or "Untitled task", limit=120)
-    lines.append(f"Task: {title}")
-    lines.append(f"Priority: {str(task.get('priority_tier') or 'LOW').upper()}")
+    title = _truncate_text(
+        task.get("task_title") or task.get("entity_name") or "Untitled task",
+        limit=120,
+    )
+    lines = [
+        "<b>New task added</b>",
+        f"<b>{_escape_text(title)}</b>",
+        f"Priority: <b>{_escape_text(str(task.get('priority_tier') or 'LOW').upper())}</b>",
+    ]
 
     deadline = _format_deadline(task.get("deadline_at_iso"))
     if deadline:
-        lines.append(f"Deadline: {deadline}")
-
-    summary = _truncate_text(task.get("task_description") or task.get("rationale"), limit=220)
-    if summary:
-        lines.append(f"Why now: {summary}")
+        lines.append(f"Deadline: {_escape_text(deadline)}")
 
     source = _format_source_label(task)
     if source:
-        lines.append(f"Source: {source}")
+        lines.append(f"Source: {_escape_text(source)}")
 
     app_link = _app_task_link()
     if app_link:
-        lines.append(f"Open app: {app_link}")
+        lines.append("")
+        lines.append(f'<a href="{_escape_url(app_link)}">Open app</a>')
 
     return "\n".join(lines)
 
@@ -433,7 +454,7 @@ def _digest_sort_key(task: dict, now: datetime) -> tuple[int, float, int, str]:
     return (0 if is_overdue else 1 if is_due else 2, float(deadline_rank), priority_rank, title.lower())
 
 
-def _build_digest_message(open_tasks: list[dict], now: datetime) -> str:
+def _build_digest_message_legacy(open_tasks: list[dict], now: datetime) -> str:
     important_tasks = [
         task
         for task in open_tasks
@@ -472,6 +493,67 @@ def _build_digest_message(open_tasks: list[dict], now: datetime) -> str:
     app_link = _app_task_link()
     if app_link:
         lines.append(f"Open app: {app_link}")
+
+    return "\n".join(lines)
+
+
+def _build_digest_message(open_tasks: list[dict], now: datetime) -> str:
+    important_tasks = [
+        task
+        for task in open_tasks
+        if str(task.get("priority_tier") or "").upper() in {"CRITICAL", "HIGH"}
+        or _digest_due_today(task, now)
+    ]
+    important_tasks.sort(key=lambda task: _digest_sort_key(task, now))
+
+    lines = [
+        "<b>Daily digest</b>",
+        _escape_text(now.strftime("%a %d %b")),
+        "",
+    ]
+
+    if not important_tasks:
+        lines.append("Nothing urgent is demanding attention right now.")
+        lines.append(f"Open tasks remaining: <b>{len(open_tasks)}</b>")
+        app_link = _app_task_link()
+        if app_link:
+            lines.append("")
+            lines.append(f'<a href="{_escape_url(app_link)}">Open app</a>')
+        return "\n".join(lines)
+
+    lines.append("<b>Focus first</b>")
+    for index, task in enumerate(important_tasks[:5], start=1):
+        title = _truncate_text(
+            task.get("task_title") or task.get("entity_name") or "Untitled task",
+            limit=90,
+        )
+        priority = str(task.get("priority_tier") or "LOW").upper()
+        deadline = _format_deadline(task.get("deadline_at_iso"))
+        source = _format_source_label(task)
+        lines.append(f"{index}. <b>{_escape_text(title)}</b>")
+        detail_parts = [f"Priority: <b>{_escape_text(priority)}</b>"]
+        if deadline:
+            detail_parts.append(f"Due: {_escape_text(deadline)}")
+        if source:
+            detail_parts.append(f"Source: {_escape_text(source)}")
+        lines.append(" | ".join(detail_parts))
+        lines.append("")
+
+    critical_high_count = sum(
+        1
+        for task in open_tasks
+        if str(task.get("priority_tier") or "").upper() in {"CRITICAL", "HIGH"}
+    )
+    due_today_or_overdue = sum(1 for task in open_tasks if _digest_due_today(task, now))
+    lines.append("<b>Snapshot</b>")
+    lines.append(f"Critical/high tasks: <b>{critical_high_count}</b>")
+    lines.append(f"Due today or overdue: <b>{due_today_or_overdue}</b>")
+    lines.append(f"Open tasks remaining: <b>{len(open_tasks)}</b>")
+
+    app_link = _app_task_link()
+    if app_link:
+        lines.append("")
+        lines.append(f'<a href="{_escape_url(app_link)}">Open app</a>')
 
     return "\n".join(lines)
 
@@ -537,9 +619,18 @@ def send_telegram_test_message(user_id: int) -> dict:
     if not link:
         raise RuntimeError("Link Telegram before sending a test message.")
 
+    from .pipeline_bridge import list_prioritized_tasks
+
+    current_time = now_sgt()
+    open_tasks = [
+        task
+        for task in list_prioritized_tasks(user_id)
+        if str(task.get("status") or "").lower() != "completed"
+    ]
+    message = _build_digest_message(open_tasks, current_time)
     result = _send_message(
         str(link["telegram_chat_id"]),
-        "Telegram notifications are working. New task alerts and your daily digest will arrive here.",
+        message,
     )
     return {
         "success": True,
