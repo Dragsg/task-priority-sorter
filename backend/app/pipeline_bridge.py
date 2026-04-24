@@ -342,6 +342,7 @@ def get_available_tags(user_id: int) -> list[str]:
 def _list_dashboard_task_cards(repository: SqlAlchemyPipelineRepository, user_id: str):
     return [
         *repository.get_current_task_cards(user_id),
+        *repository.get_accepted_task_cards(user_id),
         *repository.get_completed_task_cards(user_id),
     ]
 
@@ -357,6 +358,14 @@ def _build_dashboard_items(repository: SqlAlchemyPipelineRepository, user_id: in
 
 def _task_payload_is_completed(task: dict) -> bool:
     return str(task.get("status") or "").lower() == "completed"
+
+
+def _find_task_card_with_source_id(task_cards, source_id: str):
+    for task_card in task_cards:
+        evidence_source_ids = getattr(task_card, "evidence_source_ids", None) or []
+        if any(str(evidence_source_id) == source_id for evidence_source_id in evidence_source_ids if evidence_source_id):
+            return task_card
+    return None
 
 
 def _summarize_run_task_statuses(repository: SqlAlchemyPipelineRepository, user_id: int, task_cards) -> dict[str, int]:
@@ -914,8 +923,32 @@ def create_manual_task(
     if normalized_tags:
         repository.upsert_custom_tags(str(user_id), normalized_tags)
     result = _run_pipeline_from_stored_messages(user_id, refresh_sources=False)
+    manual_task_card = _find_task_card_with_source_id(
+        repository.get_current_task_cards(str(user_id)),
+        source_id,
+    )
+    if manual_task_card is not None:
+        feedback_context = repository.get_feedback_update_context(
+            str(user_id),
+            manual_task_card.canonical_task_id,
+        )
+        if feedback_context is not None:
+            updated_profile, _ = _apply_profile_feedback(
+                user_id,
+                feedback_context,
+                action=FeedbackAction.ACCEPT,
+            )
+            repository.apply_task_action(
+                str(user_id),
+                manual_task_card.canonical_task_id,
+                action=FeedbackAction.ACCEPT,
+            )
+            result["items"] = _build_dashboard_items(repository, user_id)
+            result["profile"] = updated_profile.model_dump(mode="json")
+            result["manualTaskCanonicalTaskId"] = manual_task_card.canonical_task_id
     result["manualTaskSourceId"] = source_id
-    result["profile"] = get_profile_snapshot(user_id)
+    if "profile" not in result:
+        result["profile"] = get_profile_snapshot(user_id)
     return result
 
 
