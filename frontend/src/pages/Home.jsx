@@ -1512,7 +1512,7 @@ export default function Home() {
             Manage linked accounts
           </Link>
           <Link className="secondary-button home-link" to="/preferences">
-            Open preferences
+            Open account
           </Link>
           <button
             className="inline-button danger-button"

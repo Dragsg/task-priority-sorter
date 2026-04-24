@@ -92,6 +92,12 @@ def _invalidate_dashboard_cache(user_id: int) -> None:
         _PROFILE_CACHE.pop(user_id, None)
 
 
+def clear_user_runtime_state(user_id: int) -> None:
+    _invalidate_dashboard_cache(user_id)
+    with _RECOMPUTE_LOCK:
+        _RECOMPUTE_STATES.pop(user_id, None)
+
+
 def _update_cached_tasks_after_remove(user_id: int, canonical_task_id: str) -> None:
     with _DASHBOARD_CACHE_LOCK:
         entry = _TASK_CACHE.get(user_id)

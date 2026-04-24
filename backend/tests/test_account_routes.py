@@ -162,6 +162,63 @@ class AccountRoutesTestCase(unittest.TestCase):
         get_user_by_username.assert_not_called()
         update_user_username.assert_not_called()
 
+    @patch("app.routes._start_user_account_deletion")
+    @patch("app.routes.get_user_by_id")
+    def test_delete_user_rejects_incorrect_confirmation_username(
+        self,
+        get_user_by_id,
+        start_user_account_deletion,
+    ):
+        token = build_token(5)
+        get_user_by_id.return_value = {
+            "user_id": 5,
+            "username": "taylor",
+            "preferences": None,
+            "performance_time": "Morning",
+            "important_topic": "Personal goals",
+            "prioritise_by": "Urgency",
+        }
+
+        response = self.client.delete(
+            "/api/user",
+            json={"username": "wrong-name"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.get_json(),
+            {"error": "Type your current username exactly to confirm account deletion."},
+        )
+        start_user_account_deletion.assert_not_called()
+
+    @patch("app.routes._start_user_account_deletion")
+    @patch("app.routes.get_user_by_id")
+    def test_delete_user_removes_account_after_username_confirmation(
+        self,
+        get_user_by_id,
+        start_user_account_deletion,
+    ):
+        token = build_token(5)
+        get_user_by_id.return_value = {
+            "user_id": 5,
+            "username": "taylor",
+            "preferences": None,
+            "performance_time": "Morning",
+            "important_topic": "Personal goals",
+            "prioritise_by": "Urgency",
+        }
+
+        response = self.client.delete(
+            "/api/user",
+            json={"username": " taylor "},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.get_json(), {"success": True})
+        start_user_account_deletion.assert_called_once_with(5)
+
 
 if __name__ == "__main__":
     unittest.main()

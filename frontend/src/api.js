@@ -129,6 +129,14 @@ export async function updateCurrentUser({ username }) {
   return payload;
 }
 
+export async function deleteCurrentUser({ username }) {
+  return sendJson("/user", {
+    method: "DELETE",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ username }),
+  });
+}
+
 export async function fetchDashboardBootstrap() {
   const response = await fetch(`${API_BASE_URL}/dashboard`, {
     headers: getAuthHeaders(),

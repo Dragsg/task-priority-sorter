@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   clearStoredToken,
+  deleteCurrentUser,
   deleteOnboardingCalendar,
   fetchOnboardingContext,
   getStoredUser,
@@ -20,6 +21,10 @@ export default function Preferences() {
   const [error, setError] = useState("");
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [usernameBusy, setUsernameBusy] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const calendarInputRef = useRef(null);
 
   useEffect(() => {
@@ -99,8 +104,40 @@ export default function Preferences() {
     }
   }
 
+  async function handleAccountDelete(event) {
+    event.preventDefault();
+
+    try {
+      setDeleteBusy(true);
+      setDeleteError("");
+      setStatus("");
+      await deleteCurrentUser({ username: deleteConfirmation });
+      clearStoredToken();
+      navigate("/", { replace: true });
+    } catch (deleteRequestError) {
+      setDeleteError(deleteRequestError.message);
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
+  function openDeleteDialog() {
+    setDeleteConfirmation("");
+    setDeleteError("");
+    setIsDeleteDialogOpen(true);
+  }
+
+  function closeDeleteDialog() {
+    if (deleteBusy) {
+      return;
+    }
+    setDeleteConfirmation("");
+    setDeleteError("");
+    setIsDeleteDialogOpen(false);
+  }
+
   if (!user || !onboarding) {
-    return <main className="simple-shell">Loading your preferences...</main>;
+    return <main className="simple-shell">Loading your account settings...</main>;
   }
 
   const calendarSource = onboarding.calendar_source;
@@ -114,7 +151,7 @@ export default function Preferences() {
     <main className="simple-shell">
       <PageNav />
       <section className="simple-hero">
-        <p className="auth-eyebrow">Preferences</p>
+        <p className="auth-eyebrow">Account</p>
         <h1 className="simple-title">Manage your account settings</h1>
         <p className="simple-copy">
           You&apos;re signed in as <strong>{user.username}</strong>. Your onboarding answers are already
@@ -214,9 +251,87 @@ export default function Preferences() {
           </div>
         </section>
 
+        <section className="calendar-panel danger-panel">
+          <div className="calendar-panel-header">
+            <div>
+              <p className="summary-label">Delete Account</p>
+            </div>
+            <div className="summary-value summary-value-stack">
+              <span>Permanent action</span>
+              <span>Cannot be undone</span>
+            </div>
+          </div>
+
+          <div className="manual-task-actions">
+            <button
+              className="auth-button danger-button"
+              onClick={openDeleteDialog}
+              type="button"
+            >
+              Delete account
+            </button>
+          </div>
+        </section>
+
         {status ? <p className="success-text">{status}</p> : null}
         {error ? <p className="error-text auth-error">{error}</p> : null}
       </section>
+
+      {isDeleteDialogOpen ? (
+        <div
+          aria-modal="true"
+          className="modal-backdrop"
+          onClick={closeDeleteDialog}
+          role="dialog"
+        >
+          <div
+            className="confirm-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="summary-label">Confirm Account Deletion</p>
+            <h2 className="confirm-dialog-title">Delete this account permanently?</h2>
+            <p className="panel-copy">
+              This will permanently delete your account and all related data.
+            </p>
+            <div className="danger-panel-note">
+              Type <strong>{user.username}</strong> to confirm deletion.
+            </div>
+            <form className="calendar-upload-form" onSubmit={handleAccountDelete}>
+              <label className="field-group">
+                <span>Confirm username</span>
+                <input
+                  autoComplete="off"
+                  autoFocus
+                  className="auth-input"
+                  disabled={deleteBusy}
+                  onChange={(event) => setDeleteConfirmation(event.target.value)}
+                  placeholder={user.username}
+                  type="text"
+                  value={deleteConfirmation}
+                />
+              </label>
+              {deleteError ? <p className="error-text auth-error">{deleteError}</p> : null}
+              <div className="manual-task-actions confirm-dialog-actions">
+                <button
+                  className="secondary-button"
+                  disabled={deleteBusy}
+                  onClick={closeDeleteDialog}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="auth-button danger-button"
+                  disabled={deleteBusy || deleteConfirmation.trim() !== user.username}
+                  type="submit"
+                >
+                  {deleteBusy ? "Deleting account..." : "Delete permanently"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

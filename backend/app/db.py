@@ -26,6 +26,10 @@ def get_connection():
         yield connection
 
 
+def _quote_identifier(identifier: str) -> str:
+    return '"' + identifier.replace('"', '""') + '"'
+
+
 def ensure_stored_emails_table():
     with get_connection() as connection:
         with connection.cursor() as cursor:
@@ -747,3 +751,54 @@ def update_user_onboarding_answers(
         prioritise_by,
     )
     return user
+
+
+def delete_user_account(user_id: int) -> None:
+    ensure_user_details_table()
+    ensure_gmail_link_table()
+    ensure_outlook_link_table()
+    ensure_stored_emails_table()
+
+    deleted_tables: list[str] = []
+    user_id_text = str(user_id)
+
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT columns.table_schema, columns.table_name
+                FROM information_schema.columns AS columns
+                INNER JOIN information_schema.tables AS tables
+                    ON tables.table_schema = columns.table_schema
+                   AND tables.table_name = columns.table_name
+                WHERE columns.table_schema = 'public'
+                  AND columns.column_name = 'user_id'
+                  AND tables.table_type = 'BASE TABLE'
+                ORDER BY CASE WHEN columns.table_name = 'user_details' THEN 1 ELSE 0 END, columns.table_name
+                """
+            )
+            table_rows = cast(list[DbRow], cursor.fetchall())
+
+            for row in table_rows:
+                table_schema = str(row["table_schema"])
+                table_name = str(row["table_name"])
+                qualified_table = f"{_quote_identifier(table_schema)}.{_quote_identifier(table_name)}"
+                if table_name == "user_details":
+                    cursor.execute(
+                        f"DELETE FROM {qualified_table} WHERE user_id = %s",
+                        (user_id,),
+                    )
+                else:
+                    cursor.execute(
+                        f"DELETE FROM {qualified_table} WHERE CAST(user_id AS TEXT) = %s",
+                        (user_id_text,),
+                    )
+                if cursor.rowcount:
+                    deleted_tables.append(f"{table_schema}.{table_name}")
+        connection.commit()
+
+    logger.info(
+        "Deleted account data for user_id=%s across tables=%s",
+        user_id,
+        ", ".join(deleted_tables) if deleted_tables else "none",
+    )
