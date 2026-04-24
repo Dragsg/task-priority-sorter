@@ -223,6 +223,44 @@ def _send_telegram_api_request(method: str, payload: dict) -> dict:
         raise RuntimeError(f"Telegram API request failed: {exc.reason}") from exc
 
 
+def get_expected_telegram_webhook_url() -> str | None:
+    webhook_url = (Config.TELEGRAM_WEBHOOK_URL or "").strip()
+    if not webhook_url:
+        return None
+    return webhook_url
+
+
+def get_telegram_startup_warning() -> str | None:
+    if not Config.TELEGRAM_BOT_TOKEN:
+        return None
+    if not get_expected_telegram_webhook_url():
+        return (
+            "Telegram bot token is configured, but TELEGRAM_WEBHOOK_URL is missing. "
+            "Inbound bot messages will not reach this app until Telegram is pointed "
+            "at a public /api/telegram/webhook URL."
+        )
+    return None
+
+
+def ensure_telegram_webhook() -> dict | None:
+    webhook_url = get_expected_telegram_webhook_url()
+    if not webhook_url or not Config.TELEGRAM_BOT_TOKEN:
+        return None
+
+    payload: dict[str, object] = {"url": webhook_url}
+    secret = (Config.TELEGRAM_WEBHOOK_SECRET or "").strip()
+    if secret:
+        payload["secret_token"] = secret
+
+    response = _send_telegram_api_request("setWebhook", payload)
+    if not response.get("ok"):
+        raise RuntimeError(
+            "Telegram webhook registration failed: "
+            + str(response.get("description") or "unknown error")
+        )
+    return response
+
+
 def _send_message(chat_id: str, text: str) -> dict:
     payload = {
         "chat_id": chat_id,

@@ -17,6 +17,12 @@ const PRIORITY_COLUMNS = [
   { value: "MEDIUM", label: "Medium" },
   { value: "LOW", label: "Low" },
 ];
+const PRIORITY_SORT_ORDER = {
+  CRITICAL: 0,
+  HIGH: 1,
+  MEDIUM: 2,
+  LOW: 3,
+};
 
 const DEADLINE_FILTER_OPTIONS = [
   { value: "all", label: "All deadlines" },
@@ -92,6 +98,87 @@ function formatPriorityTierLabel(priorityTier) {
     return "Unknown";
   }
   return `${priorityTier.charAt(0)}${priorityTier.slice(1).toLowerCase()}`;
+}
+
+function compareBoardTasks(left, right) {
+  const leftPriority = PRIORITY_SORT_ORDER[left?.priority_tier] ?? 99;
+  const rightPriority = PRIORITY_SORT_ORDER[right?.priority_tier] ?? 99;
+  if (leftPriority !== rightPriority) {
+    return leftPriority - rightPriority;
+  }
+
+  const leftDeadline =
+    typeof left?.deadline_hours === "number" ? left.deadline_hours : Number.POSITIVE_INFINITY;
+  const rightDeadline =
+    typeof right?.deadline_hours === "number" ? right.deadline_hours : Number.POSITIVE_INFINITY;
+  if (leftDeadline !== rightDeadline) {
+    return leftDeadline - rightDeadline;
+  }
+
+  const leftTitle = cleanPreviewText(left?.task_title)?.toLowerCase() ?? "";
+  const rightTitle = cleanPreviewText(right?.task_title)?.toLowerCase() ?? "";
+  const titleComparison = leftTitle.localeCompare(rightTitle);
+  if (titleComparison !== 0) {
+    return titleComparison;
+  }
+
+  return String(left?.canonical_task_id ?? "").localeCompare(String(right?.canonical_task_id ?? ""));
+}
+
+function sortBoardTasks(items) {
+  return [...(items ?? [])].sort(compareBoardTasks);
+}
+
+function calculateDeadlineHours(deadlineAt) {
+  if (!deadlineAt) {
+    return null;
+  }
+  const parsed = new Date(deadlineAt);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return Math.max(0, (parsed.getTime() - Date.now()) / (1000 * 60 * 60));
+}
+
+function applyTaskPatch(task, payload) {
+  if (!task) {
+    return task;
+  }
+
+  const updates = {};
+  if ("title" in payload) {
+    updates.task_title = payload.title;
+  }
+  if ("description" in payload) {
+    updates.task_description = payload.description;
+  }
+  if ("deadlineAt" in payload) {
+    updates.deadline_at_iso = payload.deadlineAt || null;
+    updates.deadline_hours = calculateDeadlineHours(payload.deadlineAt);
+  }
+  if ("priorityTier" in payload) {
+    updates.priority_tier = payload.priorityTier;
+  }
+  if ("status" in payload) {
+    updates.status = payload.status === "COMPLETED" ? "completed" : "pending_review";
+  }
+  if ("tags" in payload) {
+    updates.tags = dedupeTags(payload.tags);
+  }
+
+  return { ...task, ...updates };
+}
+
+function mergeTaskIntoBoard(currentTasks, updatedTask) {
+  const hasTask = currentTasks.some(
+    (task) => task.canonical_task_id === updatedTask.canonical_task_id
+  );
+  const nextTasks = hasTask
+    ? currentTasks.map((task) =>
+        task.canonical_task_id === updatedTask.canonical_task_id ? updatedTask : task
+      )
+    : [...currentTasks, updatedTask];
+  return sortBoardTasks(nextTasks);
 }
 
 function formatPlatformLabel(task) {
@@ -677,11 +764,10 @@ export default function Kanban() {
   const storedUser = getStoredUser();
   const [cachedDashboard] = useState(() => readDashboardCache(storedUserId));
   const [user, setUser] = useState(() => cachedDashboard?.user ?? storedUser);
-  const [tasks, setTasks] = useState(() => cachedDashboard?.tasks ?? []);
+  const [tasks, setTasks] = useState(() => sortBoardTasks(cachedDashboard?.tasks ?? []));
   const [availableTags, setAvailableTags] = useState(() => cachedDashboard?.availableTags ?? []);
   const [loading, setLoading] = useState(() => !cachedDashboard && !storedUser);
   const [error, setError] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState([]);
   const [deadlineFilter, setDeadlineFilter] = useState("all");
@@ -710,7 +796,7 @@ export default function Kanban() {
           return;
         }
         setUser(dashboard.user);
-        setTasks(dashboard.items ?? []);
+        setTasks(sortBoardTasks(dashboard.items ?? []));
         setAvailableTags(dashboard.availableTags ?? []);
         setError("");
       } catch (loadError) {
@@ -772,7 +858,7 @@ export default function Kanban() {
           return;
         }
         setUser(dashboard.user);
-        setTasks(dashboard.items ?? []);
+        setTasks(sortBoardTasks(dashboard.items ?? []));
         setAvailableTags(dashboard.availableTags ?? []);
       } catch {
         // Keep the current board visible if an automatic refresh misses a cycle.
@@ -830,8 +916,10 @@ export default function Kanban() {
   );
 
   function updateBoardFromResult(result) {
-    if (result?.items) {
-      setTasks(result.items);
+    if (result?.task) {
+      setTasks((current) => mergeTaskIntoBoard(current, result.task));
+    } else if (result?.items) {
+      setTasks(sortBoardTasks(result.items));
     }
     if (result?.availableTags) {
       setAvailableTags(result.availableTags);
@@ -939,7 +1027,6 @@ export default function Kanban() {
       fromTier: task.priority_tier,
       overTier: task.priority_tier,
     });
-    setStatusMessage("");
     setError("");
   }
 
@@ -970,42 +1057,50 @@ export default function Kanban() {
     }
 
     setError("");
-    setStatusMessage(`Moving task to ${formatPriorityTierLabel(priorityTier)}.`);
     markTaskMoving(canonicalTaskId);
     setTasks((current) =>
-      current.map((task) =>
-        task.canonical_task_id === canonicalTaskId ? { ...task, priority_tier: priorityTier } : task
+      sortBoardTasks(
+        current.map((task) =>
+          task.canonical_task_id === canonicalTaskId
+            ? { ...task, priority_tier: priorityTier }
+            : task
+        )
       )
     );
 
     try {
       const result = await updatePrioritizedTask(canonicalTaskId, { priorityTier });
       updateBoardFromResult(result);
-      setStatusMessage(`Moved task to ${formatPriorityTierLabel(priorityTier)}.`);
     } catch (saveError) {
       setTasks(previousTasks);
       setError(saveError.message);
-      setStatusMessage("");
     } finally {
       clearTaskMoving(canonicalTaskId);
     }
   }
 
   async function handleTaskEditSave(canonicalTaskId, payload) {
+    const previousTasks = tasks;
     setError("");
-    setStatusMessage("");
     setEditStates((current) => ({
       ...current,
       [canonicalTaskId]: { isSaving: true, error: "" },
     }));
     markTaskBusy(canonicalTaskId);
+    setTasks((current) =>
+      sortBoardTasks(
+        current.map((task) =>
+          task.canonical_task_id === canonicalTaskId ? applyTaskPatch(task, payload) : task
+        )
+      )
+    );
 
     try {
       const result = await updatePrioritizedTask(canonicalTaskId, payload);
       updateBoardFromResult(result);
-      setStatusMessage("Task updated.");
       closeTaskEditor(canonicalTaskId);
     } catch (saveError) {
+      setTasks(previousTasks);
       setEditStates((current) => ({
         ...current,
         [canonicalTaskId]: { isSaving: false, error: saveError.message },
@@ -1019,20 +1114,19 @@ export default function Kanban() {
   async function handleDelete(task) {
     const previousTasks = tasks;
     setError("");
-    setStatusMessage("Removing task.");
     markTaskBusy(task.canonical_task_id);
     setTasks((current) =>
-      current.filter((item) => item.canonical_task_id !== task.canonical_task_id)
+      sortBoardTasks(
+        current.filter((item) => item.canonical_task_id !== task.canonical_task_id)
+      )
     );
 
     try {
       await removePrioritizedTask(task.canonical_task_id);
       closeTaskEditor(task.canonical_task_id);
-      setStatusMessage("Task removed.");
     } catch (removeError) {
       setTasks(previousTasks);
       setError(removeError.message);
-      setStatusMessage("");
     } finally {
       clearTaskBusy(task.canonical_task_id);
     }
@@ -1045,24 +1139,23 @@ export default function Kanban() {
     const previousTasks = tasks;
 
     setError("");
-    setStatusMessage("Completing task.");
     markTaskBusy(task.canonical_task_id);
     setTasks((current) =>
-      current.map((item) =>
-        item.canonical_task_id === task.canonical_task_id
-          ? { ...item, status: "completed" }
-          : item
+      sortBoardTasks(
+        current.map((item) =>
+          item.canonical_task_id === task.canonical_task_id
+            ? { ...item, status: "completed" }
+            : item
+        )
       )
     );
 
     try {
       const result = await updatePrioritizedTask(task.canonical_task_id, { status: "COMPLETED" });
       updateBoardFromResult(result);
-      setStatusMessage("Task completed.");
     } catch (saveError) {
       setTasks(previousTasks);
       setError(saveError.message);
-      setStatusMessage("");
     } finally {
       clearTaskBusy(task.canonical_task_id);
     }
@@ -1172,7 +1265,6 @@ export default function Kanban() {
           </section>
         ) : null}
 
-        {statusMessage ? <p className="success-text">{statusMessage}</p> : null}
         {error ? <p className="error-text">{error}</p> : null}
 
         {filteredTasks.length ? (

@@ -43,7 +43,8 @@ def _sort_task_cards(cards: list[PrioritizedTaskCard]) -> list[PrioritizedTaskCa
         key=lambda card: (
             _SORT_PRIORITY_ORDER.get(card.effective_priority_tier.value, 99),
             card.deadline_hours if card.deadline_hours is not None else float("inf"),
-            card.task_title or "",
+            (card.task_title or "").strip().lower(),
+            card.canonical_task_id,
         ),
     )
 
@@ -589,7 +590,7 @@ class InMemoryPipelineRepository:
             if row["user_id"] == user_id and row["status"] == TaskStatus.PENDING_REVIEW.value
         ]
         cards = [card for card in cards if card is not None]
-        return cards
+        return _sort_task_cards(cards)
 
     def get_completed_task_cards(self, user_id: str) -> list[PrioritizedTaskCard]:
         cards = [
@@ -1099,8 +1100,6 @@ class SqlAlchemyPipelineRepository:
             rows = session.scalars(stmt).all()
             cards = [self._hydrate_card(row) for row in rows]
             hydrated_cards = [card for card in cards if card is not None]
-            if status == TaskStatus.PENDING_REVIEW:
-                return hydrated_cards
             return _sort_task_cards(hydrated_cards)
 
     def _hydrate_card(self, row: PipelineTaskRecord) -> PrioritizedTaskCard | None:
