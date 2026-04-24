@@ -1414,6 +1414,14 @@ def _replace_tags_in_sql_row(
     row.confidence = updated_card.confidence
 
 
+def _resolve_open_task_status(before_status: TaskStatus) -> TaskStatus:
+    if before_status == TaskStatus.COMPLETED:
+        return TaskStatus.COMPLETED
+    if before_status == TaskStatus.ACCEPTED:
+        return TaskStatus.ACCEPTED
+    return TaskStatus.PENDING_REVIEW
+
+
 def _update_sql_task_row(
     row: PipelineTaskRecord,
     *,
@@ -1476,13 +1484,19 @@ def _update_sql_task_row(
             )
 
     if "status" in updates:
-        next_status = TaskStatus.COMPLETED if updates["status"] == "COMPLETED" else TaskStatus.PENDING_REVIEW
+        next_status = (
+            TaskStatus.COMPLETED
+            if updates["status"] == "COMPLETED"
+            else _resolve_open_task_status(before_status)
+        )
         row.status = next_status.value
         next_card = next_card.model_copy(update={"status": next_status})
         if next_status == TaskStatus.COMPLETED:
             row.completed_at = row.completed_at or utc_now_naive()
         else:
             row.completed_at = None
+        if next_status == TaskStatus.ACCEPTED:
+            row.accepted_at = row.accepted_at or utc_now_naive()
         if next_status != before_status and next_status == TaskStatus.COMPLETED:
             history.append(
                 TaskDecision(
@@ -1695,13 +1709,19 @@ def _update_memory_task_row(
             )
 
     if "status" in updates:
-        next_status = TaskStatus.COMPLETED if updates["status"] == "COMPLETED" else TaskStatus.PENDING_REVIEW
+        next_status = (
+            TaskStatus.COMPLETED
+            if updates["status"] == "COMPLETED"
+            else _resolve_open_task_status(before_status)
+        )
         row["status"] = next_status.value
         next_card = next_card.model_copy(update={"status": next_status})
         if next_status == TaskStatus.COMPLETED:
             row["completed_at"] = row.get("completed_at") or utc_now_naive()
         else:
             row["completed_at"] = None
+        if next_status == TaskStatus.ACCEPTED:
+            row["accepted_at"] = row.get("accepted_at") or utc_now_naive()
         if next_status != before_status and next_status == TaskStatus.COMPLETED:
             history.append(
                 TaskDecision(

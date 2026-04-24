@@ -3,6 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.pipeline_bridge import (
+    _build_dashboard_items,
+    create_manual_task,
     get_task_statistics_snapshot,
     refresh_linked_email_sources,
     _run_pipeline_from_stored_messages,
@@ -11,6 +13,94 @@ from pipeline.models import TaskStatus
 
 
 class PipelineBridgeTestCase(unittest.TestCase):
+    def test_build_dashboard_items_includes_accepted_cards_for_kanban(self):
+        repository = MagicMock()
+        pending_card = MagicMock()
+        accepted_card = MagicMock()
+        completed_card = MagicMock()
+        pending_card.model_dump.return_value = {
+            "canonical_task_id": "queue-1",
+            "status": "pending_review",
+        }
+        accepted_card.model_dump.return_value = {
+            "canonical_task_id": "board-1",
+            "status": "accepted",
+        }
+        completed_card.model_dump.return_value = {
+            "canonical_task_id": "done-1",
+            "status": "completed",
+        }
+        repository.get_current_task_cards.return_value = [pending_card]
+        repository.get_accepted_task_cards.return_value = [accepted_card]
+        repository.get_completed_task_cards.return_value = [completed_card]
+
+        items = _build_dashboard_items(repository, 77)
+
+        self.assertEqual(
+            [item["status"] for item in items],
+            ["pending_review", "accepted", "completed"],
+        )
+
+    @patch("app.pipeline_bridge.uuid4")
+    @patch("app.pipeline_bridge._build_dashboard_items")
+    @patch("app.pipeline_bridge._apply_profile_feedback")
+    @patch("app.pipeline_bridge._run_pipeline_from_stored_messages")
+    @patch("app.pipeline_bridge.get_user_by_id")
+    @patch("app.pipeline_bridge.save_messages")
+    @patch("app.pipeline_bridge.get_pipeline_repository")
+    def test_create_manual_task_auto_accepts_new_board_task(
+        self,
+        get_pipeline_repository,
+        save_messages,
+        get_user_by_id,
+        run_pipeline_from_stored_messages,
+        apply_profile_feedback,
+        build_dashboard_items,
+        uuid4,
+    ):
+        repository = MagicMock()
+        get_pipeline_repository.return_value = repository
+        uuid4.return_value = SimpleNamespace(hex="manual-card")
+        get_user_by_id.return_value = {"username": "avery"}
+        run_pipeline_from_stored_messages.return_value = {"items": []}
+        repository.get_current_task_cards.return_value = [
+            SimpleNamespace(
+                canonical_task_id="manual-canon-1",
+                evidence_source_ids=["manual-manual-card"],
+            )
+        ]
+        repository.get_feedback_update_context.return_value = SimpleNamespace(
+            task=SimpleNamespace(canonical_task_id="manual-canon-1")
+        )
+        updated_profile = MagicMock()
+        updated_profile.model_dump.return_value = {"profile_version": 6}
+        apply_profile_feedback.return_value = (updated_profile, SimpleNamespace())
+        build_dashboard_items.return_value = [
+            {"canonical_task_id": "manual-canon-1", "status": "accepted"}
+        ]
+
+        result = create_manual_task(
+            7,
+            title="Submit reflection",
+            description="Due tonight",
+            task_type="submission",
+            deadline_at="2026-04-24T23:59:00+08:00",
+            entity_name="CS2103T",
+            tags=["assignment"],
+        )
+
+        save_messages.assert_called_once()
+        repository.get_feedback_update_context.assert_called_once_with("7", "manual-canon-1")
+        repository.apply_task_action.assert_called_once()
+        action_call = repository.apply_task_action.call_args
+        self.assertEqual(action_call.args[:2], ("7", "manual-canon-1"))
+        self.assertEqual(action_call.kwargs["action"].value, "ACCEPT")
+        build_dashboard_items.assert_called_once_with(repository, 7)
+        self.assertEqual(result["items"], build_dashboard_items.return_value)
+        self.assertEqual(result["profile"], {"profile_version": 6})
+        self.assertEqual(result["manualTaskCanonicalTaskId"], "manual-canon-1")
+        self.assertEqual(result["manualTaskSourceId"], "manual-manual-card")
+
     @patch("app.pipeline_bridge.logger")
     @patch("app.pipeline_bridge.get_available_tags")
     @patch("app.pipeline_bridge._build_dashboard_items")
