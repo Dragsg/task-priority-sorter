@@ -2105,6 +2105,10 @@ select {
     0 8px 18px rgba(92, 71, 46, 0.08);
 }
 
+.kanban-card-moving {
+  cursor: progress;
+}
+
 .kanban-card-expanded {
   min-height: 0;
 }
