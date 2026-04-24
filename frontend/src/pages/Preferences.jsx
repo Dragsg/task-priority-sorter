@@ -6,17 +6,23 @@ import {
   deleteOnboardingCalendar,
   fetchOnboardingContext,
   getStoredUser,
+  getStoredUserId,
+  storeUser,
   updateCurrentUser,
   uploadOnboardingCalendar,
 } from "../api";
 import CalendarContextSummary from "../components/CalendarContextSummary";
+import { clearOnboardingCache, readOnboardingCache, writeOnboardingCache } from "../onboardingCache";
 import PageNav from "../components/PageNav";
 
 export default function Preferences() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(() => getStoredUser());
-  const [onboarding, setOnboarding] = useState(null);
-  const [username, setUsername] = useState("");
+  const storedUserId = getStoredUserId();
+  const storedUser = getStoredUser();
+  const [cachedOnboarding] = useState(() => readOnboardingCache(storedUserId));
+  const [user, setUser] = useState(() => cachedOnboarding?.user ?? storedUser);
+  const [onboarding, setOnboarding] = useState(() => cachedOnboarding?.onboarding ?? null);
+  const [username, setUsername] = useState(() => (cachedOnboarding?.user ?? storedUser)?.username ?? "");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [calendarBusy, setCalendarBusy] = useState(false);
@@ -28,20 +34,44 @@ export default function Preferences() {
   const calendarInputRef = useRef(null);
 
   useEffect(() => {
+    let isCancelled = false;
+
     async function loadContext() {
       try {
         const data = await fetchOnboardingContext();
+        if (isCancelled) {
+          return;
+        }
         setUser(data.user);
         setOnboarding(data.onboarding);
         setUsername(data.user?.username ?? "");
-      } catch {
+        setError("");
+      } catch (loadError) {
+        if (isCancelled) {
+          return;
+        }
+        if (cachedOnboarding) {
+          setError(loadError.message || "Using your saved account settings while fresh context loads.");
+          return;
+        }
         clearStoredToken();
         navigate("/", { replace: true });
       }
     }
 
     loadContext();
-  }, [navigate]);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [cachedOnboarding, navigate]);
+
+  useEffect(() => {
+    if (!user?.userId || !onboarding) {
+      return;
+    }
+    writeOnboardingCache(user.userId, user, onboarding);
+  }, [onboarding, user]);
 
   function handleCalendarPickerOpen() {
     if (calendarBusy) {
@@ -96,6 +126,7 @@ export default function Preferences() {
       const result = await updateCurrentUser({ username });
       setUser(result.user);
       setUsername(result.user.username);
+      storeUser(result.user);
       setStatus("Username updated.");
     } catch (updateError) {
       setError(updateError.message);
@@ -112,6 +143,7 @@ export default function Preferences() {
       setDeleteError("");
       setStatus("");
       await deleteCurrentUser({ username: deleteConfirmation });
+      clearOnboardingCache(user?.userId);
       clearStoredToken();
       navigate("/", { replace: true });
     } catch (deleteRequestError) {
@@ -136,13 +168,13 @@ export default function Preferences() {
     setIsDeleteDialogOpen(false);
   }
 
-  if (!user || !onboarding) {
+  if (!user) {
     return <main className="simple-shell">Loading your account settings...</main>;
   }
 
-  const calendarSource = onboarding.calendar_source;
-  const busyWindowCount = onboarding.busy_windows?.length ?? 0;
-  const recurringInsightCount = onboarding.recurring_task_notes?.length ?? 0;
+  const calendarSource = onboarding?.calendar_source;
+  const busyWindowCount = onboarding?.busy_windows?.length ?? 0;
+  const recurringInsightCount = onboarding?.recurring_task_notes?.length ?? 0;
   const displayedInsightCount = busyWindowCount > 0
     ? Math.min(recurringInsightCount, busyWindowCount)
     : recurringInsightCount;
@@ -207,9 +239,17 @@ export default function Preferences() {
               </p>
             </div>
             <div className="summary-value summary-value-stack">
-              <span>{calendarSource ? "Calendar linked" : "No calendar linked"}</span>
               <span>
-                {calendarSource
+                {onboarding
+                  ? calendarSource
+                    ? "Calendar linked"
+                    : "No calendar linked"
+                  : "Loading calendar context"}
+              </span>
+              <span>
+                {!onboarding
+                  ? "Checking saved availability insights"
+                  : calendarSource
                   ? displayedInsightCount > 0
                     ? `${displayedInsightCount} availability insights`
                     : `${busyWindowCount} upcoming busy windows`
@@ -219,6 +259,10 @@ export default function Preferences() {
           </div>
 
           <CalendarContextSummary onboarding={onboarding} />
+
+          {!onboarding ? (
+            <p className="panel-copy">Loading your saved calendar context...</p>
+          ) : null}
 
           <div className="calendar-upload-form">
             <input
@@ -240,7 +284,7 @@ export default function Preferences() {
               {calendarSource ? (
                 <button
                   className="secondary-button"
-                  disabled={calendarBusy}
+                  disabled={calendarBusy || !onboarding}
                   onClick={handleCalendarRemove}
                   type="button"
                 >

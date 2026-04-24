@@ -1,7 +1,7 @@
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:5000/api";
+  import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "/api" : "http://127.0.0.1:5000/api");
 const OUTLOOK_AUTH_BASE_URL =
-  import.meta.env.VITE_OUTLOOK_AUTH_BASE_URL ?? "http://localhost:5000/api";
+  import.meta.env.VITE_OUTLOOK_AUTH_BASE_URL ?? (import.meta.env.DEV ? "/api" : "http://localhost:5000/api");
 const STORED_USER_KEY = "task-priority-user";
 export const LIVE_REFRESH_INTERVAL_MS = 30000;
 

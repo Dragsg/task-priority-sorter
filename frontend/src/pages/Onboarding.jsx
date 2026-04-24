@@ -18,9 +18,8 @@ import {
   normalizeOnboardingAnswer,
   revokeOnboardingAccess,
 } from "../onboardingOptions";
+import { readOnboardingCache, writeOnboardingCache } from "../onboardingCache";
 import CalendarContextSummary from "../components/CalendarContextSummary";
-
-const ONBOARDING_CACHE_VERSION = 2;
 const QUESTION_STEPS = [
   {
     key: "performanceTime",
@@ -44,49 +43,6 @@ const QUESTION_STEPS = [
     options: PRIORITISE_BY_OPTIONS,
   },
 ];
-
-function getOnboardingCacheKey(userId) {
-  return `task-priority-onboarding:v${ONBOARDING_CACHE_VERSION}:${userId}`;
-}
-
-function readOnboardingCache(userId) {
-  if (!userId) {
-    return null;
-  }
-
-  try {
-    const raw = localStorage.getItem(getOnboardingCacheKey(userId));
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw);
-    return {
-      user: parsed.user ?? null,
-      onboarding: parsed.onboarding ?? null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeOnboardingCache(userId, user, onboarding) {
-  if (!userId) {
-    return;
-  }
-
-  try {
-    localStorage.setItem(
-      getOnboardingCacheKey(userId),
-      JSON.stringify({
-        cachedAt: new Date().toISOString(),
-        user: user ?? null,
-        onboarding: onboarding ?? null,
-      })
-    );
-  } catch {
-    // Ignore cache write failures and keep the page usable.
-  }
-}
 
 function getStepIndexFromAnswers({ performanceTime, importantTopic, prioritiseBy }) {
   if (!performanceTime) {
