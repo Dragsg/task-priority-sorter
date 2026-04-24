@@ -1372,7 +1372,7 @@ export default function Home() {
       isCancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [isSyncing, recomputeStatus]);
+  }, [isSyncing, recomputeStatus?.running, recomputeStatus?.pending]);
 
   useEffect(() => {
     if (!isFalseNegativePanelOpen) {
