@@ -37,12 +37,14 @@ class TaskRoutesTestCase(unittest.TestCase):
 
     @patch("app.routes.get_available_tags")
     @patch("app.routes.get_profile_snapshot")
+    @patch("app.routes.list_false_negative_items")
     @patch("app.routes.list_prioritized_tasks")
     @patch("app.routes.get_user_by_id")
     def test_dashboard_route_returns_bootstrap_payload(
         self,
         get_user_by_id,
         list_prioritized_tasks,
+        list_false_negative_items,
         get_profile_snapshot,
         get_available_tags,
     ):
@@ -55,6 +57,7 @@ class TaskRoutesTestCase(unittest.TestCase):
             "prioritise_by": "Urgency",
         }
         list_prioritized_tasks.return_value = [{"canonical_task_id": "canon-1"}]
+        list_false_negative_items.return_value = [{"sourceId": "msg-1"}]
         get_profile_snapshot.return_value = {"profile_version": 5}
         get_available_tags.return_value = ["assignment", "urgent"]
 
@@ -64,6 +67,7 @@ class TaskRoutesTestCase(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["user"]["userId"], 7)
         self.assertEqual(payload["items"][0]["canonical_task_id"], "canon-1")
+        self.assertEqual(payload["falseNegativeItems"][0]["sourceId"], "msg-1")
         self.assertEqual(payload["profile"]["profile_version"], 5)
         self.assertEqual(payload["availableTags"], ["assignment", "urgent"])
 
