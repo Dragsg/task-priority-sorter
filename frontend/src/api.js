@@ -195,6 +195,42 @@ export async function deleteOnboardingCalendar() {
   });
 }
 
+export async function fetchTelegramSettings() {
+  const response = await fetch(`${API_BASE_URL}/telegram/settings`, {
+    headers: getAuthHeaders(),
+  });
+  return readJson(response);
+}
+
+export async function saveTelegramSettings(settings) {
+  return sendJson("/telegram/settings", {
+    method: "PUT",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(settings),
+  });
+}
+
+export async function createTelegramLinkCode() {
+  return sendJson("/telegram/link-code", {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+}
+
+export async function disconnectTelegram() {
+  return sendJson("/telegram/link", {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+}
+
+export async function sendTelegramTestMessage() {
+  return sendJson("/telegram/test", {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+}
+
 export function getGmailLinkUrl(userId) {
   return `${API_BASE_URL}/gmail/link?user_id=${userId}`;
 }

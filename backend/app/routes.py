@@ -62,6 +62,14 @@ from .outlook_service import (
     list_new_outlook_messages,
     list_recent_outlook_messages,
 )
+from .telegram_service import (
+    disconnect_telegram,
+    generate_telegram_link_code,
+    get_telegram_settings_payload,
+    process_telegram_webhook,
+    send_telegram_test_message,
+    update_telegram_settings,
+)
 
 api = Blueprint("api", __name__)
 ALLOWED_RECENT_LIMITS = {5, 10, 20, 50, 100}
@@ -101,6 +109,10 @@ def get_authenticated_user_id(required: bool = False):
 
 def get_status_code(error: Exception) -> int:
     if str(error) in {"Unauthorised", "Token expired", "Invalid token"}:
+        return 401
+    if str(error).startswith("Telegram is not configured"):
+        return 503
+    if isinstance(error, PermissionError):
         return 401
     return 400
 
@@ -561,6 +573,78 @@ def outlook_new_messages():
 @api.get("/background-sync/status")
 def background_sync_status():
     return jsonify(get_background_sync_status())
+
+
+@api.get("/telegram/settings")
+def telegram_settings():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        payload = get_telegram_settings_payload(user_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(payload)
+
+
+@api.put("/telegram/settings")
+def telegram_settings_update():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        payload = update_telegram_settings(user_id, request.get_json())
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(payload)
+
+
+@api.post("/telegram/link-code")
+def telegram_link_code():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        payload = generate_telegram_link_code(user_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(payload)
+
+
+@api.delete("/telegram/link")
+def telegram_disconnect():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        payload = disconnect_telegram(user_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(payload)
+
+
+@api.post("/telegram/test")
+def telegram_test():
+    try:
+        user_id = get_authenticated_user_id(required=True)
+        result = send_telegram_test_message(user_id)
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(result)
+
+
+@api.post("/telegram/webhook")
+def telegram_webhook():
+    try:
+        payload = process_telegram_webhook(
+            request.get_json(silent=True),
+            secret_header=request.headers.get("X-Telegram-Bot-Api-Secret-Token"),
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 422
+    except Exception as error:
+        return jsonify({"error": str(error)}), get_status_code(error)
+
+    return jsonify(payload)
 
 
 @api.post("/tasks/sync")
