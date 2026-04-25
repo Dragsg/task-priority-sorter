@@ -260,7 +260,7 @@ class AccountRoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             response.location,
-            "http://localhost:5173/linking?gmail=error&reason=state_mismatch",
+            "https://thankful-stone-0c17fc20f.7.azurestaticapps.net/linking?gmail=error&reason=state_mismatch",
         )
 
 
